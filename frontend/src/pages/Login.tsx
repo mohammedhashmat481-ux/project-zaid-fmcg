@@ -367,10 +367,10 @@ export default function Login() {
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fdfbf7] px-4 py-12 relative overflow-hidden font-sans">
+    <div className="min-h-screen flex items-center justify-center bg-[#fdfbf7] dark:bg-[#0B0F19] px-4 py-12 relative overflow-hidden font-sans">
 
       {/* Background grid & blobs */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[55%] rounded-full bg-indigo-200/40 blur-[130px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[55%] rounded-full bg-emerald-100/40 blur-[130px] pointer-events-none" />
 
@@ -422,7 +422,7 @@ export default function Login() {
 
         {/* Logo */}
         <div className="flex items-center justify-center mb-8">
-          <img src={loginLogo} alt="Ink Worldwide" className="h-20 w-auto object-contain" />
+          <img src={loginLogo} alt="FMCG" className="h-16 md:h-20 w-auto max-w-[240px] object-contain" />
         </div>
 
         {/* Alert banners */}
@@ -502,7 +502,7 @@ export default function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                      placeholder="ink@crm.com"
+                      placeholder="admin@gmail.com"
                     />
                   </div>
                 </div>

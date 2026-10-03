@@ -77,16 +77,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ role: res.data.role });
       }
       if (res.data?.user) {
-        set({
-          user: {
-            id: res.data.user._id || res.data.user.id,
-            firstName: res.data.user.firstName,
-            lastName: res.data.user.lastName,
-            email: res.data.user.email,
-            roleId: res.data.user.roleId,
-            organizationId: res.data.user.organizationId
-          }
-        });
+        const updatedUser: User = {
+          id: res.data.user._id || res.data.user.id,
+          firstName: res.data.user.firstName,
+          lastName: res.data.user.lastName,
+          email: res.data.user.email,
+          roleId: res.data.user.roleId,
+          organizationId: res.data.user.organizationId
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        set({ user: updatedUser });
       }
     } catch (err) {
       console.warn('Failed to load user profile & permissions:', err);

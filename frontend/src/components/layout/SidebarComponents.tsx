@@ -279,7 +279,7 @@ export const SidebarProfile = ({ isCollapsed = false }: { isCollapsed?: boolean 
 
   const name = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Admin User' : 'Admin User';
   const initials = user ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`.toUpperCase() || 'AD' : 'AD';
-  const email = user?.email || 'ink@crm.com';
+  const email = user?.email || '';
 
   if (isCollapsed) {
     return (

@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 
 export default function UsersManagement() {
-  const { user } = useAuthStore();
+  const { user, fetchProfile } = useAuthStore();
   const navigate = useNavigate();
   const { showConfirm, showToast, showAlertModal } = useToastStore();
 
@@ -120,6 +120,9 @@ export default function UsersManagement() {
         };
         if (userForm.password) payload.password = userForm.password;
         await api.put(`/auth/users/${userForm.id}`, payload);
+        if (userForm.id === user?.id) {
+          await fetchProfile();
+        }
         showToast('User details updated successfully.', 'success');
       } else {
         await api.post('/auth/register', userForm);
@@ -286,9 +289,6 @@ export default function UsersManagement() {
                 </span>
               )}
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Manage team members, roles, reporting hierarchies, and registration approvals.
-            </p>
           </div>
         </div>
 
