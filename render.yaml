@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: project-zaid-fmcg
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        value: super_secret_face_encryption_key_32_bytes_long_1234
+      - key: ALLOWED_ORIGINS
+        value: "*"

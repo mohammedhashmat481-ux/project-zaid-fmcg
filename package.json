@@ -1,0 +1,13 @@
+{
+  "name": "project-zaid-fmcg",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FMCG CRM Platform - Single Service Production Deployment",
+  "scripts": {
+    "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "start": "cd backend && npm start"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

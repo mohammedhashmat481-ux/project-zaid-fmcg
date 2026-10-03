@@ -124,9 +124,28 @@ app.use('/api/v1/statuses', statusRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/search', searchRoutes);
 
-// Base route
-app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to inkCRM API Server' });
+// Serve compiled React frontend static files
+const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDistPath));
+
+// Fallback SPA routing for client side React router
+app.get('*', (req, res, next) => {
+  if (
+    req.originalUrl.startsWith('/api') || 
+    req.originalUrl.startsWith('/uploads') || 
+    req.originalUrl.startsWith('/health') || 
+    req.originalUrl.startsWith('/ready') ||
+    req.originalUrl.startsWith('/version')
+  ) {
+    return next();
+  }
+  const indexPath = path.join(frontendDistPath, 'index.html');
+  const fs = require('fs');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.json({ message: 'Welcome to inkCRM API Server' });
+  }
 });
 
 // 7. Centralized Error Handling Middleware (Hides stack traces in production)
