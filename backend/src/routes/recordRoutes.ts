@@ -237,6 +237,230 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
   }
 });
 
+// ── Lead Bulk Import Endpoint ──────────────────────────────────────────
+router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.organizationId;
+    const userId = req.user?.id;
+    const { leads, campaignName, defaultStatus, assignedTo, columnMapping } = req.body;
+
+    if (!Array.isArray(leads) || leads.length === 0) {
+      res.status(400).json({ error: 'Leads array is required and cannot be empty.' });
+      return;
+    }
+
+    const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
+    if (!leadModule) {
+      res.status(404).json({ error: 'Leads module definition not found.' });
+      return;
+    }
+
+    const agentsList = Array.isArray(assignedTo) ? assignedTo : (assignedTo ? [assignedTo] : []);
+
+    const recordsToCreate: any[] = [];
+    leads.forEach((row: any, idx: number) => {
+      const dataObj: Record<string, any> = {};
+      if (columnMapping && typeof columnMapping === 'object') {
+        Object.keys(columnMapping).forEach((rawCol) => {
+          const targetField = columnMapping[rawCol];
+          if (targetField && targetField !== 'ignore' && row[rawCol] !== undefined) {
+            dataObj[targetField] = row[rawCol];
+          }
+        });
+      } else {
+        Object.assign(dataObj, row);
+      }
+
+      let fName = dataObj.firstName || dataObj.name || dataObj.customer || dataObj.costomer || dataObj.customer_name || 'Unnamed';
+      let lName = dataObj.lastName || '';
+      if (!dataObj.lastName && fName && String(fName).trim().includes(' ')) {
+        const parts = String(fName).trim().split(' ');
+        fName = parts[0];
+        lName = parts.slice(1).join(' ');
+      }
+
+      let assignedAgent = dataObj.assignedTo || '';
+      if (agentsList.length > 0) {
+        assignedAgent = agentsList[idx % agentsList.length];
+      }
+
+      recordsToCreate.push({
+        organizationId: orgId,
+        moduleId: leadModule._id,
+        createdBy: userId,
+        updatedBy: userId,
+        data: {
+          ...dataObj,
+          firstName: String(fName).trim(),
+          lastName: String(lName).trim(),
+          phone: String(dataObj.phone || dataObj.mobile || dataObj.contact || dataObj.contact_num || dataObj.phone_number || '').trim(),
+          email: String(dataObj.email || dataObj.mail || '').trim(),
+          company: String(dataObj.company || dataObj.firm_name || dataObj.firmName || dataObj.firm || '').trim(),
+          status: dataObj.status || defaultStatus || 'New',
+          dialStatus: dataObj.dialStatus || 'Yet To Call',
+          source: campaignName || dataObj.source || dataObj.campaignName || 'Excel Import',
+          assignedTo: assignedAgent,
+          budget: dataObj.budget || dataObj.amount || '',
+          loanType: dataObj.loanType || dataObj.category || '',
+          city: dataObj.city || dataObj.location || '',
+          state: dataObj.state || '',
+          notes: dataObj.notes || dataObj.remarks || ''
+        }
+      });
+    });
+
+    const inserted = await CustomRecord.insertMany(recordsToCreate);
+
+    await AuditLog.create({
+      organizationId: orgId,
+      userId: new mongoose.Types.ObjectId(userId),
+      action: 'lead.bulk_import',
+      resource: 'Leads',
+      resourceId: String(leadModule._id),
+      newValue: { count: inserted.length, campaignName }
+    });
+
+    res.status(201).json({
+      success: true,
+      count: inserted.length,
+      message: `Successfully imported ${inserted.length} lead(s).`
+    });
+  } catch (error: any) {
+    console.error('Failed to bulk import leads:', error);
+    res.status(500).json({ error: error.message || 'Failed to bulk import leads.' });
+  }
+});
+
+// ── Lead Bulk Delete Endpoint ──────────────────────────────────────────
+router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.organizationId;
+    const userId = req.user?.id;
+    const { leadIds, filters, deleteAllMatching } = req.body;
+
+    const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
+    if (!leadModule) {
+      res.status(404).json({ error: 'Leads module definition not found.' });
+      return;
+    }
+
+    const { allowed } = await authorizeModuleAction(req, res, leadModule.name, 'delete');
+    if (!allowed) {
+      res.status(403).json({ error: 'Access denied: You do not have permission to delete leads.' });
+      return;
+    }
+
+    const query: Record<string, any> = {
+      organizationId: orgId,
+      moduleId: leadModule._id
+    };
+
+    if (Array.isArray(leadIds) && leadIds.length > 0) {
+      query._id = { $in: leadIds };
+    } else if (deleteAllMatching && filters) {
+      const conditions: any[] = [];
+      if (filters.campaignName) {
+        conditions.push({ 'data.source': filters.campaignName });
+        conditions.push({ 'data.campaignName': filters.campaignName });
+      }
+      if (filters.status) {
+        query['data.status'] = filters.status;
+      }
+      if (filters.assignedTo) {
+        query['data.assignedTo'] = filters.assignedTo;
+      }
+      if (filters.source) {
+        query['data.source'] = filters.source;
+      }
+      if (filters.startDate || filters.endDate) {
+        query.createdAt = {};
+        if (filters.startDate) query.createdAt.$gte = new Date(filters.startDate);
+        if (filters.endDate) {
+          const end = new Date(filters.endDate);
+          end.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = end;
+        }
+      }
+      if (filters.searchQuery) {
+        const rx = new RegExp(filters.searchQuery, 'i');
+        query.$or = [
+          { 'data.firstName': rx },
+          { 'data.lastName': rx },
+          { 'data.phone': rx },
+          { 'data.email': rx },
+          { 'data.company': rx }
+        ];
+      }
+      if (conditions.length > 0) {
+        if (query.$or) {
+          query.$and = [{ $or: query.$or }, { $or: conditions }];
+          delete query.$or;
+        } else {
+          query.$or = conditions;
+        }
+      }
+    } else {
+      res.status(400).json({ error: 'Please specify leadIds array or set deleteAllMatching to true with filters.' });
+      return;
+    }
+
+    const result = await CustomRecord.deleteMany(query);
+
+    await AuditLog.create({
+      organizationId: orgId,
+      userId: new mongoose.Types.ObjectId(userId),
+      action: 'lead.bulk_delete',
+      resource: 'Leads',
+      resourceId: String(leadModule._id),
+      oldValue: { deletedCount: result.deletedCount, filters, leadIdsCount: leadIds?.length }
+    });
+
+    res.status(200).json({
+      success: true,
+      count: result.deletedCount,
+      message: `Successfully deleted ${result.deletedCount} lead(s).`
+    });
+  } catch (error: any) {
+    console.error('Failed to bulk delete leads:', error);
+    res.status(500).json({ error: error.message || 'Failed to bulk delete leads.' });
+  }
+});
+
+// ── Lead Filters Metadata Endpoint ──────────────────────────────────────────
+router.get('/leads/filters-meta', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.organizationId;
+    const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
+    if (!leadModule) {
+      res.status(200).json({ campaigns: [], statuses: [], sources: [], totalLeads: 0 });
+      return;
+    }
+
+    const records = await CustomRecord.find({ organizationId: orgId, moduleId: leadModule._id }).lean();
+    const campaignsSet = new Set<string>();
+    const statusesSet = new Set<string>();
+    const sourcesSet = new Set<string>();
+
+    records.forEach((r: any) => {
+      if (r.data?.source) {
+        campaignsSet.add(r.data.source);
+        sourcesSet.add(r.data.source);
+      }
+      if (r.data?.campaignName) campaignsSet.add(r.data.campaignName);
+      if (r.data?.status) statusesSet.add(r.data.status);
+    });
+
+    res.status(200).json({
+      campaigns: Array.from(campaignsSet).filter(Boolean),
+      statuses: Array.from(statusesSet).filter(Boolean),
+      sources: Array.from(sourcesSet).filter(Boolean),
+      totalLeads: records.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch lead filter metadata.' });
+  }
+});
+
 router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;

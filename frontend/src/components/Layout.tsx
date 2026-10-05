@@ -518,19 +518,22 @@ export default function Layout({ children }: LayoutProps) {
             )}
 
             {/* Group 3: Administration */}
-            {(canAccessMenu('settings') || canAccessMenu('access_privilege') || canAccessMenu('lead_transfer') || canAccessMenu('users_management')) && (
+            {(canAccessMenu('settings') || canAccessMenu('access_privilege') || canAccessMenu('lead_transfer') || canAccessMenu('lead_import_delete') || canAccessMenu('users_management')) && (
               <SidebarGroup title="ADMINISTRATION" isCollapsed={isCollapsed}>
                 {canAccessMenu('settings') && (
                   <SidebarItem to="/settings" label="SETTINGS" icon={Icons.Settings} colorClass="text-[#CA8A04]" isCollapsed={isCollapsed} />
                 )}
 
-                {(canAccessMenu('access_privilege') || canAccessMenu('lead_transfer')) && (
+                {(canAccessMenu('access_privilege') || canAccessMenu('lead_transfer') || canAccessMenu('lead_import_delete')) && (
                   <SidebarAccordion label="SECURITY" icon={Icons.ShieldCheck} colorClass="text-[#DC2626]" defaultOpen={true} isCollapsed={isCollapsed}>
                     {canAccessMenu('access_privilege') && (
                       <SidebarItem to="/access-privilege" label="ACCESS PRIVILEGE" icon={Icons.ShieldCheck} colorClass="text-[#DC2626]" indent isCollapsed={isCollapsed} />
                     )}
                     {canAccessMenu('lead_transfer') && (
                       <SidebarItem to="/lead-transfer" label="LEAD TRANSFER" icon={Icons.Send} colorClass="text-[#DC2626]" indent isCollapsed={isCollapsed} />
+                    )}
+                    {canAccessMenu('lead_import_delete') && (
+                      <SidebarItem to="/lead-import-delete" label="LEAD IMPORT AND DELETE" icon={Icons.FileSpreadsheet} colorClass="text-[#DC2626]" indent isCollapsed={isCollapsed} />
                     )}
                   </SidebarAccordion>
                 )}

@@ -14,6 +14,7 @@ import RecordForm from './pages/RecordForm';
 import Settings from './pages/Settings';
 import AccessPrivilege from './pages/AccessPrivilege';
 import LeadTransfer from './pages/LeadTransfer';
+import LeadImportDelete from './pages/LeadImportDelete';
 import UsersManagement from './pages/UsersManagement';
 import WorkflowsList from './pages/WorkflowsList';
 import ReportsList from './pages/ReportsList';
@@ -221,6 +222,14 @@ export default function App() {
           element={
             <ProtectedRoute menuKey="lead_transfer">
               <LeadTransfer />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/lead-import-delete"
+          element={
+            <ProtectedRoute menuKey="lead_import_delete">
+              <LeadImportDelete />
             </ProtectedRoute>
           }
         />

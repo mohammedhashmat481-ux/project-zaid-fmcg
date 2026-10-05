@@ -135,6 +135,14 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
     description: 'Reassign leads and bulk transfers across telecallers and sales managers.'
   },
   {
+    key: 'lead_import_delete',
+    label: 'Lead Import & Delete',
+    category: 'Administration',
+    path: '/lead-import-delete',
+    icon: 'FileSpreadsheet',
+    description: 'Bulk import leads from Excel/CSV and safely delete lead batches with filters.'
+  },
+  {
     key: 'users_management',
     label: 'Users Management',
     category: 'Administration',
