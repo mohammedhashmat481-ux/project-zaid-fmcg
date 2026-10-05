@@ -1,9 +1,8 @@
-import mongoose from 'mongoose';
-
 declare global {
   namespace Express {
     interface Request {
-      organizationId?: mongoose.Types.ObjectId;
+      organizationId?: any;
+      permissionScope?: string;
       user?: {
         id: string;
         email: string;
@@ -13,3 +12,5 @@ declare global {
     }
   }
 }
+
+export {};

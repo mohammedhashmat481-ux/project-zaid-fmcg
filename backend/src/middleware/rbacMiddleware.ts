@@ -44,7 +44,7 @@ export const checkPermission = (
 
       // Find module permission configuration using singular/plural helper
       const modulePerm = role.permissions.modules.find(
-        (p) => matchModuleName(p.moduleName, moduleName)
+        (p: any) => matchModuleName(p.moduleName, moduleName)
       );
 
       if (!modulePerm) {

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
 export interface IModulePermission {
   moduleName: string;
@@ -14,52 +14,34 @@ export interface IFieldPermission {
   access: 'read' | 'write' | 'none';
 }
 
-export interface IRole extends Document {
-  organizationId: mongoose.Types.ObjectId;
+export interface IRole {
+  _id?: string;
+  id?: string;
+  organizationId: any;
   name: string;
   description?: string;
-  isSystem: boolean; // default system roles like Admin, Manager, Employee
-  permissions: {
+  isSystem?: boolean;
+  permissions?: {
     modules: IModulePermission[];
     fields: IFieldPermission[];
-    menus: string[]; // Allowed navigation menu identifiers
+    menus: string[];
   };
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const RoleSchema = new Schema<IRole>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    name: { type: String, required: true, trim: true },
-    description: { type: String },
-    isSystem: { type: Boolean, default: false },
-    isActive: { type: Boolean, default: true },
-    permissions: {
-      modules: [
-        {
-          moduleName: { type: String, required: true },
-          create: { type: Boolean, default: false },
-          read: { type: String, enum: ['all', 'own', 'none'], default: 'none' },
-          update: { type: String, enum: ['all', 'own', 'none'], default: 'none' },
-          delete: { type: String, enum: ['all', 'own', 'none'], default: 'none' }
-        }
-      ],
-      fields: [
-        {
-          moduleName: { type: String, required: true },
-          fieldName: { type: String, required: true },
-          access: { type: String, enum: ['read', 'write', 'none'], default: 'read' }
-        }
-      ],
-      menus: [{ type: String }]
-    }
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'description', jsField: 'description' },
+  { dbColumn: 'is_system', jsField: 'isSystem' },
+  { dbColumn: 'permissions', jsField: 'permissions', isJson: true },
+  { dbColumn: 'is_active', jsField: 'isActive' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes for tenant queries
-RoleSchema.index({ organizationId: 1, name: 1 }, { unique: true });
-
-export default mongoose.model<IRole>('Role', RoleSchema);
+const RoleModel = createPgModel('roles', mappings);
+export default RoleModel;

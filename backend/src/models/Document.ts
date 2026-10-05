@@ -1,33 +1,33 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
-export interface IDocument extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  name: string; // Original filename
-  filePath: string; // URL or file path (local or S3 URL)
+export interface IDocument {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  name: string;
+  filePath: string;
   mimeType: string;
-  size: number; // in bytes
-  version: number;
-  uploadedBy: mongoose.Types.ObjectId;
-  recordId?: mongoose.Types.ObjectId; // Associated CustomRecord ID (optional)
-  createdAt: Date;
-  updatedAt: Date;
+  size: number;
+  version?: number;
+  uploadedBy: any;
+  recordId?: any;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const DocumentSchema = new Schema<IDocument>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    name: { type: String, required: true, trim: true },
-    filePath: { type: String, required: true },
-    mimeType: { type: String, required: true },
-    size: { type: Number, required: true },
-    version: { type: Number, default: 1 },
-    uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    recordId: { type: Schema.Types.ObjectId, ref: 'CustomRecord' }
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'file_path', jsField: 'filePath' },
+  { dbColumn: 'mime_type', jsField: 'mimeType' },
+  { dbColumn: 'size', jsField: 'size' },
+  { dbColumn: 'version', jsField: 'version' },
+  { dbColumn: 'uploaded_by', jsField: 'uploadedBy' },
+  { dbColumn: 'record_id', jsField: 'recordId' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes
-DocumentSchema.index({ organizationId: 1, recordId: 1 });
-
-export default mongoose.model<IDocument>('Document', DocumentSchema);
+const DocumentModel = createPgModel('documents', mappings);
+export default DocumentModel;

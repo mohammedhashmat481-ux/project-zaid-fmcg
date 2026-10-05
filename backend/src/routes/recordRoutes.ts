@@ -52,7 +52,7 @@ const authorizeModuleAction = async (
     }
 
     const permission = role.permissions.modules.find(
-      (m) => matchModuleName(m.moduleName, moduleName)
+      (m: any) => matchModuleName(m.moduleName, moduleName)
     );
 
     if (!permission) return { allowed: false, scope: 'none' as any };
@@ -151,14 +151,14 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
     ]);
 
     const statsMap: Record<string, number> = {};
-    stats.forEach(item => {
+    stats.forEach((item: any) => {
       if (item._id) {
         statsMap[item._id.toString()] = item.count;
       }
     });
 
     const dialedMap: Record<string, number> = {};
-    dialedStats.forEach(item => {
+    dialedStats.forEach((item: any) => {
       if (item._id) {
         dialedMap[item._id.toString()] = item.count;
       }
@@ -855,13 +855,13 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
           { userCode: searchRegex }
         ]
       }).select('_id');
-      const matchedUserIds = matchedUsers.map((u) => u._id);
+      const matchedUserIds = matchedUsers.map((u: any) => u._id);
 
       const searchConditions: any[] = [
         // Match module dynamic fields
         ...moduleDef.fields
-          .filter((f) => ['text', 'email', 'phone', 'rich-text', 'url', 'select', 'number'].includes(f.type))
-          .map((f) => ({ [`data.${f.name}`]: searchRegex })),
+          .filter((f: any) => ['text', 'email', 'phone', 'rich-text', 'url', 'select', 'number'].includes(f.type))
+          .map((f: any) => ({ [`data.${f.name}`]: searchRegex })),
         // Match standard lead name and number fields
         { 'data.name': searchRegex },
         { 'data.firstName': searchRegex },
@@ -930,7 +930,7 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
 
     // Resolve any User ObjectIds/hashes in data.assignedTo, data.assignedBy, data.psm to real names
     const userIdsToFetch = new Set<string>();
-    records.forEach(r => {
+    records.forEach((r: any) => {
       if (r.data?.assignedTo && /^[0-9a-fA-F]{24}$/.test(String(r.data.assignedTo))) {
         userIdsToFetch.add(String(r.data.assignedTo));
       }
@@ -944,7 +944,7 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
 
     if (userIdsToFetch.size > 0) {
       const userDocs = await User.find({ _id: { $in: Array.from(userIdsToFetch) } }).select('firstName lastName name email');
-      const userMap = new Map(userDocs.map(u => [u._id.toString(), `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email]));
+      const userMap = new Map(userDocs.map((u: any) => [u._id.toString(), `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email]));
 
       records.forEach((r: any) => {
         if (r.data) {
@@ -1005,7 +1005,7 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Populate default values for missing fields
-    moduleDef.fields.forEach((field) => {
+    moduleDef.fields.forEach((field: any) => {
       if (field.defaultValue && (recordData[field.name] === undefined || recordData[field.name] === null || recordData[field.name] === '')) {
         recordData[field.name] = field.defaultValue;
       }
@@ -1034,7 +1034,7 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Evaluate Calculated / Formula fields
-    moduleDef.fields.forEach((field) => {
+    moduleDef.fields.forEach((field: any) => {
       if (field.type === 'formula' && field.formulaExpression) {
         const computed = FormulaEvaluator.evaluate(field.formulaExpression, recordData);
         if (computed !== null) {
@@ -1140,7 +1140,7 @@ router.get('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
         .filter(id => id && /^[0-9a-fA-F]{24}$/.test(String(id)));
       if (ids.length > 0) {
         const users = await User.find({ _id: { $in: ids } }).select('firstName lastName name email');
-        const userMap = new Map(users.map(u => [u._id.toString(), `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email]));
+        const userMap = new Map(users.map((u: any) => [u._id.toString(), `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email]));
         if (record.data.assignedTo && userMap.has(String(record.data.assignedTo))) {
           record.data.assignedToName = userMap.get(String(record.data.assignedTo));
           record.data.assignedTo = userMap.get(String(record.data.assignedTo));
@@ -1241,7 +1241,7 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     });
 
     // Evaluate Calculated / Formula fields based on updated data values
-    moduleDef.fields.forEach((field) => {
+    moduleDef.fields.forEach((field: any) => {
       if (field.type === 'formula' && field.formulaExpression) {
         const computed = FormulaEvaluator.evaluate(field.formulaExpression, {
           ...oldValues,

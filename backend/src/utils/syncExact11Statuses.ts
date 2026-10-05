@@ -1,16 +1,11 @@
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import path from 'path';
+import { connectDB, disconnectDB } from '../config/db';
 import Status from '../models/Status';
 import Organization from '../models/Organization';
 import CustomRecord from '../models/CustomRecord';
 import ModuleDefinition from '../models/ModuleDefinition';
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/inkcrm';
-
 async function main() {
-  await mongoose.connect(MONGODB_URI);
+  await connectDB();
   const org = await Organization.findOne();
   if (!org) return;
 
@@ -74,8 +69,7 @@ async function main() {
       const currentSt = lead.data?.status;
       if (currentSt && statusMapping[currentSt]) {
         lead.data.status = statusMapping[currentSt];
-        lead.markModified('data');
-        await lead.save();
+        await CustomRecord.updateOne({ _id: lead._id }, { data: lead.data });
       }
     }
   }
@@ -91,8 +85,8 @@ async function main() {
 
   const finalStatuses = await Status.find({ organizationId: org._id }).sort({ order: 1 });
   console.log('Final Statuses Count in DB:', finalStatuses.length);
-  console.log(finalStatuses.map(s => `${s.order}. ${s.name} (${s.color})`));
+  console.log(finalStatuses.map((s: any) => `${s.order}. ${s.name} (${s.color})`));
 
-  await mongoose.disconnect();
+  await disconnectDB();
 }
 main().catch(console.error);

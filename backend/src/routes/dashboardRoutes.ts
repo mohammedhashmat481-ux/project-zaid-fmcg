@@ -117,7 +117,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
         { $group: { _id: '$data.status', count: { $sum: 1 } } }
       ]);
       
-      leadAgg.forEach(item => {
+      leadAgg.forEach((item: any) => {
         if (item._id) {
           const rawName = item._id.toString().trim();
           statusCounts[rawName.toUpperCase()] = item.count;
@@ -196,7 +196,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
           { $group: { _id: '$data.stage', total: { $sum: { $toDouble: '$data.amount' } } } }
         ]);
 
-        dealAgg.forEach(item => {
+        dealAgg.forEach((item: any) => {
           if (item._id && pipelineData[item._id] !== undefined) {
             pipelineData[item._id] = item.total;
           }

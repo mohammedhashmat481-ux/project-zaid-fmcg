@@ -1,18 +1,12 @@
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import path from 'path';
+import { connectDB, disconnectDB } from '../config/db';
 import Status from '../models/Status';
 import ModuleDefinition from '../models/ModuleDefinition';
 import CustomRecord from '../models/CustomRecord';
 import User from '../models/User';
 import Organization from '../models/Organization';
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/inkcrm';
-
 async function main() {
-  await mongoose.connect(MONGODB_URI);
-  console.log('Connected to MongoDB');
+  await connectDB();
 
   const org = await Organization.findOne();
   if (!org) {
@@ -35,12 +29,12 @@ async function main() {
   }
 
   const statuses = await Status.find({ organizationId: org._id });
-  console.log('Found statuses:', statuses.map(s => s.name));
+  console.log('Found statuses:', statuses.map((s: any) => s.name));
 
   const existingRecords = await CustomRecord.find({ moduleId: leadsModule._id, organizationId: org._id });
   console.log('Existing records count:', existingRecords.length);
   const statusCounts: Record<string, number> = {};
-  existingRecords.forEach(r => {
+  existingRecords.forEach((r: any) => {
     const st = r.data?.status || 'Unknown';
     statusCounts[st] = (statusCounts[st] || 0) + 1;
   });
@@ -48,7 +42,7 @@ async function main() {
 
   // For any status with 0 leads, let's create 1-2 realistic leads
   for (const st of statuses) {
-    const currentCount = existingRecords.filter(r => (r.data?.status || '').toString().trim().toLowerCase() === st.name.trim().toLowerCase()).length;
+    const currentCount = existingRecords.filter((r: any) => (r.data?.status || '').toString().trim().toLowerCase() === st.name.trim().toLowerCase()).length;
     if (currentCount === 0) {
       console.log(`Creating sample lead for status: "${st.name}"...`);
       const sampleNames = [
@@ -61,7 +55,7 @@ async function main() {
       ];
       const randomSample = sampleNames[Math.floor(Math.random() * sampleNames.length)];
       
-      const newLead = new CustomRecord({
+      await CustomRecord.create({
         organizationId: org._id,
         moduleId: leadsModule._id,
         createdBy: adminUser._id,
@@ -87,13 +81,12 @@ async function main() {
           followupDate: new Date(Date.now() + 86400000).toISOString().split('T')[0]
         }
       });
-      await newLead.save();
       console.log(`Created lead for ${st.name}`);
     }
   }
 
   console.log('All statuses now have at least 1 lead!');
-  await mongoose.disconnect();
+  await disconnectDB();
 }
 
 main().catch(err => {

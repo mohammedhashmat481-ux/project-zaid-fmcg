@@ -1,9 +1,11 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
-export interface IActivity extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  recordId: mongoose.Types.ObjectId; // ID of the CustomRecord
-  userId: mongoose.Types.ObjectId; // Action author
+export interface IActivity {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  recordId: any;
+  userId: any;
   type: 'create' | 'edit' | 'delete' | 'comment' | 'mention' | 'attachment' | 'status_change' | 'assignment';
   details: {
     fieldName?: string;
@@ -11,34 +13,20 @@ export interface IActivity extends Document {
     newValue?: any;
     commentText?: string;
     attachmentUrl?: string;
-    assignedToId?: mongoose.Types.ObjectId; // User ID if assigned
+    assignedToId?: any;
   };
-  createdAt: Date;
+  createdAt?: Date;
 }
 
-const ActivitySchema = new Schema<IActivity>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    recordId: { type: Schema.Types.ObjectId, ref: 'CustomRecord', required: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    type: {
-      type: String,
-      enum: ['create', 'edit', 'delete', 'comment', 'mention', 'attachment', 'status_change', 'assignment'],
-      required: true
-    },
-    details: {
-      fieldName: { type: String },
-      oldValue: { type: Schema.Types.Mixed },
-      newValue: { type: Schema.Types.Mixed },
-      commentText: { type: String },
-      attachmentUrl: { type: String },
-      assignedToId: { type: Schema.Types.ObjectId, ref: 'User' }
-    }
-  },
-  { timestamps: { createdAt: true, updatedAt: false } } // Only need creation time
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'record_id', jsField: 'recordId' },
+  { dbColumn: 'user_id', jsField: 'userId' },
+  { dbColumn: 'type', jsField: 'type' },
+  { dbColumn: 'details', jsField: 'details', isJson: true },
+  { dbColumn: 'created_at', jsField: 'createdAt' }
+];
 
-// Indexes
-ActivitySchema.index({ organizationId: 1, recordId: 1, createdAt: -1 });
-
-export default mongoose.model<IActivity>('Activity', ActivitySchema);
+const ActivityModel = createPgModel('activities', mappings);
+export default ActivityModel;

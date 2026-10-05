@@ -1,31 +1,31 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
-export interface INotification extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId; // Recipient
+export interface INotification {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  userId: any;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  isRead: boolean;
-  link?: string; // Optional URL path to redirect when clicked
-  createdAt: Date;
-  updatedAt: Date;
+  type?: 'info' | 'success' | 'warning' | 'error';
+  isRead?: boolean;
+  link?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const NotificationSchema = new Schema<INotification>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    title: { type: String, required: true, trim: true },
-    message: { type: String, required: true, trim: true },
-    type: { type: String, enum: ['info', 'success', 'warning', 'error'], default: 'info' },
-    isRead: { type: Boolean, default: false },
-    link: { type: String }
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'user_id', jsField: 'userId' },
+  { dbColumn: 'title', jsField: 'title' },
+  { dbColumn: 'message', jsField: 'message' },
+  { dbColumn: 'type', jsField: 'type' },
+  { dbColumn: 'is_read', jsField: 'isRead' },
+  { dbColumn: 'link', jsField: 'link' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes
-NotificationSchema.index({ organizationId: 1, userId: 1, isRead: 1 });
-
-export default mongoose.model<INotification>('Notification', NotificationSchema);
+const NotificationModel = createPgModel('notifications', mappings);
+export default NotificationModel;

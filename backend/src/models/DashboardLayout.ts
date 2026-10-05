@@ -1,49 +1,38 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
 export interface IDashboardWidget {
   id: string;
-  type: string; // e.g. "leads_kpi", "revenue_chart", "funnel", "recent_activities", "tasks"
+  type: string;
   title: string;
-  x: number; // grid layout coordinates
+  x: number;
   y: number;
   w: number;
   h: number;
   config: Record<string, any>;
 }
 
-export interface IDashboardLayout extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  userId?: mongoose.Types.ObjectId; // If null, this is the tenant's global default dashboard
+export interface IDashboardLayout {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  userId?: any;
   name: string;
-  isDefault: boolean;
-  widgets: IDashboardWidget[];
-  createdAt: Date;
-  updatedAt: Date;
+  isDefault?: boolean;
+  widgets?: IDashboardWidget[];
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const DashboardLayoutSchema = new Schema<IDashboardLayout>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User' },
-    name: { type: String, required: true, default: 'My Dashboard' },
-    isDefault: { type: Boolean, default: false },
-    widgets: [
-      {
-        id: { type: String, required: true },
-        type: { type: String, required: true },
-        title: { type: String, required: true },
-        x: { type: Number, required: true },
-        y: { type: Number, required: true },
-        w: { type: Number, required: true },
-        h: { type: Number, required: true },
-        config: { type: Schema.Types.Map, of: Schema.Types.Mixed, default: {} }
-      }
-    ]
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'user_id', jsField: 'userId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'is_default', jsField: 'isDefault' },
+  { dbColumn: 'widgets', jsField: 'widgets', isJson: true },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes
-DashboardLayoutSchema.index({ organizationId: 1, userId: 1 });
-
-export default mongoose.model<IDashboardLayout>('DashboardLayout', DashboardLayoutSchema);
+const DashboardLayoutModel = createPgModel('dashboard_layouts', mappings);
+export default DashboardLayoutModel;

@@ -46,3 +46,4 @@ uploads/
 
 # Local MongoDB data
 mongodb-data/
+pg-data/

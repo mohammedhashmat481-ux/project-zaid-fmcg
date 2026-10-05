@@ -1,29 +1,27 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
-export interface ICustomRecord extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  moduleId: mongoose.Types.ObjectId;
-  data: Record<string, any>; // Stores the dynamic fields key-value pairs
-  createdBy: mongoose.Types.ObjectId;
-  updatedBy: mongoose.Types.ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
+export interface ICustomRecord {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  moduleId: any;
+  data: Record<string, any>;
+  createdBy: any;
+  updatedBy: any;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const CustomRecordSchema = new Schema<ICustomRecord>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    moduleId: { type: Schema.Types.ObjectId, ref: 'ModuleDefinition', required: true },
-    data: { type: Schema.Types.Map, of: Schema.Types.Mixed, default: {} },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    updatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
-  },
-  { timestamps: true, strict: false } // strict: false allows saving unstructured sub-fields directly
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'module_id', jsField: 'moduleId' },
+  { dbColumn: 'data', jsField: 'data', isJson: true },
+  { dbColumn: 'created_by', jsField: 'createdBy' },
+  { dbColumn: 'updated_by', jsField: 'updatedBy' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes for fast querying & multi-tenant isolation
-CustomRecordSchema.index({ organizationId: 1, moduleId: 1 });
-CustomRecordSchema.index({ 'data.email': 1 }); // Useful for indexing general identifiers
-CustomRecordSchema.index({ createdAt: -1 });
-
-export default mongoose.model<ICustomRecord>('CustomRecord', CustomRecordSchema);
+const CustomRecordModel = createPgModel('custom_records', mappings);
+export default CustomRecordModel;

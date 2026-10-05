@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
 export interface IWorkflowCondition {
   field: string;
@@ -12,58 +12,35 @@ export interface IWorkflowAction {
   delayMinutes?: number;
 }
 
-export interface IWorkflow extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  moduleId: mongoose.Types.ObjectId;
+export interface IWorkflow {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  moduleId: any;
   name: string;
   trigger: {
     event: 'create' | 'update' | 'delete';
-    fieldTrigger?: string; // e.g., run workflow only if "status" changes
+    fieldTrigger?: string;
   };
   conditions: IWorkflowCondition[];
   actions: IWorkflowAction[];
-  isEnabled: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  isEnabled?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const WorkflowSchema = new Schema<IWorkflow>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    moduleId: { type: Schema.Types.ObjectId, ref: 'ModuleDefinition', required: true },
-    name: { type: String, required: true, trim: true },
-    trigger: {
-      event: { type: String, enum: ['create', 'update', 'delete'], required: true },
-      fieldTrigger: { type: String }
-    },
-    conditions: [
-      {
-        field: { type: String, required: true },
-        operator: {
-          type: String,
-          enum: ['equals', 'not_equals', 'greater_than', 'less_than', 'contains'],
-          required: true
-        },
-        value: { type: String, required: true }
-      }
-    ],
-    actions: [
-      {
-        type: {
-          type: String,
-          enum: ['assign_user', 'send_email', 'create_task', 'webhook', 'notification'],
-          required: true
-        },
-        params: { type: Schema.Types.Map, of: Schema.Types.Mixed, default: {} },
-        delayMinutes: { type: Number, default: 0 }
-      }
-    ],
-    isEnabled: { type: Boolean, default: true }
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'module_id', jsField: 'moduleId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'trigger', jsField: 'trigger', isJson: true },
+  { dbColumn: 'conditions', jsField: 'conditions', isJson: true },
+  { dbColumn: 'actions', jsField: 'actions', isJson: true },
+  { dbColumn: 'is_enabled', jsField: 'isEnabled' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-// Indexes
-WorkflowSchema.index({ organizationId: 1, moduleId: 1, isEnabled: 1 });
-
-export default mongoose.model<IWorkflow>('Workflow', WorkflowSchema);
+const WorkflowModel = createPgModel('workflows', mappings);
+export default WorkflowModel;

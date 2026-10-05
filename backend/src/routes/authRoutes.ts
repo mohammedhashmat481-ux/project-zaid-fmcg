@@ -663,7 +663,7 @@ router.delete('/sessions/:deviceId', authenticate, async (req: Request, res: Res
       return;
     }
 
-    user.activeDevices = user.activeDevices.filter((d) => d.deviceId !== req.params.deviceId);
+    user.activeDevices = (user.activeDevices || []).filter((d: any) => d.deviceId !== req.params.deviceId);
     await user.save();
 
     res.status(200).json({ message: 'Session device successfully revoked.' });
@@ -680,7 +680,7 @@ router.post('/logout', authenticate, async (req: Request, res: Response): Promis
 
     if (user && token) {
       // Remove token from refresh token collection
-      user.refreshTokens = user.refreshTokens.filter((t) => t !== token);
+      user.refreshTokens = (user.refreshTokens || []).filter((t: any) => t !== token);
       await user.save();
     }
 

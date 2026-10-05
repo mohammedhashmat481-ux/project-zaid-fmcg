@@ -1,35 +1,35 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
-export interface IStatus extends Document {
-  organizationId: mongoose.Types.ObjectId;
+export interface IStatus {
+  _id?: string;
+  id?: string;
+  organizationId: any;
   name: string;
-  color: string; // hex or CSS color representation
-  icon: string; // Lucide icon string name
-  pipelinePosition: number; // 0 if not on pipeline, >0 for step order
-  dashboardVisibility: boolean;
-  isFinal: boolean; // Is it a closed state (Won/Lost)?
-  isSuccess: boolean; // If isFinal, did we win?
-  order: number; // Order in status settings list
-  createdAt: Date;
-  updatedAt: Date;
+  color: string;
+  icon: string;
+  pipelinePosition?: number;
+  dashboardVisibility?: boolean;
+  isFinal?: boolean;
+  isSuccess?: boolean;
+  order?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const StatusSchema = new Schema<IStatus>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    name: { type: String, required: true, trim: true },
-    color: { type: String, required: true, default: '#4F46E5' },
-    icon: { type: String, required: true, default: 'Circle' },
-    pipelinePosition: { type: Number, default: 0 },
-    dashboardVisibility: { type: Boolean, default: true },
-    isFinal: { type: Boolean, default: false },
-    isSuccess: { type: Boolean, default: false },
-    order: { type: Number, default: 0 }
-  },
-  { timestamps: true }
-);
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'color', jsField: 'color' },
+  { dbColumn: 'icon', jsField: 'icon' },
+  { dbColumn: 'pipeline_position', jsField: 'pipelinePosition' },
+  { dbColumn: 'dashboard_visibility', jsField: 'dashboardVisibility' },
+  { dbColumn: 'is_final', jsField: 'isFinal' },
+  { dbColumn: 'is_success', jsField: 'isSuccess' },
+  { dbColumn: 'order_num', jsField: 'order' },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-StatusSchema.index({ organizationId: 1, name: 1 }, { unique: true });
-StatusSchema.index({ organizationId: 1, order: 1 });
-
-export default mongoose.model<IStatus>('Status', StatusSchema);
+const StatusModel = createPgModel('statuses', mappings);
+export default StatusModel;

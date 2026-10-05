@@ -1,32 +1,15 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import { createPgModel, FieldMapping } from './PgModel';
 
 export interface IFieldDefinition {
   name: string;
   label: string;
-  type:
-    | 'text'
-    | 'number'
-    | 'currency'
-    | 'email'
-    | 'phone'
-    | 'date'
-    | 'dropdown'
-    | 'multiselect'
-    | 'checkbox'
-    | 'switch'
-    | 'rating'
-    | 'file'
-    | 'image'
-    | 'formula'
-    | 'rich-text'
-    | 'signature'
-    | 'url';
+  type: string;
   required: boolean;
   unique: boolean;
   regexValidation?: string;
   defaultValue?: string;
-  formulaExpression?: string; // e.g. "{hourlyRate} * {hoursWorked}"
-  options?: string[]; // For select type fields
+  formulaExpression?: string;
+  options?: string[];
   conditionalVisibility?: {
     dependsOnField: string;
     conditionValue: string;
@@ -34,88 +17,43 @@ export interface IFieldDefinition {
 }
 
 export interface IRelationshipDefinition {
-  targetModule: string; // The singular or plural name of the target module
+  targetModule: string;
   type: 'one-to-many' | 'many-to-one' | 'many-to-many';
-  fieldName: string; // The field name that holds the association (e.g., "companyId")
+  fieldName: string;
 }
 
-export interface IModuleDefinition extends Document {
-  organizationId: mongoose.Types.ObjectId;
-  name: string; // Unique within organization, e.g. "Student"
+export interface IModuleDefinition {
+  _id?: string;
+  id?: string;
+  organizationId: any;
+  name: string;
   singularLabel: string;
   pluralLabel: string;
-  apiPath: string; // Path segment e.g., "students"
-  icon: string; // Lucide React icon name
+  apiPath: string;
+  icon: string;
   description?: string;
-  isSystem: boolean; // default system modules vs admin-built custom modules
+  isSystem: boolean;
   fields: IFieldDefinition[];
   relationships: IRelationshipDefinition[];
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const FieldDefinitionSchema = new Schema<IFieldDefinition>({
-  name: { type: String, required: true },
-  label: { type: String, required: true },
-  type: {
-    type: String,
-    enum: [
-      'text',
-      'number',
-      'currency',
-      'email',
-      'phone',
-      'date',
-      'dropdown',
-      'multiselect',
-      'checkbox',
-      'switch',
-      'rating',
-      'file',
-      'image',
-      'formula',
-      'rich-text',
-      'signature',
-      'url'
-    ],
-    required: true
-  },
-  required: { type: Boolean, default: false },
-  unique: { type: Boolean, default: false },
-  regexValidation: { type: String },
-  defaultValue: { type: String },
-  formulaExpression: { type: String },
-  options: [{ type: String }],
-  conditionalVisibility: {
-    dependsOnField: { type: String },
-    conditionValue: { type: String }
-  }
-});
+const mappings: FieldMapping[] = [
+  { dbColumn: 'id', jsField: 'id' },
+  { dbColumn: 'organization_id', jsField: 'organizationId' },
+  { dbColumn: 'name', jsField: 'name' },
+  { dbColumn: 'singular_label', jsField: 'singularLabel' },
+  { dbColumn: 'plural_label', jsField: 'pluralLabel' },
+  { dbColumn: 'api_path', jsField: 'apiPath' },
+  { dbColumn: 'icon', jsField: 'icon' },
+  { dbColumn: 'description', jsField: 'description' },
+  { dbColumn: 'is_system', jsField: 'isSystem' },
+  { dbColumn: 'fields', jsField: 'fields', isJson: true },
+  { dbColumn: 'relationships', jsField: 'relationships', isJson: true },
+  { dbColumn: 'created_at', jsField: 'createdAt' },
+  { dbColumn: 'updated_at', jsField: 'updatedAt' }
+];
 
-const RelationshipDefinitionSchema = new Schema<IRelationshipDefinition>({
-  targetModule: { type: String, required: true },
-  type: { type: String, enum: ['one-to-many', 'many-to-one', 'many-to-many'], required: true },
-  fieldName: { type: String, required: true }
-});
-
-const ModuleDefinitionSchema = new Schema<IModuleDefinition>(
-  {
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-    name: { type: String, required: true, trim: true },
-    singularLabel: { type: String, required: true },
-    pluralLabel: { type: String, required: true },
-    apiPath: { type: String, required: true, lowercase: true, trim: true },
-    icon: { type: String, default: 'FileText' },
-    description: { type: String },
-    isSystem: { type: Boolean, default: false },
-    fields: [FieldDefinitionSchema],
-    relationships: [RelationshipDefinitionSchema]
-  },
-  { timestamps: true }
-);
-
-// Indexes
-ModuleDefinitionSchema.index({ organizationId: 1, name: 1 }, { unique: true });
-ModuleDefinitionSchema.index({ organizationId: 1, apiPath: 1 }, { unique: true });
-
-export default mongoose.model<IModuleDefinition>('ModuleDefinition', ModuleDefinitionSchema);
+const ModuleDefinitionModel = createPgModel('module_definitions', mappings);
+export default ModuleDefinitionModel;

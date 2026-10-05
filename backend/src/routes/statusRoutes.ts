@@ -12,7 +12,7 @@ router.use(requireTenant);
 async function adjustStatusOrders(organizationId: any, statusIdToPlace: string | null, targetOrder: number, newStatusFields: any) {
   let statuses = await Status.find({ organizationId }).sort({ order: 1 });
   if (statusIdToPlace) {
-    statuses = statuses.filter(s => s._id.toString() !== statusIdToPlace.toString());
+    statuses = statuses.filter((s: any) => s._id.toString() !== statusIdToPlace.toString());
   }
   const insertIdx = Math.max(0, Math.min(targetOrder - 1, statuses.length));
   const resultList: any[] = [];

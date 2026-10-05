@@ -23,7 +23,7 @@ export class HierarchyService {
     const allUsers = await User.find({ organizationId: orgId }).select('_id reportingManager');
     
     const userMap = new Map<string, string[]>();
-    allUsers.forEach(u => {
+    allUsers.forEach((u: any) => {
       if (u.reportingManager) {
         const managerIdStr = u.reportingManager.toString();
         if (!userMap.has(managerIdStr)) {
@@ -83,7 +83,7 @@ export class HierarchyService {
       { 'data.assignedTo': { $in: allowedUserIds.map(id => id.toString()) } }
     ];
 
-    allowedUsers.forEach(u => {
+    allowedUsers.forEach((u: any) => {
       const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim();
       if (fullName) {
         const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
