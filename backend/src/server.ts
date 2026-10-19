@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // 1. Validate Production Environment Variables
-const requiredEnvVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'MONGODB_URI', 'ENCRYPTION_KEY'];
+const requiredEnvVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY'];
 const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
 
 if (missingEnvVars.length > 0) {
