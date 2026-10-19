@@ -21,7 +21,7 @@ export default function ModuleView() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
 
-  const { activeModule, setActiveModuleByPath } = useModuleStore();
+  const { activeModule, setActiveModuleByPath, modules, loadingModules } = useModuleStore();
   const { canAccessMenu } = useAuthStore();
   const { branding } = useThemeStore();
   const { showConfirm, showToast, showAlertModal } = useToastStore();
@@ -885,7 +885,7 @@ export default function ModuleView() {
         setFilterVal('');
       }
     }
-  }, [apiPath, urlStatus]);
+  }, [apiPath, urlStatus, modules.length]);
 
   // Query records
   const { data, isLoading, refetch } = useQuery({
@@ -903,7 +903,9 @@ export default function ModuleView() {
       return res.data;
     },
     enabled: !!apiPath,
-    refetchInterval: (query) => (query.state.error ? false : 5000)
+    staleTime: 30000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false
   });
 
   const campaignSummaryStats = useMemo(() => {
@@ -1206,7 +1208,22 @@ export default function ModuleView() {
     );
   };
 
-  if (!activeModule) return null;
+  if (!activeModule) {
+    if (loadingModules) {
+      return (
+        <div className="space-y-4 p-4 animate-pulse">
+          <div className="h-10 bg-slate-200/80 dark:bg-slate-800 rounded-xl w-48" />
+          <div className="h-96 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl" />
+        </div>
+      );
+    }
+    return (
+      <div className="py-16 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+        <Icons.FolderClosed className="w-10 h-10 mx-auto mb-2 text-slate-400" />
+        <p className="font-bold text-sm">Module not found</p>
+      </div>
+    );
+  }
 
   if (apiPath === 'campaignassignments') {
     return (

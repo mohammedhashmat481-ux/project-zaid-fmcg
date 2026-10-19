@@ -95,7 +95,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/records/leads', { params: { limit: 100 } });
       return res.data;
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000)
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false
   });
 
   const { data: dbStatuses } = useQuery({
@@ -104,7 +106,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/statuses');
       return res.data || [];
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000)
+    staleTime: 120000,
+    refetchInterval: (query) => (query.state.error ? false : 120000),
+    refetchOnWindowFocus: false
   });
 
   const { data: metricsData } = useQuery({
@@ -113,7 +117,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000)
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false
   });
 
   const queryClient = useQueryClient();
@@ -124,7 +130,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/notifications', { params: { limit: 20 } });
       return res.data;
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000),
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false,
     enabled: !!user
   });
 
@@ -134,7 +142,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/notifications/unread-count');
       return res.data;
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000),
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false,
     enabled: !!user
   });
 
@@ -256,7 +266,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Navigation Items Area */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-2 space-y-0.5 overscroll-contain">
             
             {/* Group 1: Quick Actions */}
             <SidebarGroup title="QUICK ACTIONS" isCollapsed={isCollapsed}>

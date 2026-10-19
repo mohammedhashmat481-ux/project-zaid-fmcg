@@ -44,12 +44,19 @@ app.use((req, res, next) => {
 
 // 4. CORS Setup
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',') 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
   : ['http://localhost:5173'];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('localhost:5173')) {
+    if (
+      !origin || 
+      process.env.NODE_ENV !== 'production' ||
+      allowedOrigins.includes(origin) || 
+      origin.includes('localhost') || 
+      origin.includes('127.0.0.1') ||
+      origin.includes('192.168.')
+    ) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

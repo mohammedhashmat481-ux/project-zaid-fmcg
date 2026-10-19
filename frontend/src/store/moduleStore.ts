@@ -57,7 +57,7 @@ interface ModuleState {
   loadingModules: boolean;
   activeModule: ModuleDefinition | null;
   fetchModules: () => Promise<ModuleDefinition[]>;
-  setActiveModuleByPath: (path: string) => void;
+  setActiveModuleByPath: (path: string) => Promise<void>;
   addModule: (module: ModuleDefinition) => void;
 }
 
@@ -79,8 +79,12 @@ export const useModuleStore = create<ModuleState>((set, get) => ({
     }
   },
 
-  setActiveModuleByPath: (path) => {
-    const active = get().modules.find(
+  setActiveModuleByPath: async (path) => {
+    let mods = get().modules;
+    if (!mods || mods.length === 0) {
+      mods = await get().fetchModules();
+    }
+    const active = (mods || []).find(
       (m) => m.apiPath.toLowerCase() === path.toLowerCase()
     );
     set({ activeModule: active || null });

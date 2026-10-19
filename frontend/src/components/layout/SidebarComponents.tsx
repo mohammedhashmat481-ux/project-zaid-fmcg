@@ -283,7 +283,7 @@ export const SidebarProfile = ({ isCollapsed = false }: { isCollapsed?: boolean 
 
   if (isCollapsed) {
     return (
-      <div className="p-2 border-t border-black/[0.08] dark:border-slate-800 flex justify-center bg-white dark:bg-slate-900 rounded-b-xl">
+      <div className="p-2 border-t border-black/[0.08] dark:border-slate-800 flex justify-center bg-white dark:bg-slate-900 rounded-b-xl flex-shrink-0">
         <button
           onClick={handleLogout}
           title="Logout"
@@ -296,7 +296,7 @@ export const SidebarProfile = ({ isCollapsed = false }: { isCollapsed?: boolean 
   }
 
   return (
-    <div className="p-2 border-t border-black/[0.08] dark:border-slate-800 bg-transparent rounded-b-xl mt-auto select-none">
+    <div className="p-2 border-t border-black/[0.08] dark:border-slate-800 bg-transparent rounded-b-xl mt-auto select-none flex-shrink-0">
       <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-black/[0.08] dark:border-slate-700 shadow-2xs flex items-center justify-between gap-2.5">
         {/* User Info */}
         <div className="flex items-center gap-2.5 min-w-0">

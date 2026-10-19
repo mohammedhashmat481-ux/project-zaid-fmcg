@@ -34,7 +34,8 @@ export default function Dashboard() {
     queryFn: async () => {
       const res = await api.get('/statuses').catch(() => ({ data: [] }));
       return Array.isArray(res.data) ? res.data : [];
-    }
+    },
+    staleTime: 120000
   });
 
   // Fetch campaigns for Campaign Status section
@@ -43,7 +44,8 @@ export default function Dashboard() {
     queryFn: async () => {
       const res = await api.get('/records/campaigns?limit=1000').catch(() => ({ data: { records: [] } }));
       return res.data?.records || res.data || [];
-    }
+    },
+    staleTime: 60000
   });
 
   // Cmd+K / Ctrl+K Keyboard Shortcut Listener
@@ -105,14 +107,16 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch live dashboard metrics from database with 5s polling intervals
+  // Fetch live dashboard metrics from database with 60s polling intervals and 60s cache
   const { data: metricsData, isLoading } = useQuery({
     queryKey: ['dashboard-metrics'],
     queryFn: async () => {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    refetchInterval: (query) => (query.state.error ? false : 5000)
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false
   });
 
   const { data: usersDropdown } = useQuery({

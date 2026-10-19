@@ -364,6 +364,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
+    user.refreshTokens = Array.isArray(user.refreshTokens) ? user.refreshTokens : [];
+    user.activeDevices = Array.isArray(user.activeDevices) ? user.activeDevices : [];
     user.refreshTokens.push(refreshToken);
     if (user.refreshTokens.length > 5) user.refreshTokens.shift();
     user.activeDevices.push({ deviceId, browser, os, ip, lastActive: new Date() });

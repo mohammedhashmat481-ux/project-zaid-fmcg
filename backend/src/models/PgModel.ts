@@ -324,10 +324,11 @@ function mapJsToDbCol(tableName: string, mappings: FieldMapping[], jsField: stri
   if (m) return m.dbColumn;
 
   if (tableName === 'custom_records') {
-    if (['organizationId', 'moduleId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'].includes(jsField)) {
-      return camelToSnake(jsField);
+    const cleanField = jsField.startsWith('data.') ? jsField.slice(5) : jsField;
+    if (['organizationId', 'moduleId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'].includes(cleanField)) {
+      return camelToSnake(cleanField);
     }
-    return `(data->>'${jsField}')`;
+    return `(data->>'${cleanField}')`;
   }
   return camelToSnake(jsField);
 }
@@ -382,6 +383,28 @@ function mapDbToJs(tableName: string, mappings: FieldMapping[], dbRow: any): any
     jsObj.id = String(dbRow.id);
   }
 
+  Object.defineProperty(jsObj, 'save', {
+    value: async function () {
+      const dbObj = mapJsToDbRow(tableName, mappings, this);
+      delete dbObj.id;
+      dbObj.updated_at = new Date().toISOString();
+      const setClauses: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+      Object.keys(dbObj).forEach((col) => {
+        setClauses.push(`${col} = $${paramIdx}`);
+        params.push(dbObj[col]);
+        paramIdx++;
+      });
+      params.push(this._id || this.id);
+      const sql = `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`;
+      await queryPg(sql, params);
+      return this;
+    },
+    enumerable: false,
+    writable: true
+  });
+
   Object.defineProperty(jsObj, 'toObject', {
     value: function () { return { ...this }; },
     enumerable: false,
@@ -401,28 +424,26 @@ function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
-function buildWhereClause(tableName: string, mappings: FieldMapping[], query: any): { whereClause: string; params: any[] } {
+function buildWhereClause(
+  tableName: string, 
+  mappings: FieldMapping[], 
+  query: any, 
+  params: any[] = []
+): { whereClause: string; params: any[] } {
   if (!query || Object.keys(query).length === 0) {
-    return { whereClause: '', params: [] };
+    return { whereClause: '', params };
   }
 
   const conditions: string[] = [];
-  const params: any[] = [];
-  let paramIdx = 1;
 
   const processCondition = (key: string, val: any) => {
     if (key === '$or' && Array.isArray(val)) {
       const orParts: string[] = [];
       val.forEach((subQ) => {
-        const subResult = buildWhereClause(tableName, mappings, subQ);
+        const subResult = buildWhereClause(tableName, mappings, subQ, params);
         if (subResult.whereClause) {
-          let subStr = subResult.whereClause.replace(/^WHERE\s+/, '');
-          subResult.params.forEach((p) => {
-            params.push(p);
-            subStr = subStr.replace(`$${paramIdx}`, `$${paramIdx}`);
-            paramIdx++;
-          });
-          orParts.push(`(${subStr})`);
+          const subStr = subResult.whereClause.replace(/^WHERE\s+/, '');
+          if (subStr) orParts.push(`(${subStr})`);
         }
       });
       if (orParts.length > 0) {
@@ -433,14 +454,10 @@ function buildWhereClause(tableName: string, mappings: FieldMapping[], query: an
 
     if (key === '$and' && Array.isArray(val)) {
       val.forEach((subQ) => {
-        const subResult = buildWhereClause(tableName, mappings, subQ);
+        const subResult = buildWhereClause(tableName, mappings, subQ, params);
         if (subResult.whereClause) {
-          let subStr = subResult.whereClause.replace(/^WHERE\s+/, '');
-          subResult.params.forEach((p) => {
-            params.push(p);
-            paramIdx++;
-          });
-          conditions.push(`(${subStr})`);
+          const subStr = subResult.whereClause.replace(/^WHERE\s+/, '');
+          if (subStr) conditions.push(`(${subStr})`);
         }
       });
       return;
@@ -455,7 +472,7 @@ function buildWhereClause(tableName: string, mappings: FieldMapping[], query: an
         } else {
           const inPlaceholders = val.$in.map((item: any) => {
             params.push(String(item._id || item));
-            return `$${paramIdx++}`;
+            return `$${params.length}`;
           }).join(', ');
           conditions.push(`${col} IN (${inPlaceholders})`);
         }
@@ -463,30 +480,30 @@ function buildWhereClause(tableName: string, mappings: FieldMapping[], query: an
         if (val.$nin.length > 0) {
           const ninPlaceholders = val.$nin.map((item: any) => {
             params.push(String(item._id || item));
-            return `$${paramIdx++}`;
+            return `$${params.length}`;
           }).join(', ');
           conditions.push(`${col} NOT IN (${ninPlaceholders})`);
         }
       } else if (val.$gte !== undefined || val.$lte !== undefined || val.$gt !== undefined || val.$lt !== undefined || val.$ne !== undefined) {
         if (val.$gte !== undefined) {
           params.push(val.$gte);
-          conditions.push(`${col} >= $${paramIdx++}`);
+          conditions.push(`${col} >= $${params.length}`);
         }
         if (val.$lte !== undefined) {
           params.push(val.$lte);
-          conditions.push(`${col} <= $${paramIdx++}`);
+          conditions.push(`${col} <= $${params.length}`);
         }
         if (val.$gt !== undefined) {
           params.push(val.$gt);
-          conditions.push(`${col} > $${paramIdx++}`);
+          conditions.push(`${col} > $${params.length}`);
         }
         if (val.$lt !== undefined) {
           params.push(val.$lt);
-          conditions.push(`${col} < $${paramIdx++}`);
+          conditions.push(`${col} < $${params.length}`);
         }
         if (val.$ne !== undefined) {
           params.push(val.$ne);
-          conditions.push(`${col} != $${paramIdx++}`);
+          conditions.push(`${col} != $${params.length}`);
         }
       } else if (val.$exists !== undefined) {
         if (val.$exists) {
@@ -494,14 +511,25 @@ function buildWhereClause(tableName: string, mappings: FieldMapping[], query: an
         } else {
           conditions.push(`${col} IS NULL`);
         }
+      } else if (val.$regex !== undefined) {
+        let pattern = typeof val.$regex === 'string' ? val.$regex : (val.$regex.source || String(val.$regex));
+        pattern = pattern.replace(/^\/\^?/, '^').replace(/\$?\/[a-z]*$/, '');
+        params.push(pattern);
+        conditions.push(`${col} ~* $${params.length}`);
       } else if (val instanceof RegExp) {
         params.push(val.source);
-        conditions.push(`${col} ~* $${paramIdx++}`);
+        conditions.push(`${col} ~* $${params.length}`);
       }
+    } else if (typeof val === 'string' && val.startsWith('/') && val.lastIndexOf('/') > 0) {
+      const lastSlash = val.lastIndexOf('/');
+      const rawPattern = val.substring(1, lastSlash);
+      const cleanPattern = rawPattern.replace(/^\^?\\s\*/, '').replace(/\\s\*\$?$/, '').trim();
+      params.push(cleanPattern || rawPattern);
+      conditions.push(`${col} ~* $${params.length}`);
     } else {
       const cleanVal = val && val._id ? String(val._id) : (val && val.toString ? val.toString() : val);
       params.push(cleanVal);
-      conditions.push(`${col} = $${paramIdx++}`);
+      conditions.push(`${col} = $${params.length}`);
     }
   };
 
