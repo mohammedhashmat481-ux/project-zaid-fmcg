@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import path from 'path';
-import mongoose from 'mongoose';
+import { queryPg } from './config/postgres';
 import { resolveTenant } from './middleware/tenantMiddleware';
 import { logger } from './utils/logger';
 
@@ -98,12 +98,19 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/ready', async (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  const isReady = dbState === 1; // 1 = connected
-  res.status(isReady ? 200 : 503).json({
-    status: isReady ? 'READY' : 'NOT_READY',
-    database: isReady ? 'connected' : 'disconnected'
-  });
+  try {
+    await queryPg('SELECT 1');
+    res.status(200).json({
+      status: 'READY',
+      database: 'connected'
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      status: 'NOT_READY',
+      database: 'disconnected',
+      error: err.message
+    });
+  }
 });
 
 app.get('/version', (req, res) => {

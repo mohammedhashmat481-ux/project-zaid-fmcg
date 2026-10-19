@@ -1,10 +1,10 @@
-import mongoose from 'mongoose';
 import Notification from '../models/Notification';
 import User from '../models/User';
+import { PgObjectId } from '../models/PgModel';
 
 interface CreateNotificationParams {
   organizationId: any;
-  recipient: string | mongoose.Types.ObjectId; // User ID, email, or Full Name
+  recipient: string | any; // User ID, email, or Full Name
   title: string;
   message: string;
   type?: 'info' | 'success' | 'warning' | 'error';
@@ -25,15 +25,15 @@ export const createNotification = async ({
   try {
     if (!recipient || !organizationId) return null;
 
-    let targetUserId: mongoose.Types.ObjectId | null = null;
+    let targetUserId: string | null = null;
 
-    if (mongoose.Types.ObjectId.isValid(String(recipient))) {
+    if (PgObjectId.isValid(String(recipient))) {
       const existingUser = await User.findOne({
-        _id: recipient,
+        _id: String(recipient),
         organizationId
       });
       if (existingUser) {
-        targetUserId = existingUser._id as mongoose.Types.ObjectId;
+        targetUserId = String(existingUser._id);
       }
     }
 
@@ -70,7 +70,7 @@ export const createNotification = async ({
       });
 
       if (user) {
-        targetUserId = user._id as mongoose.Types.ObjectId;
+        targetUserId = String(user._id);
       }
     }
 

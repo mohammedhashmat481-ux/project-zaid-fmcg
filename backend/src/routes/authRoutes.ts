@@ -704,12 +704,18 @@ router.get('/me', authenticate, async (req: Request, res: Response): Promise<voi
       return;
     }
     const org = await Organization.findById(user.organizationId);
+    let role = user.roleId;
+    if (role && typeof role === 'string') {
+      const fetchedRole = await Role.findById(role);
+      if (fetchedRole) role = fetchedRole;
+    }
     res.status(200).json({
       user,
-      role: user.roleId,
+      role: role || user.roleId,
       subdomain: org?.subdomain || 'sales'
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Failed to retrieve current user in /me:', error);
     res.status(500).json({ error: 'Failed to retrieve current user.' });
   }
 });

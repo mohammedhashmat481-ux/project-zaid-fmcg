@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import User from '../models/User';
 import Role from '../models/Role';
 import ModuleDefinition from '../models/ModuleDefinition';
@@ -17,9 +16,9 @@ export class HierarchyService {
   }
 
   public static async getSubordinateUserIds(
-    userId: string | mongoose.Types.ObjectId,
-    orgId: string | mongoose.Types.ObjectId
-  ): Promise<mongoose.Types.ObjectId[]> {
+    userId: string,
+    orgId: string
+  ): Promise<string[]> {
     const allUsers = await User.find({ organizationId: orgId }).select('_id reportingManager');
     
     const userMap = new Map<string, string[]>();
@@ -47,13 +46,13 @@ export class HierarchyService {
       });
     }
 
-    return descendants.map(id => new mongoose.Types.ObjectId(id));
+    return descendants;
   }
 
   public static async modifyRecordQuery(
     query: Record<string, any>,
     reqUser: { id: string; roleId: string },
-    orgId: string | mongoose.Types.ObjectId
+    orgId: string
   ): Promise<void> {
     // Skip hierarchy filtering for settings/metadata modules
     if (query.moduleId) {
@@ -74,7 +73,7 @@ export class HierarchyService {
     if (isSuper) return;
 
     const descendants = await this.getSubordinateUserIds(reqUser.id, orgId);
-    const allowedUserIds = [new mongoose.Types.ObjectId(reqUser.id), ...descendants];
+    const allowedUserIds = [String(reqUser.id), ...descendants];
 
     const allowedUsers = await User.find({ _id: { $in: allowedUserIds } }).select('_id firstName lastName email userCode');
 
@@ -118,13 +117,13 @@ export class HierarchyService {
   public static async modifyUserQuery(
     query: Record<string, any>,
     reqUser: { id: string; roleId: string },
-    orgId: string | mongoose.Types.ObjectId
+    orgId: string
   ): Promise<void> {
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
     const descendants = await this.getSubordinateUserIds(reqUser.id, orgId);
-    const allowedUserIds = [new mongoose.Types.ObjectId(reqUser.id), ...descendants];
+    const allowedUserIds = [String(reqUser.id), ...descendants];
 
     query._id = { $in: allowedUserIds };
   }
@@ -132,13 +131,13 @@ export class HierarchyService {
   public static async modifyAuditLogQuery(
     query: Record<string, any>,
     reqUser: { id: string; roleId: string },
-    orgId: string | mongoose.Types.ObjectId
+    orgId: string
   ): Promise<void> {
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
     const descendants = await this.getSubordinateUserIds(reqUser.id, orgId);
-    const allowedUserIds = [new mongoose.Types.ObjectId(reqUser.id), ...descendants];
+    const allowedUserIds = [String(reqUser.id), ...descendants];
 
     query.userId = { $in: allowedUserIds };
   }
@@ -146,13 +145,13 @@ export class HierarchyService {
   public static async modifyDocumentQuery(
     query: Record<string, any>,
     reqUser: { id: string; roleId: string },
-    orgId: string | mongoose.Types.ObjectId
+    orgId: string
   ): Promise<void> {
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
     const descendants = await this.getSubordinateUserIds(reqUser.id, orgId);
-    const allowedUserIds = [new mongoose.Types.ObjectId(reqUser.id), ...descendants];
+    const allowedUserIds = [String(reqUser.id), ...descendants];
 
     query.uploadedBy = { $in: allowedUserIds };
   }
@@ -160,7 +159,7 @@ export class HierarchyService {
   public static async checkRecordAccess(
     record: any,
     reqUser: { id: string; roleId: string },
-    orgId: string | mongoose.Types.ObjectId
+    orgId: string
   ): Promise<boolean> {
     // Skip hierarchy check for settings/metadata modules
     if (record.moduleId) {

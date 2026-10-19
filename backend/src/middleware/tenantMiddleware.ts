@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import Organization from '../models/Organization';
-import mongoose from 'mongoose';
+import { PgObjectId } from '../models/PgModel';
 
 export const resolveTenant = async (
   req: Request,
@@ -12,7 +12,7 @@ export const resolveTenant = async (
     let organization = null;
 
     // 1. Try to resolve by tenant ID header
-    if (tenantIdentifier && mongoose.Types.ObjectId.isValid(tenantIdentifier)) {
+    if (tenantIdentifier && PgObjectId.isValid(tenantIdentifier)) {
       organization = await Organization.findById(tenantIdentifier);
     }
 
@@ -28,7 +28,7 @@ export const resolveTenant = async (
     }
 
     // 3. Fallback: try checking a query param or request body
-    if (!organization && req.query.tenantId && typeof req.query.tenantId === 'string' && mongoose.Types.ObjectId.isValid(req.query.tenantId)) {
+    if (!organization && req.query.tenantId && typeof req.query.tenantId === 'string' && PgObjectId.isValid(req.query.tenantId)) {
       organization = await Organization.findById(req.query.tenantId);
     }
 
@@ -39,7 +39,7 @@ export const resolveTenant = async (
       return next();
     }
 
-    req.organizationId = organization._id as mongoose.Types.ObjectId;
+    req.organizationId = String(organization._id);
     next();
   } catch (error) {
     console.error('Error resolving tenant:', error);

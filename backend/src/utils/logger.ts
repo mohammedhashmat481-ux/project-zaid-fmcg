@@ -22,6 +22,10 @@ export const logger = {
     console.log(`[INFO] ${msg}`, meta ? JSON.stringify(meta) : '');
     writeLog('combined.log', 'INFO', msg, meta);
   },
+  warn: (msg: string, meta?: any) => {
+    console.warn(`[WARN] ${msg}`, meta ? JSON.stringify(meta) : '');
+    writeLog('combined.log', 'WARN', msg, meta);
+  },
   error: (msg: string, meta?: any) => {
     console.error(`[ERROR] ${msg}`, meta ? JSON.stringify(meta) : '');
     writeLog('combined.log', 'ERROR', msg, meta);

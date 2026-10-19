@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import mongoose from 'mongoose';
+import { PgObjectId } from '../models/PgModel';
 import ModuleDefinition from '../models/ModuleDefinition';
 import CustomRecord from '../models/CustomRecord';
 import { authenticate } from '../middleware/authMiddleware';
@@ -53,22 +53,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         { 'data.status': regex }
       ];
 
-      // If cleanQ is valid ObjectId, match exact _id
-      if (mongoose.Types.ObjectId.isValid(cleanQ)) {
-        matchConditions.push({ _id: new mongoose.Types.ObjectId(cleanQ) });
+      // If cleanQ is valid ID, match exact _id
+      if (PgObjectId.isValid(cleanQ)) {
+        matchConditions.push({ _id: cleanQ });
       }
 
-      // Match partial string or hex suffix of MongoDB _id (e.g. '9DDA2E' or '9dda2e')
-      if (cleanQ.length >= 3 && /^[0-9a-fA-F]+$/.test(cleanQ)) {
-        matchConditions.push({
-          $expr: {
-            $regexMatch: {
-              input: { $toString: '$_id' },
-              regex: cleanQ,
-              options: 'i'
-            }
-          }
-        });
+      // Match partial string or hex suffix of ID
+      if (cleanQ.length >= 3 && /^[0-9a-fA-F-]+$/.test(cleanQ)) {
+        matchConditions.push({ id: regex });
       }
 
       const records = await CustomRecord.find({

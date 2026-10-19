@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import mongoose from 'mongoose';
 import ModuleDefinition from '../models/ModuleDefinition';
 import CustomRecord from '../models/CustomRecord';
 import Role from '../models/Role';
@@ -313,7 +312,7 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
 
     await AuditLog.create({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: String(userId),
       action: 'lead.bulk_import',
       resource: 'Leads',
       resourceId: String(leadModule._id),
@@ -408,7 +407,7 @@ router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<v
 
     await AuditLog.create({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: String(userId),
       action: 'lead.bulk_delete',
       resource: 'Leads',
       resourceId: String(leadModule._id),
@@ -895,9 +894,9 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
         searchConditions.push({ updatedBy: { $in: matchedUserIds } });
       }
 
-      // If search query is a valid 24-character MongoDB ObjectId
+      // If search query is a valid 24-character ID
       if (/^[0-9a-fA-F]{24}$/.test(trimmedSearch)) {
-        searchConditions.push({ _id: new mongoose.Types.ObjectId(trimmedSearch) });
+        searchConditions.push({ _id: trimmedSearch });
       }
 
       if (searchConditions.length > 0) {
@@ -1043,7 +1042,7 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       }
     });
 
-    const creatorId = new mongoose.Types.ObjectId(req.user?.id);
+    const creatorId = String(req.user?.id);
     const newRecord = await CustomRecord.create({
       organizationId: req.organizationId,
       moduleId: moduleDef._id,
@@ -1254,7 +1253,7 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     });
 
     // Perform Update
-    const updaterId = new mongoose.Types.ObjectId(req.user?.id);
+    const updaterId = String(req.user?.id);
     record.data = {
       ...oldValues,
       ...updateData
@@ -1368,7 +1367,7 @@ router.delete('/:apiPath/:id', async (req: Request, res: Response): Promise<void
     // Audit logs
     await AuditLog.create({
       organizationId: req.organizationId,
-      userId: new mongoose.Types.ObjectId(req.user?.id),
+      userId: String(req.user?.id),
       action: 'record.delete',
       resource: moduleDef.name,
       resourceId: String(record._id),
@@ -1422,7 +1421,7 @@ router.post('/transfer/leads', async (req: Request, res: Response): Promise<void
     // Create Audit Log
     await AuditLog.create({
       organizationId: req.organizationId,
-      userId: new mongoose.Types.ObjectId(req.user?.id),
+      userId: String(req.user?.id),
       action: 'leads.transfer',
       resource: 'leads',
       details: {
@@ -1470,7 +1469,7 @@ router.get('/:apiPath/:id/activities', async (req: Request, res: Response): Prom
 
     const activities = await Activity.find({
       organizationId: req.organizationId,
-      recordId: new mongoose.Types.ObjectId(req.params.id)
+      recordId: req.params.id
     })
     .populate('userId', 'firstName lastName email')
     .sort({ createdAt: -1 });

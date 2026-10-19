@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import CustomRecord from '../models/CustomRecord';
 import { IReportDefinition } from '../models/ReportDefinition';
 import { HierarchyService } from '../utils/hierarchy';

@@ -1,16 +1,16 @@
-import mongoose from 'mongoose';
 import Workflow, { IWorkflow, IWorkflowCondition, IWorkflowAction } from '../models/Workflow';
 import CustomRecord from '../models/CustomRecord';
 import ModuleDefinition from '../models/ModuleDefinition';
 import Notification from '../models/Notification';
+import { PgObjectId } from '../models/PgModel';
 
 export class WorkflowEngine {
   /**
    * Triggers workflows for a specific module event.
    */
   public static async trigger(
-    organizationId: mongoose.Types.ObjectId,
-    moduleId: mongoose.Types.ObjectId,
+    organizationId: any,
+    moduleId: any,
     event: 'create' | 'update' | 'delete',
     record: any, // The record document/data
     changedFields: string[] = []
@@ -84,7 +84,7 @@ export class WorkflowEngine {
    * Executes a workflow action pipeline.
    */
   private static async executeActions(
-    organizationId: mongoose.Types.ObjectId,
+    organizationId: any,
     actions: IWorkflowAction[],
     record: any
   ): Promise<void> {
@@ -110,7 +110,7 @@ export class WorkflowEngine {
    * Runs an individual action.
    */
   private static async runAction(
-    organizationId: mongoose.Types.ObjectId,
+    organizationId: any,
     action: IWorkflowAction,
     record: any
   ): Promise<void> {
@@ -153,8 +153,8 @@ export class WorkflowEngine {
               dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
               relatedTo: record._id
             },
-            createdBy: record.createdBy || new mongoose.Types.ObjectId(), // fallbacks
-            updatedBy: record.createdBy || new mongoose.Types.ObjectId()
+            createdBy: record.createdBy || new PgObjectId().toString(), // fallbacks
+            updatedBy: record.createdBy || new PgObjectId().toString()
           });
           console.log('Task automatically created by workflow trigger.');
         } else {
@@ -165,10 +165,10 @@ export class WorkflowEngine {
 
       case 'assign_user': {
         const userId = params.userId;
-        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        if (userId && PgObjectId.isValid(userId)) {
           // Update the custom record's data map
           await CustomRecord.findByIdAndUpdate(record._id, {
-            $set: { 'data.assignedTo': new mongoose.Types.ObjectId(userId) }
+            $set: { 'data.assignedTo': String(userId) }
           });
           console.log(`Record ${record._id} assigned to user ${userId}.`);
         }

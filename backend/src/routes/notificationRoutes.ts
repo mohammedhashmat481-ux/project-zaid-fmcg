@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import Notification from '../models/Notification';
-import mongoose from 'mongoose';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 
@@ -24,7 +23,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const notifications = await Notification.find({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId)
+      userId: userId
     })
       .sort({ createdAt: -1 })
       .limit(limit);
@@ -49,7 +48,7 @@ router.get('/unread-count', async (req: Request, res: Response): Promise<void> =
 
     const unreadCount = await Notification.countDocuments({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: userId,
       isRead: false
     });
 
@@ -73,7 +72,7 @@ router.post('/test', async (req: Request, res: Response): Promise<void> => {
 
     const notification = await Notification.create({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: userId,
       title: title || 'New Lead Assignment & Alert',
       message: message || 'Welcome to Ink CRM Notification Center! Real-time alerts, campaign distributions, and status updates are operational.',
       type: type || 'info',
@@ -99,7 +98,7 @@ router.put('/:id/read', async (req: Request, res: Response): Promise<void> => {
       {
         _id: id,
         organizationId: orgId,
-        userId: new mongoose.Types.ObjectId(userId)
+        userId: userId
       },
       { isRead: true },
       { new: true }
@@ -125,7 +124,7 @@ router.put('/read-all', async (req: Request, res: Response): Promise<void> => {
     await Notification.updateMany(
       {
         organizationId: orgId,
-        userId: new mongoose.Types.ObjectId(userId),
+        userId: userId,
         isRead: false
       },
       { isRead: true }
@@ -145,7 +144,7 @@ router.delete('/clear-all', async (req: Request, res: Response): Promise<void> =
 
     await Notification.deleteMany({
       organizationId: orgId,
-      userId: new mongoose.Types.ObjectId(userId)
+      userId: userId
     });
 
     res.status(200).json({ message: 'Notifications cleared.' });

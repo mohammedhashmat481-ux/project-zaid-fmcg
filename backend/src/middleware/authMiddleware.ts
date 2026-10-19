@@ -47,8 +47,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
 
     // Automatically bind organizationId from user if not resolved yet
     if (!req.organizationId) {
-      const mongoose = require('mongoose');
-      req.organizationId = new mongoose.Types.ObjectId(decoded.organizationId);
+      req.organizationId = decoded.organizationId;
     }
 
     next();

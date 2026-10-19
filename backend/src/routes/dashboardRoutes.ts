@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import mongoose from 'mongoose';
 import DashboardLayout from '../models/DashboardLayout';
 import ModuleDefinition from '../models/ModuleDefinition';
 import CustomRecord from '../models/CustomRecord';
@@ -209,7 +208,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
       const isSuper = await HierarchyService.isSuperAdmin(req.user?.roleId);
       if (!isSuper) {
         const descendants = await HierarchyService.getSubordinateUserIds(req.user?.id as string, orgId!);
-        const allowedUserIds = [new mongoose.Types.ObjectId(req.user?.id), ...descendants];
+        const allowedUserIds = [String(req.user?.id), ...descendants];
         activityQuery.userId = { $in: allowedUserIds };
       }
 

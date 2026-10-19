@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { connectDB, disconnectDB } from '../config/db';
 import dotenv from 'dotenv';
 import path from 'path';
 import Organization from '../models/Organization';
@@ -8,13 +8,9 @@ import User from '../models/User';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/inkcrm';
-
 async function addFollowups() {
   try {
-    console.log('Connecting to database:', MONGODB_URI);
-    await mongoose.connect(MONGODB_URI);
-    console.log('Connected to MongoDB.');
+    await connectDB();
 
     // 1. Get organization for sales subdomain
     const org = await Organization.findOne({ subdomain: 'sales' });
@@ -102,8 +98,7 @@ async function addFollowups() {
   } catch (error) {
     console.error('Error adding followups:', error);
   } finally {
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB.');
+    await disconnectDB();
   }
 }
 

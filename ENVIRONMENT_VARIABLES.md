@@ -1,6 +1,6 @@
 # inkCRM Environment Variables Guide
 
-This document describes all environment configurations required for running **inkCRM** in development, staging, and production environments.
+This document describes all environment configurations required for running **inkCRM** in development, staging, and production environments using **PostgreSQL**.
 
 ---
 
@@ -11,12 +11,14 @@ This document describes all environment configurations required for running **in
 | `PORT` | No | `5000` | Port the backend server binds to. |
 | `NODE_ENV` | Yes | `development` | Set to `production` in live environments to hide stack traces and enable secure cookies. |
 | `ALLOWED_ORIGINS` | Yes | `http://localhost:5173` | Comma-separated list of allowed origins for CORS. Do **not** allow wildcard `*` in production. |
-| `MONGODB_URI` | Yes | `mongodb://127.0.0.1:27017/inkcrm` | Database connection string. Refuses server startup if missing in production. |
+| `DATABASE_URL` | No | Local embedded PGlite | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/inkcrm`). In production, points to your PostgreSQL database. In local dev, if omitted, automatically uses local embedded PGlite storage. |
+| `ADMIN_EMAIL` | Optional | `admin@crm.com` (in dev) | Email address for initial Super Admin provisioning. |
+| `ADMIN_PASSWORD` | Optional | `password` (in dev) | Password for initial Super Admin provisioning. If omitted in production, creation is safely skipped. |
 | `JWT_SECRET` | Yes | - | Secret key used to sign JWT Access Tokens. Must be a strong, cryptographically secure key in production. |
 | `JWT_REFRESH_SECRET`| Yes | - | Secret key used to sign JWT Refresh Tokens. Must be separate from `JWT_SECRET`. |
 | `JWT_EXPIRES_IN` | No | `15m` | Lifetime of an access token. Default is 15 minutes. |
 | `JWT_REFRESH_EXPIRES_IN`| No | `7d` | Lifetime of a refresh token. Default is 7 days. |
-| `ENCRYPTION_KEY` | Yes | - | Used for decrypting stored face recognition attributes and keys. Must be at least 16 characters. |
+| `ENCRYPTION_KEY` | Yes | - | Used for cryptographic operations. Must be at least 16 characters. |
 | `EMAIL_HOST` | No | - | SMTP Server host for outbound emails (e.g. `smtp.sendgrid.net`). |
 | `EMAIL_PORT` | No | - | SMTP Port (e.g. `587` or `465`). |
 | `EMAIL_USER` | No | - | SMTP Username. |
@@ -44,11 +46,12 @@ The frontend is built using Vite. All variables must be prefixed with `VITE_` to
 
 1. **Development (`.env.development`)**:
    - Set `NODE_ENV=development`
-   - Point `MONGODB_URI` to local instance `mongodb://127.0.0.1:27017/inkcrm`
+   - Point `DATABASE_URL` to local PostgreSQL instance or leave unset for embedded PGlite engine.
    - Allowed origins: `http://localhost:5173`
    
 2. **Production (`.env.production`)**:
    - Set `NODE_ENV=production`
-   - Point `MONGODB_URI` to your secure production MongoDB cluster (e.g. Atlas).
-   - Allowed origins: `https://crm.company.com` (your secure client subdomain).
+   - Point `DATABASE_URL` to your production PostgreSQL database.
+   - Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` to provision the initial Super Admin user safely.
+   - Allowed origins: `https://crm.company.com` (your secure client domain).
    - Expose a cryptographically strong `JWT_SECRET` and `ENCRYPTION_KEY`.

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { connectDB, disconnectDB } from '../config/db';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -18,14 +18,11 @@ import Activity from '../models/Activity';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/inkcrm';
 const dumpDir = path.resolve(__dirname, '../../../database-dump');
 
 async function exportDb() {
   try {
-    console.log('Connecting to database:', MONGODB_URI);
-    await mongoose.connect(MONGODB_URI);
-    console.log('Connected to MongoDB.');
+    await connectDB();
 
     // Ensure output directory exists
     if (!fs.existsSync(dumpDir)) {
@@ -58,8 +55,7 @@ async function exportDb() {
   } catch (error) {
     console.error('Failed to export database:', error);
   } finally {
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB.');
+    await disconnectDB();
   }
 }
 

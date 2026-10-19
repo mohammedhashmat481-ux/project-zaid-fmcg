@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { MongoClient } = require('./backend/node_modules/mongodb');
+const { Pool } = require('./backend/node_modules/pg');
 
 console.log('=========================================================');
-console.log(' Running inkCRM Pre-deployment Validation Checks');
+console.log(' Running inkCRM Pre-deployment Validation Checks (PostgreSQL)');
 console.log('=========================================================');
 
 let validationFailed = false;
@@ -37,12 +37,12 @@ folders.forEach(f => {
 
 // 2. Verify backend/.env and Required Environment Variables
 const envPath = path.resolve(__dirname, 'backend/.env');
+let envVars = {};
 if (!fs.existsSync(envPath)) {
   logError('backend/.env file is missing!');
 } else {
   logSuccess('backend/.env file found.');
   const envContent = fs.readFileSync(envPath, 'utf-8');
-  const envVars = {};
   envContent.split('\n').forEach(line => {
     const trimmed = line.trim();
     if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
@@ -53,55 +53,50 @@ if (!fs.existsSync(envPath)) {
     }
   });
 
-  const requiredVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'MONGODB_URI', 'ENCRYPTION_KEY'];
+  const requiredVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY'];
   requiredVars.forEach(v => {
-    if (!envVars[v]) {
+    if (!envVars[v] && !process.env[v]) {
       logError(`Environment variable '${v}' is missing or empty in backend/.env`);
     } else {
       logSuccess(`Environment variable verified: ${v}`);
     }
   });
 
-  if (envVars['ENCRYPTION_KEY'] && envVars['ENCRYPTION_KEY'].length < 16) {
+  const encKey = envVars['ENCRYPTION_KEY'] || process.env.ENCRYPTION_KEY;
+  if (encKey && encKey.length < 16) {
     logError("ENCRYPTION_KEY must be at least 16 characters long.");
   }
 }
 
-// 3. Verify Database Connectivity
-let mongoUri = process.env.MONGODB_URI;
-if (!mongoUri && fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf-8');
-  envContent.split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-      const parts = trimmed.split('=');
-      const key = parts[0].trim();
-      if (key === 'MONGODB_URI') {
-        mongoUri = parts.slice(1).join('=').trim();
-      }
-    }
-  });
-}
-if (!mongoUri) {
-  mongoUri = 'mongodb://127.0.0.1:27017/inkcrm';
-}
+// 3. Verify Database Connectivity (PostgreSQL)
+const dbUrl = process.env.DATABASE_URL || envVars['DATABASE_URL'];
 
-if (!mongoUri) {
-  logError('MONGODB_URI is not set in process environment or backend/.env');
-} else {
-  console.log(`Connecting to MongoDB at: ${mongoUri.replace(/:([^@]+)@/, ':****@')} ...`);
-  
-  const client = new MongoClient(mongoUri, { serverSelectionTimeoutMS: 3000 });
-  client.connect()
-    .then(async () => {
-      logSuccess('Successfully connected to MongoDB database.');
-      await client.close();
+if (dbUrl && dbUrl.startsWith('postgres')) {
+  console.log(`Testing connection to PostgreSQL server...`);
+  const pool = new Pool({
+    connectionString: dbUrl,
+    connectionTimeoutMillis: 5000
+  });
+
+  pool.query('SELECT 1')
+    .then(() => {
+      logSuccess('Successfully connected to PostgreSQL database.');
+      pool.end();
       finalize();
     })
     .catch(err => {
-      logError(`Failed to connect to MongoDB: ${err.message}`);
+      logError(`Failed to connect to PostgreSQL: ${err.message}`);
+      pool.end();
       finalize();
     });
+} else {
+  // Local embedded PGlite engine mode
+  const pgDataDir = path.resolve(__dirname, 'pg-data');
+  if (!fs.existsSync(pgDataDir)) {
+    fs.mkdirSync(pgDataDir, { recursive: true });
+  }
+  logSuccess(`Using local PostgreSQL storage engine at: ${pgDataDir}`);
+  finalize();
 }
 
 function finalize() {
@@ -113,7 +108,7 @@ function finalize() {
     process.exit(1);
   } else {
     console.log('✅ ALL PRE-DEPLOYMENT CHECKS PASSED!');
-    console.log('inkCRM is fully ready for production.');
+    console.log('inkCRM is fully ready for PostgreSQL production.');
     console.log('=========================================================');
     process.exit(0);
   }

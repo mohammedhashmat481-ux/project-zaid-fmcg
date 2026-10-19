@@ -47,11 +47,16 @@ export class PgQueryChain {
   private sortObj: any = null;
   private skipVal: number = 0;
   private limitVal: number | null = null;
+  private isSingle: boolean = false;
 
-  constructor(tableName: string, mappings: FieldMapping[], queryObj: any = {}) {
+  constructor(tableName: string, mappings: FieldMapping[], queryObj: any = {}, isSingle: boolean = false) {
     this.tableName = tableName;
     this.mappings = mappings;
     this.queryObj = queryObj || {};
+    this.isSingle = isSingle;
+    if (isSingle) {
+      this.limitVal = 1;
+    }
   }
 
   sort(sortArg: any) {
@@ -73,7 +78,7 @@ export class PgQueryChain {
     return this;
   }
 
-  populate(arg?: any) {
+  populate(arg?: any, selectFields?: any) {
     return this;
   }
 
@@ -81,12 +86,13 @@ export class PgQueryChain {
     return this;
   }
 
-  async exec(): Promise<any[]> {
-    return this.executeFind();
+  async exec(): Promise<any> {
+    const res = await this.executeFind();
+    return this.isSingle ? (res.length > 0 ? res[0] : null) : res;
   }
 
-  then(onfulfilled?: (value: any[]) => any, onrejected?: (reason: any) => any) {
-    return this.executeFind().then(onfulfilled, onrejected);
+  then(onfulfilled?: (value: any) => any, onrejected?: (reason: any) => any) {
+    return this.exec().then(onfulfilled, onrejected);
   }
 
   private async executeFind(): Promise<any[]> {
@@ -158,18 +164,17 @@ export class PgModel {
   }
 
   find(query: any = {}) {
-    return new PgQueryChain(this.tableName, this.mappings, query);
+    return new PgQueryChain(this.tableName, this.mappings, query, false);
   }
 
-  async findOne(query: any = {}): Promise<any | null> {
-    const records = await new PgQueryChain(this.tableName, this.mappings, query).limit(1).exec();
-    return records.length > 0 ? records[0] : null;
+  findOne(query: any = {}) {
+    return new PgQueryChain(this.tableName, this.mappings, query, true);
   }
 
-  async findById(id: any): Promise<any | null> {
-    if (!id) return null;
+  findById(id: any) {
+    if (!id) return new PgQueryChain(this.tableName, this.mappings, { _id: '__none__' }, true);
     const cleanId = String(id._id || id).trim();
-    return this.findOne({ _id: cleanId });
+    return new PgQueryChain(this.tableName, this.mappings, { _id: cleanId }, true);
   }
 
   async create(data: any, options?: any): Promise<any> {
