@@ -6,6 +6,12 @@ import { seedDatabase } from '../utils/seeder';
 
 const router = Router();
 
+// Helper to strip accidental localhost / 127.0.0.1 hostnames from saved URLs
+const sanitizeFileUrl = (url?: string | null): string | undefined => {
+  if (!url || typeof url !== 'string') return undefined;
+  return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '');
+};
+
 // 1. Get branding settings (Public - called on application load)
 router.get('/branding', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -30,16 +36,16 @@ router.get('/branding', async (req: Request, res: Response): Promise<void> => {
       id: organization._id,
       name: organization.name,
       subdomain: organization.subdomain,
-      logoUrl: organization.logoUrl,
-      faviconUrl: organization.faviconUrl,
-      loginBgUrl: organization.loginBgUrl,
+      logoUrl: sanitizeFileUrl(organization.logoUrl),
+      faviconUrl: sanitizeFileUrl(organization.faviconUrl),
+      loginBgUrl: sanitizeFileUrl(organization.loginBgUrl),
       themeSettings: organization.themeSettings,
       enabledModules: organization.enabledModules,
       companyCode: organization.companyCode,
       registrationId: organization.registrationId,
       startDate: organization.startDate,
       endDate: organization.endDate,
-      companyDocUrl: organization.companyDocUrl,
+      companyDocUrl: sanitizeFileUrl(organization.companyDocUrl),
       phoneNumber: organization.phoneNumber,
       mobile: organization.mobile,
       email: organization.email,
@@ -77,15 +83,15 @@ router.put('/branding', authenticate, requireTenant, async (req: Request, res: R
     }
 
     if (name) organization.name = name;
-    if (logoUrl !== undefined) organization.logoUrl = logoUrl;
-    if (faviconUrl !== undefined) organization.faviconUrl = faviconUrl;
-    if (loginBgUrl !== undefined) organization.loginBgUrl = loginBgUrl;
+    if (logoUrl !== undefined) organization.logoUrl = sanitizeFileUrl(logoUrl);
+    if (faviconUrl !== undefined) organization.faviconUrl = sanitizeFileUrl(faviconUrl);
+    if (loginBgUrl !== undefined) organization.loginBgUrl = sanitizeFileUrl(loginBgUrl);
 
     if (companyCode !== undefined) organization.companyCode = companyCode;
     if (registrationId !== undefined) organization.registrationId = registrationId;
     if (startDate !== undefined) organization.startDate = startDate;
     if (endDate !== undefined) organization.endDate = endDate;
-    if (companyDocUrl !== undefined) organization.companyDocUrl = companyDocUrl;
+    if (companyDocUrl !== undefined) organization.companyDocUrl = sanitizeFileUrl(companyDocUrl);
     if (phoneNumber !== undefined) organization.phoneNumber = phoneNumber;
     if (mobile !== undefined) organization.mobile = mobile;
     if (email !== undefined) organization.email = email;
@@ -120,15 +126,15 @@ router.put('/branding', authenticate, requireTenant, async (req: Request, res: R
       branding: {
         id: organization._id,
         name: organization.name,
-        logoUrl: organization.logoUrl,
-        faviconUrl: organization.faviconUrl,
-        loginBgUrl: organization.loginBgUrl,
+        logoUrl: sanitizeFileUrl(organization.logoUrl),
+        faviconUrl: sanitizeFileUrl(organization.faviconUrl),
+        loginBgUrl: sanitizeFileUrl(organization.loginBgUrl),
         themeSettings: organization.themeSettings,
         companyCode: organization.companyCode,
         registrationId: organization.registrationId,
         startDate: organization.startDate,
         endDate: organization.endDate,
-        companyDocUrl: organization.companyDocUrl,
+        companyDocUrl: sanitizeFileUrl(organization.companyDocUrl),
         phoneNumber: organization.phoneNumber,
         mobile: organization.mobile,
         email: organization.email,

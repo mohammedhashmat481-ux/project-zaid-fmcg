@@ -1,7 +1,47 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || 'http://localhost:5000';
+const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // When accessed from a remote host without explicit VITE_API_URL, use same host with backend port 5000 or relative /api/v1
+    return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
+  }
+  return 'http://localhost:5000/api/v1';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+export const getFileBaseUrl = (): string => {
+  if (import.meta.env.VITE_FILE_BASE_URL) {
+    return import.meta.env.VITE_FILE_BASE_URL.replace(/\/+$/, '');
+  }
+  try {
+    const parsed = new URL(API_BASE_URL, typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
+    return parsed.origin;
+  } catch (e) {
+    return typeof window !== 'undefined' ? window.location.origin : '';
+  }
+};
+
+export const FILE_BASE_URL = getFileBaseUrl();
+
+export const resolveFileUrl = (url?: string | null): string => {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+  // Always strip accidental localhost:5000 or 127.0.0.1:5000 prefixes
+  const clean = url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '');
+
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+
+  const normalized = clean.startsWith('/') ? clean : `/${clean}`;
+  const base = getFileBaseUrl();
+  return base ? `${base}${normalized}` : normalized;
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -88,4 +128,4 @@ api.interceptors.response.use(
 );
 
 export default api;
-export { API_BASE_URL, FILE_BASE_URL };
+export { API_BASE_URL };

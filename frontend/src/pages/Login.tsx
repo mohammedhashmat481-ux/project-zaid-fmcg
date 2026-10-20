@@ -9,7 +9,7 @@ import loginLogo from '../assets/login-logo.png';
 import FaceVerificationModal from '../components/FaceVerificationModal';
 import FaceEnrollment from '../components/FaceEnrollment';
 import LocationVerificationStep from '../components/LocationVerificationStep';
-import api from '../services/api';
+import api, { resolveFileUrl } from '../services/api';
 import { useToastStore } from '../store/toastStore';
 
 // ─── User Code generator ─────────────────────────────────────────────────────
@@ -430,7 +430,14 @@ export default function Login() {
 
         {/* Logo */}
         <div className="flex items-center justify-center mb-8">
-          <img src={branding?.logoUrl || loginLogo} alt={branding?.name || "inkCRM"} className="h-16 md:h-20 w-auto max-w-[240px] object-contain" />
+          <img 
+            src={resolveFileUrl(branding?.logoUrl) || loginLogo} 
+            alt={branding?.name || "inkCRM"} 
+            className="h-16 md:h-20 w-auto max-w-[240px] object-contain" 
+            onError={(e) => {
+              e.currentTarget.src = loginLogo;
+            }}
+          />
         </div>
 
         {/* Alert banners */}

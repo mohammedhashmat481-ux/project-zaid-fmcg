@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
+import api, { resolveFileUrl } from '../services/api';
 import { useModuleStore } from '../store/moduleStore';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
@@ -253,9 +253,14 @@ export default function Layout({ children }: LayoutProps) {
           <div className="min-h-[68px] py-2 px-3.5 border-b border-black/[0.08] dark:border-slate-800 bg-white dark:bg-slate-900 rounded-t-xl flex items-center gap-3 min-w-0 select-none flex-shrink-0">
             <div className="w-10 h-10 min-w-[40px] max-w-[40px] min-h-[40px] max-h-[40px] rounded-xl bg-white dark:bg-slate-800 p-1 flex items-center justify-center shadow-xs flex-shrink-0 border border-black/[0.08] dark:border-slate-700 overflow-hidden">
               <img 
-                src={branding?.logoUrl || loginLogo} 
+                src={resolveFileUrl(branding?.logoUrl) || loginLogo} 
                 alt="Logo" 
                 className="w-full h-full object-contain" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.onerror = null;
+                  target.src = loginLogo;
+                }}
               />
             </div>
             {!isCollapsed && (

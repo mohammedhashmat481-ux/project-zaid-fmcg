@@ -3,9 +3,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import path from 'path';
+import fs from 'fs';
 import { queryPg } from './config/postgres';
 import { resolveTenant } from './middleware/tenantMiddleware';
 import { logger } from './utils/logger';
+import { getUploadDir } from './utils/uploadPaths';
 
 // Import routers
 import authRoutes from './routes/authRoutes';
@@ -89,8 +91,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static uploaded files
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+// Serve static uploaded files (supporting all deployment folder structures)
+const candidateUploadDirs = [
+  getUploadDir(),
+  path.resolve(process.cwd(), 'uploads'),
+  path.resolve(process.cwd(), '../uploads'),
+  path.resolve(__dirname, '../../uploads'),
+  path.resolve(__dirname, '../../../uploads')
+];
+
+const registeredDirs = new Set<string>();
+for (const dir of candidateUploadDirs) {
+  if (dir && !registeredDirs.has(dir) && fs.existsSync(dir)) {
+    registeredDirs.add(dir);
+    app.use('/uploads', express.static(dir));
+  }
+}
 
 // 6. Health, Ready, and Version check endpoints (placed before tenant resolver)
 app.get('/health', (req, res) => {

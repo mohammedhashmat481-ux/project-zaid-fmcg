@@ -6,14 +6,12 @@ import Document from '../models/Document';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { HierarchyService } from '../utils/hierarchy';
+import { getUploadDir } from '../utils/uploadPaths';
 
 const router = Router();
 
 // Configure local file uploads storage folder
-const uploadDir = path.join(__dirname, '../../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+const uploadDir = getUploadDir();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

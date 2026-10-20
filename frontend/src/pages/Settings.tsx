@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useThemeStore, ThemeSettings } from '../store/themeStore';
 import { useModuleStore, FieldDefinition } from '../store/moduleStore';
-import api, { FILE_BASE_URL } from '../services/api';
+import api, { FILE_BASE_URL, resolveFileUrl } from '../services/api';
 import * as Icons from 'lucide-react';
 import FaceEnrollment from '../components/FaceEnrollment';
 import { useAuthStore } from '../store/authStore';
@@ -409,7 +409,7 @@ export default function Settings() {
       const res = await api.post('/documents/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      const uploadedPath = `${FILE_BASE_URL}${res.data.filePath}`;
+      const uploadedPath = res.data.filePath;
       setLogoUrl(uploadedPath);
     } catch (err) {
       showToast('Failed to upload logo.', 'error');
@@ -1041,7 +1041,16 @@ export default function Settings() {
                 <div className="flex flex-col items-center gap-3 bg-slate-50/50 p-5 border border-slate-150 rounded-2xl w-full lg:w-48 text-center shrink-0">
                   <div className="w-24 h-24 rounded-2xl border border-[#E8ECF4] bg-white flex items-center justify-center p-2 shadow-sm overflow-hidden select-none">
                     {logoUrl ? (
-                      <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                      <img 
+                        src={resolveFileUrl(logoUrl)} 
+                        alt="Logo" 
+                        className="w-full h-full object-contain" 
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null;
+                          target.src = '/logo.png';
+                        }}
+                      />
                     ) : (
                       <Icons.Building2 className="w-12 h-12 text-slate-350" />
                     )}
@@ -1086,7 +1095,7 @@ export default function Settings() {
                         const res = await api.post('/documents/upload', formData, {
                           headers: { 'Content-Type': 'multipart/form-data' }
                         });
-                        setCompanyDocUrl(`${FILE_BASE_URL}${res.data.filePath}`);
+                        setCompanyDocUrl(res.data.filePath);
                         showToast('Company document uploaded successfully.', 'success');
                       } catch {
                         showToast('Failed to upload document.', 'error');
