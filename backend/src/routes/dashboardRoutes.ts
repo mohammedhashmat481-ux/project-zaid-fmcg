@@ -119,9 +119,12 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
       leadAgg.forEach((item: any) => {
         if (item._id) {
           const rawName = item._id.toString().trim();
-          statusCounts[rawName.toUpperCase()] = item.count;
-          // Store both raw case and normalized versions to handle all lookup styles
-          statusCounts[rawName] = item.count;
+          const upper = rawName.toUpperCase();
+          const count = Number(item.count || 0);
+          statusCounts[upper] = (statusCounts[upper] || 0) + count;
+          if (rawName !== upper) {
+            statusCounts[rawName] = count;
+          }
         }
       });
 

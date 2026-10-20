@@ -68,6 +68,15 @@ export const connectPostgres = async (): Promise<void> => {
     if (!fs.existsSync(dbDataDir)) {
       fs.mkdirSync(dbDataDir, { recursive: true });
     }
+    const stalePid = path.join(dbDataDir, 'postmaster.pid');
+    if (fs.existsSync(stalePid)) {
+      try {
+        fs.unlinkSync(stalePid);
+        console.log('[PostgreSQL] Stale postmaster.pid cleaned up successfully.');
+      } catch (err: any) {
+        console.warn('[PostgreSQL] Could not remove postmaster.pid:', err.message);
+      }
+    }
     console.log(`[PostgreSQL] Initializing local PostgreSQL storage engine at: ${dbDataDir}`);
     pgliteInstance = new PGlite(dbDataDir);
     await pgliteInstance.waitReady;

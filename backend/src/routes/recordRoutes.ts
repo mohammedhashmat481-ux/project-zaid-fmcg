@@ -798,11 +798,130 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
   }
 });
 
+// Helper to resolve canonical synonyms across dashboard and lead statuses
+export function getStatusSynonyms(statusVal: string): string[] {
+  if (!statusVal || typeof statusVal !== 'string') return [];
+  const clean = statusVal.trim();
+  const upper = clean.toUpperCase();
+  const noLeads = upper.replace(/\s+LEADS?$/i, '').trim();
+  const withLeads = noLeads ? `${noLeads} LEADS` : upper;
+
+  const synonyms = new Set<string>([clean, upper, noLeads, withLeads]);
+
+  // HOT
+  if (upper.includes('HOT')) {
+    synonyms.add('HOT');
+    synonyms.add('HOT LEADS');
+    synonyms.add('HOT LEAD');
+    synonyms.add('Hot');
+    synonyms.add('Hot Leads');
+  }
+
+  // WARM
+  if (upper.includes('WARM')) {
+    synonyms.add('WARM');
+    synonyms.add('WARM LEADS');
+    synonyms.add('WARM LEAD');
+    synonyms.add('Warm');
+    synonyms.add('Warm Leads');
+  }
+
+  // CEBIL / CEDIL
+  if (upper.includes('CEBIL') || upper.includes('CEDIL')) {
+    synonyms.add('CEBIL PENDING');
+    synonyms.add('CEDIL PENDING');
+    synonyms.add('CEBIL');
+    synonyms.add('CEDIL');
+    synonyms.add('Cebil Pending');
+    synonyms.add('Cedil Pending');
+  }
+
+  // DOCUMENT
+  if (upper.includes('DOCUMENT') || upper.includes('DOC PENDING')) {
+    synonyms.add('DOCUMENT PENDING');
+    synonyms.add('DOCUMENTS PENDING');
+    synonyms.add('DOC PENDING');
+    synonyms.add('Document Pending');
+    synonyms.add('Documents Pending');
+    synonyms.add('PROPOSAL');
+  }
+
+  // APPROVAL
+  if (upper.includes('APPROVAL') || upper === 'NEGOTIATION') {
+    synonyms.add('APPROVAL PENDING');
+    synonyms.add('APPROVALS PENDING');
+    synonyms.add('Approval Pending');
+    synonyms.add('NEGOTIATION');
+  }
+
+  // APPROVED BUT NOT DISBUSE / APPROVED
+  if (upper.includes('APPROVED') && !upper.includes('DISBU')) {
+    synonyms.add('APPROVED BUT NOT DISBUSE');
+    synonyms.add('APPROVED BUT NOT DISBURSED');
+    synonyms.add('APPROVED');
+    synonyms.add('Approved');
+    synonyms.add('Approved But Not Disbuse');
+    synonyms.add('Approved But Not Disbursed');
+  } else if (upper.includes('APPROVED BUT NOT')) {
+    synonyms.add('APPROVED BUT NOT DISBUSE');
+    synonyms.add('APPROVED BUT NOT DISBURSED');
+    synonyms.add('APPROVED');
+    synonyms.add('Approved');
+  }
+
+  // DISBUSED / DISBURSED
+  if ((upper.includes('DISBUSED') || upper.includes('DISBURSED')) && !upper.includes('NOT')) {
+    synonyms.add('DISBUSED');
+    synonyms.add('DISBURSED');
+    synonyms.add('Disbused');
+    synonyms.add('Disbursed');
+  }
+
+  // REJECTED
+  if (upper.includes('REJECT')) {
+    synonyms.add('REJECTED');
+    synonyms.add('REJECT');
+    synonyms.add('Rejected');
+  }
+
+  // FOLLOWUP
+  if (upper.includes('FOLLOW') || upper.includes('CALL') || upper.includes('REACHABLE') || upper.includes('CONNECTED')) {
+    synonyms.add('FOLLOWUP');
+    synonyms.add('FOLLOW UP');
+    synonyms.add('FOLLOW-UP');
+    synonyms.add('Followup');
+    synonyms.add('Follow Up');
+    synonyms.add('Yet To Call');
+    synonyms.add('Not Connected');
+    synonyms.add('Not Reachable');
+  }
+
+  // DROPPED
+  if (upper.includes('DROP') || upper.includes('INTERESTED')) {
+    synonyms.add('DROPPED');
+    synonyms.add('DROP');
+    synonyms.add('Dropped');
+    synonyms.add('Not Interested');
+    synonyms.add('NOT INTERESTED');
+  }
+
+  // PENDING
+  if (upper === 'PENDING' || upper.includes('INKWORLDWIDE') || upper.includes('INK WORLDWIDE')) {
+    synonyms.add('PENDING');
+    synonyms.add('Pending');
+    synonyms.add('INKWORLDWIDE');
+    synonyms.add('Ink Worldwide');
+  }
+
+  return Array.from(synonyms).filter(Boolean);
+}
+
 // 1. LIST RECORDS FOR A DYNAMIC MODULE
 router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
   try {
     const { apiPath } = req.params;
-    const { search, page = '1', limit = '50', sort } = req.query;
+    const defaultLimit = apiPath.toLowerCase() === 'leads' ? '10' : '50';
+    const { search, page = '1', limit = defaultLimit, sort } = req.query;
 
     const moduleDef = await ModuleDefinition.findOne({
       organizationId: req.organizationId,
@@ -831,6 +950,31 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       query.createdBy = req.user?.id;
     }
 
+    // Direct status, leadStatus, or followup query params support
+    if (req.query.status && !req.query['data.status']) {
+      req.query['data.status'] = req.query.status;
+    }
+    if (req.query.leadStatus && !req.query['data.leadStatus']) {
+      req.query['data.leadStatus'] = req.query.leadStatus;
+    }
+
+    if (req.query.followup === 'today' || req.query['data.followup'] === 'today') {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      const timeFilter = {
+        $or: [
+          { 'data.followUpDate': { $gte: startOfToday, $lte: endOfToday } },
+          { 'data.followUpDate': { $regex: '^' + startOfToday.toISOString().split('T')[0] } }
+        ]
+      };
+      if (query.$and) {
+        query.$and.push(timeFilter);
+      } else {
+        query.$and = [timeFilter];
+      }
+    }
 
     // Parse other fields for inline filters, e.g. ?data.status=HOT LEADS
     Object.keys(req.query).forEach((q) => {
@@ -839,16 +983,14 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
         if (typeof val === 'string' && val.trim()) {
           const cleanVal = val.trim();
           if (q === 'data.status' || q === 'data.leadStatus') {
-            const noLeadsVal = cleanVal.replace(/\s+leads$/i, '');
-            const withLeadsVal = noLeadsVal + ' LEADS';
-            const variations = Array.from(new Set([cleanVal, noLeadsVal, withLeadsVal]));
-            const regexVariations = variations.map(
-              (v) => new RegExp(`^\\s*${v.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
-            );
+            const synonyms = getStatusSynonyms(cleanVal);
+            const escSynonyms = synonyms.map((s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+            const statusRegex = `^\\s*(${escSynonyms.join('|')})\\s*$`;
             const statusFilter = {
               $or: [
-                { 'data.status': { $in: regexVariations } },
-                { 'data.leadStatus': { $in: regexVariations } }
+                { 'data.status': { $regex: statusRegex } },
+                { 'data.leadStatus': { $regex: statusRegex } },
+                { 'data.pipelineStage': { $regex: statusRegex } }
               ]
             };
             if (query.$and) {
@@ -949,12 +1091,16 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       sortOption = { [sortField.startsWith('data.') ? sortField : `data.${sortField}`]: isDesc ? -1 : 1 };
     }
 
-    const records = await CustomRecord.find(query)
-      .populate('createdBy', 'firstName lastName name email')
-      .populate('updatedBy', 'firstName lastName name email')
-      .sort(sortOption)
-      .skip(skipNum)
-      .limit(limitNum);
+    // Parallel execution of record query and count for lightning fast loading
+    const [records, total] = await Promise.all([
+      CustomRecord.find(query)
+        .populate('createdBy', 'firstName lastName name email')
+        .populate('updatedBy', 'firstName lastName name email')
+        .sort(sortOption)
+        .skip(skipNum)
+        .limit(limitNum),
+      CustomRecord.countDocuments(query)
+    ]);
 
     // Resolve any User ObjectIds/hashes in data.assignedTo, data.assignedBy, data.psm to real names
     const userIdsToFetch = new Set<string>();
@@ -992,15 +1138,14 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       });
     }
 
-    const total = await CustomRecord.countDocuments(query);
-
     res.status(200).json({
       records,
       pagination: {
         total,
+        totalRecords: total,
         page: pageNum,
         limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
+        totalPages: Math.max(1, Math.ceil(total / limitNum))
       }
     });
   } catch (error) {

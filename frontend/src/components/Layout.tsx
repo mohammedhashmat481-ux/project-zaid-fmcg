@@ -376,7 +376,7 @@ export default function Layout({ children }: LayoutProps) {
                           icon={Icons.Layers} 
                           colorClass="text-[#7C3AED]"
                           indent 
-                          badge={leadsData?.pagination?.totalRecords || leadsData?.records?.length || 0} 
+                          badge={leadsData?.pagination?.total ?? leadsData?.pagination?.totalRecords ?? metricsData?.totalLeads ?? leadsData?.records?.length ?? 0} 
                           isCollapsed={isCollapsed}
                         />
                         {(() => {
@@ -437,21 +437,56 @@ export default function Layout({ children }: LayoutProps) {
                               return records.filter((r: any) => {
                                 const s1 = (r.data?.status || '').toString().trim().toUpperCase();
                                 const s2 = name.trim().toUpperCase();
-                                return s1 === s2 || s1 === s2.replace(/ LEADS$/, '') || s2 === s1.replace(/ LEADS$/, '');
+                                return s1 === s2 || s1 === s2.replace(/\s+LEADS?$/, '') || s2 === s1.replace(/\s+LEADS?$/, '');
                               }).length;
                             }
                             const raw = (name || '').trim();
                             const upper = raw.toUpperCase();
-                            if (metricsData.statusCounts[raw] !== undefined) return metricsData.statusCounts[raw];
-                            if (metricsData.statusCounts[upper] !== undefined) return metricsData.statusCounts[upper];
-                            const noLeadsKey = upper.replace(/ LEADS$/, '');
-                            if (metricsData.statusCounts[noLeadsKey] !== undefined) return metricsData.statusCounts[noLeadsKey];
-                            for (const [k, v] of Object.entries(metricsData.statusCounts)) {
-                              const kUpper = k.trim().toUpperCase();
-                              if (kUpper === upper || kUpper === noLeadsKey || kUpper.replace(/ LEADS$/, '') === noLeadsKey) {
-                                return Number(v);
+
+                            let total = 0;
+                            const matchedKeys = new Set<string>();
+                            const checkAndAdd = (key: string) => {
+                              const kUpper = key.trim().toUpperCase();
+                              if (!matchedKeys.has(kUpper) && metricsData.statusCounts[kUpper] !== undefined) {
+                                matchedKeys.add(kUpper);
+                                total += Number(metricsData.statusCounts[kUpper] || 0);
                               }
+                            };
+
+                            if (upper.includes('HOT')) {
+                              ['HOT', 'HOT LEADS', 'HOT LEAD'].forEach(checkAndAdd);
+                            } else if (upper.includes('WARM')) {
+                              ['WARM', 'WARM LEADS', 'WARM LEAD'].forEach(checkAndAdd);
+                            } else if (upper.includes('CEBIL') || upper.includes('CEDIL')) {
+                              ['CEBIL PENDING', 'CEDIL PENDING', 'CEBIL', 'CEDIL'].forEach(checkAndAdd);
+                            } else if (upper.includes('DOCUMENT') || upper.includes('DOC PENDING')) {
+                              ['DOCUMENT PENDING', 'DOCUMENTS PENDING', 'DOC PENDING', 'PROPOSAL'].forEach(checkAndAdd);
+                            } else if (upper.includes('APPROVAL') || upper === 'NEGOTIATION') {
+                              ['APPROVAL PENDING', 'APPROVALS PENDING', 'NEGOTIATION'].forEach(checkAndAdd);
+                            } else if (upper.includes('APPROVED') && !upper.includes('DISBU')) {
+                              ['APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED'].forEach(checkAndAdd);
+                            } else if (upper.includes('APPROVED BUT NOT')) {
+                              ['APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED'].forEach(checkAndAdd);
+                            } else if (upper.includes('DISBUSED') || upper.includes('DISBURSED')) {
+                              ['DISBUSED', 'DISBURSED'].forEach(checkAndAdd);
+                            } else if (upper.includes('REJECT')) {
+                              ['REJECTED', 'REJECT'].forEach(checkAndAdd);
+                            } else if (upper.includes('FOLLOW') || upper.includes('CALL') || upper.includes('REACHABLE')) {
+                              ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP', 'YET TO CALL', 'NOT CONNECTED', 'NOT REACHABLE'].forEach(checkAndAdd);
+                            } else if (upper.includes('DROP') || upper.includes('INTERESTED')) {
+                              ['DROPPED', 'DROP', 'NOT INTERESTED'].forEach(checkAndAdd);
+                            } else if (upper === 'PENDING' || upper.includes('INKWORLDWIDE')) {
+                              ['PENDING', 'INKWORLDWIDE', 'INK WORLDWIDE'].forEach(checkAndAdd);
+                            } else {
+                              checkAndAdd(raw);
+                              checkAndAdd(upper);
+                              const noLeadsKey = upper.replace(/\s+LEADS?$/, '');
+                              if (noLeadsKey) checkAndAdd(noLeadsKey);
                             }
+
+                            if (total > 0) return total;
+                            if (metricsData.statusCounts[raw] !== undefined) return Number(metricsData.statusCounts[raw]);
+                            if (metricsData.statusCounts[upper] !== undefined) return Number(metricsData.statusCounts[upper]);
                             return 0;
                           };
 

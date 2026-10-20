@@ -923,8 +923,9 @@ export default function ModuleView() {
     }
   };
 
-  // Read ?status= from URL and apply as filter
+  // Read ?status= and ?followup= from URL and apply as filter
   const urlStatus = searchParams.get('status');
+  const urlFollowup = searchParams.get('followup');
 
   // Set Active Module in store on path mount/change
   useEffect(() => {
@@ -935,24 +936,31 @@ export default function ModuleView() {
       if (urlStatus) {
         setFilterField('status');
         setFilterVal(urlStatus);
+      } else if (urlFollowup === 'today') {
+        setFilterField('followup');
+        setFilterVal('today');
       } else {
         setFilterField('');
         setFilterVal('');
       }
     }
-  }, [apiPath, urlStatus, modules.length]);
+  }, [apiPath, urlStatus, urlFollowup, modules.length]);
 
-  // Query records
+  // Query records with 10 records per page for lightning fast performance
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['records', apiPath, searchVal, filterField, filterVal, page],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,
-        limit: 25,
+        limit: 10,
         search: searchVal
       };
       if (filterField && filterVal) {
-        params[`data.${filterField}`] = filterVal;
+        if (filterField === 'followup') {
+          params.followup = filterVal;
+        } else {
+          params[`data.${filterField}`] = filterVal;
+        }
       }
       const res = await api.get(`/records/${apiPath}`, { params });
       return res.data;
@@ -1052,7 +1060,7 @@ export default function ModuleView() {
     setFilterVal('');
     setFilterField('');
     setPage(1);
-    if (urlStatus) {
+    if (urlStatus || urlFollowup) {
       navigate('/modules/leads');
     } else {
       refetch();
@@ -1751,25 +1759,33 @@ export default function ModuleView() {
               <div className="text-left">
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
-                    {urlStatus ? (urlStatus.toUpperCase().endsWith('LEADS') ? urlStatus.toUpperCase() : `${urlStatus.toUpperCase()} LEADS`) : 'ALL LEADS'}
+                    {urlFollowup === 'today'
+                      ? "TODAY'S FOLLOWUPS"
+                      : urlStatus 
+                        ? (urlStatus.toUpperCase().endsWith('LEADS') ? urlStatus.toUpperCase() : `${urlStatus.toUpperCase()} LEADS`) 
+                        : 'ALL LEADS'}
                   </h1>
                   <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-3xs font-mono">
-                    {data?.pagination?.total ?? (data?.records?.length || 0)} Total
+                    {data?.pagination?.total ?? data?.pagination?.totalRecords ?? (data?.records?.length || 0)} Total
                   </span>
                 </div>
                 <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  {urlStatus ? `Filtering leads with status: ${urlStatus}` : 'Search, manage, and track leads across all campaigns.'}
+                  {urlFollowup === 'today'
+                    ? "Showing all leads scheduled for follow-up today."
+                    : urlStatus 
+                      ? `Filtering leads with status: ${urlStatus}` 
+                      : 'Search, manage, and track leads across all campaigns.'}
                 </p>
               </div>
             </div>
 
-            {urlStatus && (
+            {(urlStatus || urlFollowup) && (
               <Link
                 to="/modules/leads"
                 className="px-3.5 py-2 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5 shadow-3xs cursor-pointer"
               >
                 <Icons.X className="w-3.5 h-3.5" />
-                <span>Clear Status Filter</span>
+                <span>Clear Filter</span>
               </Link>
             )}
           </div>
@@ -1959,7 +1975,7 @@ export default function ModuleView() {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-6 gap-x-8 text-sm mt-2">
                         {/* Column 1 */}
                         <div className="space-y-4">
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Sl No.:</span> <span className="text-slate-600 dark:text-slate-400">{idx + 1}</span></div>
+                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Sl No.:</span> <span className="text-slate-600 dark:text-slate-400">{(page - 1) * 10 + idx + 1}</span></div>
                           <div><span className="font-bold text-slate-700 dark:text-slate-350">Lead No.:</span> <span className="text-slate-600 dark:text-slate-400">LND-{leadNo}</span></div>
                           <div><span className="font-bold text-slate-700 dark:text-slate-350">Product:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.loanType || 'N/A'}</span></div>
                           <div><span className="font-bold text-slate-700 dark:text-slate-350">Status:</span> <span className="text-slate-600 dark:text-slate-400 uppercase font-semibold">{rec.data?.status || 'New'}</span></div>
@@ -2149,32 +2165,130 @@ export default function ModuleView() {
             )
           )}
 
-          {/* Pagination bar */}
-          <div className="px-6 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 text-xs shadow-xs mt-6">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">
-              Showing page <span className="font-bold text-slate-800 dark:text-slate-200">{page}</span> of{' '}
-              <span className="font-bold text-slate-800 dark:text-slate-200">{data?.pagination?.totalPages || 1}</span>
-              <span className="ml-2 text-slate-400 font-mono">({data?.pagination?.total ?? (data?.records?.length || 0)} Total Records)</span>
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-                className="h-8.5 px-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <Icons.ChevronLeft className="w-3.5 h-3.5" />
-                Previous
-              </button>
-              <button
-                disabled={page >= (data?.pagination?.totalPages || 1)}
-                onClick={() => setPage(page + 1)}
-                className="h-8.5 px-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer"
-              >
-                Next
-                <Icons.ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
+          {/* Pagination bar - 10 leads per page */}
+          {(() => {
+            const totalRecords = data?.pagination?.total ?? data?.pagination?.totalRecords ?? (data?.records?.length || 0);
+            const totalPages = Math.max(1, data?.pagination?.totalPages || Math.ceil(totalRecords / 10));
+            const startIdx = totalRecords === 0 ? 0 : (page - 1) * 10 + 1;
+            const endIdx = Math.min(page * 10, totalRecords);
+
+            // Compute array of page numbers to show (e.g., 1, 2, 3, 4, 5...)
+            const getPageNumbers = () => {
+              const pages: (number | string)[] = [];
+              if (totalPages <= 7) {
+                for (let i = 1; i <= totalPages; i++) pages.push(i);
+              } else {
+                if (page <= 4) {
+                  pages.push(1, 2, 3, 4, 5, '...', totalPages);
+                } else if (page >= totalPages - 3) {
+                  pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+                } else {
+                  pages.push(1, '...', page - 1, page, page + 1, '...', totalPages);
+                }
+              }
+              return pages;
+            };
+
+            const handlePageChange = (newPage: number) => {
+              if (newPage >= 1 && newPage <= totalPages && newPage !== page) {
+                setPage(newPage);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            };
+
+            return (
+              <div className="px-6 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 text-xs shadow-xs mt-6">
+                <div className="text-slate-500 dark:text-slate-400 font-medium">
+                  {totalRecords > 0 ? (
+                    <>
+                      Showing <span className="font-bold text-slate-900 dark:text-white font-mono">{startIdx}</span> to{' '}
+                      <span className="font-bold text-slate-900 dark:text-white font-mono">{endIdx}</span> of{' '}
+                      <span className="font-bold text-slate-900 dark:text-white font-mono">{totalRecords}</span> {apiPath === 'leads' ? 'leads' : 'records'}
+                      <span className="ml-2 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                        (Page {page} of {totalPages})
+                      </span>
+                    </>
+                  ) : (
+                    <span>No {apiPath === 'leads' ? 'leads' : 'records'} found</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                  {/* First Page */}
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => handlePageChange(1)}
+                    className="h-8.5 px-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="First Page"
+                  >
+                    «
+                  </button>
+
+                  {/* Previous Page */}
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => handlePageChange(page - 1)}
+                    className="h-8.5 px-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <Icons.ChevronLeft className="w-3.5 h-3.5" />
+                    <span>Previous</span>
+                  </button>
+
+                  {/* Numbered Page Buttons */}
+                  <div className="hidden sm:flex items-center gap-1">
+                    {getPageNumbers().map((pNum, pIdx) => {
+                      if (pNum === '...') {
+                        return (
+                          <span key={`dots-${pIdx}`} className="px-2 py-1 text-slate-400 select-none">
+                            ...
+                          </span>
+                        );
+                      }
+                      const isCurrent = pNum === page;
+                      return (
+                        <button
+                          key={`page-${pNum}`}
+                          type="button"
+                          onClick={() => handlePageChange(Number(pNum))}
+                          className={`h-8.5 min-w-[34px] px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            isCurrent
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {pNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Next Page */}
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => handlePageChange(page + 1)}
+                    className="h-8.5 px-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Next</span>
+                    <Icons.ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Last Page */}
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => handlePageChange(totalPages)}
+                    className="h-8.5 px-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Last Page"
+                  >
+                    »
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {viewMode === 'kanban' && renderKanban(activeModule, data?.records || [])}
 

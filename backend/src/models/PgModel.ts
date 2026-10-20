@@ -335,6 +335,15 @@ function mapJsToDbCol(tableName: string, mappings: FieldMapping[], jsField: stri
     }
     return `(data->>'${cleanField}')`;
   }
+
+  // Handle nested JSON properties in any table, e.g. trigger.event -> (trigger->>'event')
+  if (jsField.includes('.')) {
+    const parts = jsField.split('.');
+    const parentCol = camelToSnake(parts[0]);
+    const jsonKey = parts.slice(1).join('.');
+    return `(${parentCol}->>'${jsonKey}')`;
+  }
+
   return camelToSnake(jsField);
 }
 
@@ -475,19 +484,55 @@ function buildWhereClause(
         if (val.$in.length === 0) {
           conditions.push(`1=0`);
         } else {
-          const inPlaceholders = val.$in.map((item: any) => {
-            params.push(String(item._id || item));
-            return `$${params.length}`;
-          }).join(', ');
-          conditions.push(`${col} IN (${inPlaceholders})`);
+          const hasRegex = val.$in.some((item: any) => 
+            item instanceof RegExp || 
+            (typeof item === 'string' && item.startsWith('/') && item.lastIndexOf('/') > 0)
+          );
+          if (hasRegex) {
+            const patterns = val.$in.map((item: any) => {
+              if (item instanceof RegExp) return item.source;
+              if (typeof item === 'string' && item.startsWith('/') && item.lastIndexOf('/') > 0) {
+                return item.substring(1, item.lastIndexOf('/'));
+              }
+              const str = String(item._id || item);
+              return `^\\s*${str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`;
+            });
+            const combined = `(${patterns.join('|')})`;
+            params.push(combined);
+            conditions.push(`${col} ~* $${params.length}`);
+          } else {
+            const inPlaceholders = val.$in.map((item: any) => {
+              params.push(String(item._id || item));
+              return `$${params.length}`;
+            }).join(', ');
+            conditions.push(`${col} IN (${inPlaceholders})`);
+          }
         }
       } else if (val.$nin && Array.isArray(val.$nin)) {
         if (val.$nin.length > 0) {
-          const ninPlaceholders = val.$nin.map((item: any) => {
-            params.push(String(item._id || item));
-            return `$${params.length}`;
-          }).join(', ');
-          conditions.push(`${col} NOT IN (${ninPlaceholders})`);
+          const hasRegex = val.$nin.some((item: any) => 
+            item instanceof RegExp || 
+            (typeof item === 'string' && item.startsWith('/') && item.lastIndexOf('/') > 0)
+          );
+          if (hasRegex) {
+            const patterns = val.$nin.map((item: any) => {
+              if (item instanceof RegExp) return item.source;
+              if (typeof item === 'string' && item.startsWith('/') && item.lastIndexOf('/') > 0) {
+                return item.substring(1, item.lastIndexOf('/'));
+              }
+              const str = String(item._id || item);
+              return `^\\s*${str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`;
+            });
+            const combined = `(${patterns.join('|')})`;
+            params.push(combined);
+            conditions.push(`${col} !~* $${params.length}`);
+          } else {
+            const ninPlaceholders = val.$nin.map((item: any) => {
+              params.push(String(item._id || item));
+              return `$${params.length}`;
+            }).join(', ');
+            conditions.push(`${col} NOT IN (${ninPlaceholders})`);
+          }
         }
       } else if (val.$gte !== undefined || val.$lte !== undefined || val.$gt !== undefined || val.$lt !== undefined || val.$ne !== undefined) {
         if (val.$gte !== undefined) {
