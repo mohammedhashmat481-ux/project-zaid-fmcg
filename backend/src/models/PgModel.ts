@@ -322,30 +322,76 @@ export function createPgModel(tableName: string, mappings: FieldMapping[]) {
   return modelConstructor as any;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────
-function mapJsToDbCol(tableName: string, mappings: FieldMapping[], jsField: string): string {
-  if (jsField === '_id' || jsField === 'id') return 'id';
-  const m = mappings.find((item) => item.jsField === jsField);
-  if (m) return m.dbColumn;
+export function buildJsonPathExpr(col: string, pathParts: string[]): string {
+  const safeCol = col.replace(/[^a-zA-Z0-9_]/g, '');
+  if (!pathParts || pathParts.length === 0) return safeCol;
 
+  let expr = safeCol;
+  for (let i = 0; i < pathParts.length; i++) {
+    const part = pathParts[i];
+    const isLast = (i === pathParts.length - 1);
+    const isIndex = /^\d+$/.test(part);
+    const op = isLast ? '->>' : '->';
+
+    if (isIndex) {
+      expr = `${expr}${op}${part}`;
+    } else {
+      const safeKey = part.replace(/'/g, "''");
+      expr = `${expr}${op}'${safeKey}'`;
+    }
+  }
+  return `(${expr})`;
+}
+
+export function isJsonExtraction(col: string): boolean {
+  return col.includes('->>');
+}
+
+export function mapJsToDbCol(tableName: string, mappings: FieldMapping[], jsField: string): string {
+  if (jsField === '_id' || jsField === 'id') return 'id';
+
+  // Direct match on top-level mapping
+  const directMatch = mappings.find((item) => item.jsField === jsField || item.dbColumn === jsField);
+  if (directMatch) return directMatch.dbColumn;
+
+  // Custom records table handling
   if (tableName === 'custom_records') {
     const cleanField = jsField.startsWith('data.') ? jsField.slice(5) : jsField;
-    if (['organizationId', 'moduleId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'].includes(cleanField)) {
+    const topLevelFields = ['organizationId', 'moduleId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'];
+    if (topLevelFields.includes(cleanField)) {
       return camelToSnake(cleanField);
     }
-    return `(data->>'${cleanField}')`;
+    const parts = cleanField.split('.');
+    return buildJsonPathExpr('data', parts);
   }
 
-  // Handle nested JSON properties in any table, e.g. trigger.event -> (trigger->>'event')
+  // Handle dotted keys in any table (e.g. trigger.event -> (trigger->>'event'))
   if (jsField.includes('.')) {
     const parts = jsField.split('.');
-    const parentCol = camelToSnake(parts[0]);
-    const jsonKey = parts.slice(1).join('.');
-    return `(${parentCol}->>'${jsonKey}')`;
+    const firstSegment = parts[0];
+    const subPath = parts.slice(1);
+
+    const jsonMapping = mappings.find(
+      (m) => (m.jsField === firstSegment || m.dbColumn === firstSegment || m.dbColumn === camelToSnake(firstSegment)) && m.isJson
+    );
+
+    if (jsonMapping) {
+      return buildJsonPathExpr(jsonMapping.dbColumn, subPath);
+    }
+
+    const nonJsonMapping = mappings.find(
+      (m) => m.jsField === firstSegment || m.dbColumn === firstSegment || m.dbColumn === camelToSnake(firstSegment)
+    );
+    if (nonJsonMapping) {
+      return nonJsonMapping.dbColumn;
+    }
+
+    return buildJsonPathExpr(camelToSnake(firstSegment), subPath);
   }
 
   return camelToSnake(jsField);
 }
+
 
 function mapJsToDbRow(tableName: string, mappings: FieldMapping[], jsObj: any): Record<string, any> {
   const dbRow: Record<string, any> = {};
@@ -477,9 +523,19 @@ function buildWhereClause(
       return;
     }
 
-    let col = mapJsToDbCol(tableName, mappings, key);
+    const col = mapJsToDbCol(tableName, mappings, key);
+    const isJson = isJsonExtraction(col);
 
-    if (val && typeof val === 'object' && !(val instanceof Date) && !(val instanceof PgObjectId)) {
+    const numExpr = isJson ? `(CASE WHEN ${col} ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (${col})::numeric ELSE NULL END)` : col;
+    const boolExpr = isJson ? `(CASE WHEN ${col} IN ('true', 't', '1', 'false', 'f', '0') THEN (${col})::boolean ELSE NULL END)` : col;
+    const dateExpr = isJson ? `(CASE WHEN ${col} ~ '^\\d{4}-\\d{2}-\\d{2}' THEN (${col})::timestamptz ELSE NULL END)` : col;
+
+    if (val === null || val === undefined) {
+      conditions.push(`${col} IS NULL`);
+      return;
+    }
+
+    if (typeof val === 'object' && !(val instanceof Date) && !(val instanceof PgObjectId)) {
       if (val.$in && Array.isArray(val.$in)) {
         if (val.$in.length === 0) {
           conditions.push(`1=0`);
@@ -501,11 +557,28 @@ function buildWhereClause(
             params.push(combined);
             conditions.push(`${col} ~* $${params.length}`);
           } else {
-            const inPlaceholders = val.$in.map((item: any) => {
-              params.push(String(item._id || item));
-              return `$${params.length}`;
-            }).join(', ');
-            conditions.push(`${col} IN (${inPlaceholders})`);
+            const allNumbers = val.$in.length > 0 && val.$in.every((item: any) => typeof item === 'number' && !isNaN(item));
+            const allBooleans = val.$in.length > 0 && val.$in.every((item: any) => typeof item === 'boolean');
+
+            if (isJson && allNumbers) {
+              const inPlaceholders = val.$in.map((item: any) => {
+                params.push(Number(item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`${numExpr} IN (${inPlaceholders})`);
+            } else if (isJson && allBooleans) {
+              const inPlaceholders = val.$in.map((item: any) => {
+                params.push(Boolean(item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`${boolExpr} IN (${inPlaceholders})`);
+            } else {
+              const inPlaceholders = val.$in.map((item: any) => {
+                params.push(String(item._id || item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`${col} IN (${inPlaceholders})`);
+            }
           }
         }
       } else if (val.$nin && Array.isArray(val.$nin)) {
@@ -525,36 +598,79 @@ function buildWhereClause(
             });
             const combined = `(${patterns.join('|')})`;
             params.push(combined);
-            conditions.push(`${col} !~* $${params.length}`);
+            conditions.push(`(${col} !~* $${params.length} OR ${col} IS NULL)`);
           } else {
-            const ninPlaceholders = val.$nin.map((item: any) => {
-              params.push(String(item._id || item));
-              return `$${params.length}`;
-            }).join(', ');
-            conditions.push(`${col} NOT IN (${ninPlaceholders})`);
+            const allNumbers = val.$nin.length > 0 && val.$nin.every((item: any) => typeof item === 'number' && !isNaN(item));
+            const allBooleans = val.$nin.length > 0 && val.$nin.every((item: any) => typeof item === 'boolean');
+
+            if (isJson && allNumbers) {
+              const ninPlaceholders = val.$nin.map((item: any) => {
+                params.push(Number(item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`(${numExpr} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
+            } else if (isJson && allBooleans) {
+              const ninPlaceholders = val.$nin.map((item: any) => {
+                params.push(Boolean(item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`(${boolExpr} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
+            } else {
+              const ninPlaceholders = val.$nin.map((item: any) => {
+                params.push(String(item._id || item));
+                return `$${params.length}`;
+              }).join(', ');
+              conditions.push(`(${col} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
+            }
           }
         }
       } else if (val.$gte !== undefined || val.$lte !== undefined || val.$gt !== undefined || val.$lt !== undefined || val.$ne !== undefined) {
-        if (val.$gte !== undefined) {
-          params.push(val.$gte);
-          conditions.push(`${col} >= $${params.length}`);
-        }
-        if (val.$lte !== undefined) {
-          params.push(val.$lte);
-          conditions.push(`${col} <= $${params.length}`);
-        }
-        if (val.$gt !== undefined) {
-          params.push(val.$gt);
-          conditions.push(`${col} > $${params.length}`);
-        }
-        if (val.$lt !== undefined) {
-          params.push(val.$lt);
-          conditions.push(`${col} < $${params.length}`);
-        }
-        if (val.$ne !== undefined) {
-          params.push(val.$ne);
-          conditions.push(`${col} != $${params.length}`);
-        }
+        const ops: Array<'$gte' | '$lte' | '$gt' | '$lt' | '$ne'> = ['$gte', '$lte', '$gt', '$lt', '$ne'];
+        ops.forEach((op) => {
+          if (val[op] === undefined) return;
+          const operand = val[op];
+          const sqlOp = op === '$gte' ? '>=' : op === '$lte' ? '<=' : op === '$gt' ? '>' : op === '$lt' ? '<' : '!=';
+
+          if (operand === null) {
+            if (op === '$ne') {
+              conditions.push(`${col} IS NOT NULL`);
+            } else {
+              conditions.push(`${col} IS NULL`);
+            }
+            return;
+          }
+
+          if (typeof operand === 'number') {
+            params.push(Number(operand));
+            if (op === '$ne') {
+              conditions.push(`(${numExpr} != $${params.length} OR ${col} IS NULL)`);
+            } else {
+              conditions.push(`${numExpr} ${sqlOp} $${params.length}`);
+            }
+          } else if (typeof operand === 'boolean') {
+            params.push(Boolean(operand));
+            if (op === '$ne') {
+              conditions.push(`(${boolExpr} != $${params.length} OR ${col} IS NULL)`);
+            } else {
+              conditions.push(`${boolExpr} ${sqlOp} $${params.length}`);
+            }
+          } else if (operand instanceof Date || (typeof operand === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(operand))) {
+            params.push(operand instanceof Date ? operand.toISOString() : operand);
+            if (op === '$ne') {
+              conditions.push(`(${dateExpr} != $${params.length} OR ${col} IS NULL)`);
+            } else {
+              conditions.push(`${dateExpr} ${sqlOp} $${params.length}`);
+            }
+          } else {
+            const cleanOpVal = operand && operand._id ? String(operand._id) : (operand && operand.toString ? operand.toString() : operand);
+            params.push(cleanOpVal);
+            if (op === '$ne') {
+              conditions.push(`(${col} != $${params.length} OR ${col} IS NULL)`);
+            } else {
+              conditions.push(`${col} ${sqlOp} $${params.length}`);
+            }
+          }
+        });
       } else if (val.$exists !== undefined) {
         if (val.$exists) {
           conditions.push(`${col} IS NOT NULL`);
@@ -569,7 +685,20 @@ function buildWhereClause(
       } else if (val instanceof RegExp) {
         params.push(val.source);
         conditions.push(`${col} ~* $${params.length}`);
+      } else {
+        const cleanVal = val && val._id ? String(val._id) : (val && val.toString ? val.toString() : val);
+        params.push(cleanVal);
+        conditions.push(`${col} = $${params.length}`);
       }
+    } else if (typeof val === 'boolean') {
+      params.push(Boolean(val));
+      conditions.push(`${boolExpr} = $${params.length}`);
+    } else if (typeof val === 'number') {
+      params.push(Number(val));
+      conditions.push(`${numExpr} = $${params.length}`);
+    } else if (val instanceof Date) {
+      params.push(val.toISOString());
+      conditions.push(`${dateExpr} = $${params.length}`);
     } else if (typeof val === 'string' && val.startsWith('/') && val.lastIndexOf('/') > 0) {
       const lastSlash = val.lastIndexOf('/');
       const rawPattern = val.substring(1, lastSlash);

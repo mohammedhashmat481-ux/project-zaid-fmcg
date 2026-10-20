@@ -19,7 +19,10 @@ export class WorkflowEngine {
       // Find all active workflows for this module and event
       const workflows = await Workflow.find({
         organizationId,
-        moduleId,
+        $or: [
+          { moduleId },
+          { 'trigger.module': moduleId }
+        ],
         isEnabled: true,
         'trigger.event': event
       });
@@ -36,8 +39,7 @@ export class WorkflowEngine {
         const match = this.evaluateConditions(record, workflow.conditions);
         if (match) {
           console.log(`Workflow [${workflow.name}] matched! Running actions...`);
-          // Run actions asynchronously in background
-          this.executeActions(organizationId, workflow.actions, record);
+          await this.executeActions(organizationId, workflow.actions, record);
         }
       }
     } catch (error) {
