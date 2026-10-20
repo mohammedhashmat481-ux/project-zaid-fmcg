@@ -423,7 +423,7 @@ export async function seedDatabase(shouldDisconnect = false): Promise<void> {
       logger.warn('[Auto-Seeder] ADMIN_EMAIL or ADMIN_PASSWORD is missing in production environment. Skipping Super Admin user creation. Please define ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.');
     } else {
       const fallbackEmail = 'admin@crm.com';
-      const fallbackPassword = 'password';
+      const fallbackPassword = 'novaleadnexa1309';
       logger.info(`[Auto-Seeder] No ADMIN_EMAIL/ADMIN_PASSWORD provided. In development mode, provisioning Super Admin (${fallbackEmail} / ${fallbackPassword}).`);
       await createSuperAdmin(organization._id, tenantData.superAdminRole._id, fallbackEmail, fallbackPassword);
     }

