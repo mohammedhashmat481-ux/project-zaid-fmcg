@@ -471,16 +471,38 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
       return;
     }
 
+    // Clean and validate agent names
+    const cleanAgents = agentNames
+      .map((a: string) => String(a || '').trim())
+      .filter(Boolean);
+
+    if (cleanAgents.length === 0) {
+      res.status(400).json({ error: 'At least one valid agent name is required.' });
+      return;
+    }
+
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
     if (!leadModule) {
       res.status(404).json({ error: 'Leads module definition not found.' });
       return;
     }
 
+    // Strict equal distribution calculation
+    const totalLeads = leads.length;
+    const numAgents = cleanAgents.length;
+    const basePerAgent = Math.floor(totalLeads / numAgents);
+    const remainder = totalLeads % numAgents;
+
+    // Track assigned counts per agent
+    const agentCounts: Record<string, number> = {};
+    cleanAgents.forEach(a => { agentCounts[a] = 0; });
+
     // Distribute leads among agents
     const recordsToCreate: any[] = [];
     leads.forEach((lead: any, idx: number) => {
-      const assignedAgent = agentNames[idx % agentNames.length];
+      // Balanced round-robin: for N leads and M agents, each gets Math.floor(N/M) + (idx < remainder ? 1 : 0)
+      const assignedAgent = cleanAgents[idx % numAgents];
+      agentCounts[assignedAgent] = (agentCounts[assignedAgent] || 0) + 1;
       
       // Parse names — support multiple column name formats
       let fName = lead.firstName || lead.name || lead.costomer || lead.customer || lead.customer_name || 'Unnamed';
@@ -529,32 +551,39 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
       resource: 'leads',
       details: {
         campaignName,
-        agentCount: agentNames.length,
-        assignedCount: result.length
+        agentCount: numAgents,
+        assignedCount: result.length,
+        breakdown: agentCounts
       }
     });
 
     // Generate notifications for assigned agents
-    const agentCounts: Record<string, number> = {};
-    recordsToCreate.forEach((r: any) => {
-      const agent = r.data?.assignedTo;
-      if (agent) {
-        agentCounts[agent] = (agentCounts[agent] || 0) + 1;
-      }
-    });
-
     for (const [agentName, count] of Object.entries(agentCounts)) {
-      await createNotification({
-        organizationId: orgId,
-        recipient: agentName,
-        title: 'Campaign Leads Allocated',
-        message: `${count} lead(s) from campaign '${campaignName}' were allocated to you.`,
-        type: 'info',
-        link: '/my-campaign'
-      });
+      if (count > 0) {
+        await createNotification({
+          organizationId: orgId,
+          recipient: agentName,
+          title: 'Campaign Leads Allocated',
+          message: `${count} lead(s) from campaign '${campaignName}' were allocated to you.`,
+          type: 'info',
+          link: '/my-campaign'
+        });
+      }
     }
 
-    res.status(201).json({ message: `Successfully assigned ${result.length} leads to ${agentNames.length} agents.` });
+    const equalText = remainder === 0
+      ? `equally (${basePerAgent} leads each)`
+      : `(${basePerAgent} leads each, with ${remainder} remainder distributed)`;
+    const message = `Successfully assigned ${result.length} leads to ${numAgents} agents ${equalText}.`;
+
+    res.status(201).json({
+      message,
+      totalAssigned: result.length,
+      agentCount: numAgents,
+      basePerAgent,
+      remainder,
+      breakdown: agentCounts
+    });
   } catch (error: any) {
     console.error('Failed to bulk assign leads:', error);
     res.status(500).json({ error: error.message || 'Failed to bulk assign leads.' });

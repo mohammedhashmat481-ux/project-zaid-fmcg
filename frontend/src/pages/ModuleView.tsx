@@ -125,6 +125,8 @@ export default function ModuleView() {
   const [caAgents, setCaAgents] = useState<any[]>([]);
   const [caSelectedAgents, setCaSelectedAgents] = useState<string[]>([]);
   const [caFile, setCaFile] = useState<File | null>(null);
+  const [caParsedLeads, setCaParsedLeads] = useState<any[]>([]);
+  const [campaignFilterTab, setCampaignFilterTab] = useState<'all' | 'in_progress' | 'completed'>('all');
   const [caAllocatedStats, setCaAllocatedStats] = useState<Record<string, number>>({});
   const [caDialedStats, setCaDialedStats] = useState<Record<string, number>>({});
   const [caLoadingStats, setCaLoadingStats] = useState(false);
@@ -257,6 +259,46 @@ export default function ModuleView() {
     return results;
   };
 
+  const handleFileSelection = (file: File | null) => {
+    setCaFile(file);
+    if (!file) {
+      setCaParsedLeads([]);
+      return;
+    }
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        let parsed: any[] = [];
+        if (isExcel) {
+          const buffer = e.target?.result as ArrayBuffer;
+          parsed = parseExcelFile(buffer);
+        } else {
+          const text = e.target?.result as string;
+          parsed = parseCSV(text);
+        }
+        setCaParsedLeads(parsed);
+        if (parsed.length > 0) {
+          showToast(`File verified: ${parsed.length} leads loaded. Ready for equal distribution.`, 'info');
+        } else {
+          showToast('The uploaded file is empty or has no valid rows.', 'warning');
+        }
+      } catch (err) {
+        console.error('File parsing error:', err);
+        showToast('Failed to parse the selected file.', 'error');
+        setCaParsedLeads([]);
+      }
+    };
+
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
+  };
+
   const handleAssignData = async () => {
     if (!caSelectedCampaign) {
       showToast('Please select a Campaign.', 'warning');
@@ -273,112 +315,90 @@ export default function ModuleView() {
 
     setCaAssigning(true);
     try {
-      const fileName = caFile.name.toLowerCase();
-      const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
-
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          let parsedLeads: any[];
-
-          if (isExcel) {
-            // Parse XLSX/XLS with SheetJS
-            const buffer = event.target?.result as ArrayBuffer;
-            parsedLeads = parseExcelFile(buffer);
-          } else {
-            // Parse CSV as text
-            const csvText = event.target?.result as string;
-            parsedLeads = parseCSV(csvText);
-          }
-          
-          if (parsedLeads.length === 0) {
-            showToast('The uploaded file is empty or invalid.', 'warning');
-            setCaAssigning(false);
-            return;
-          }
-
-          const agentNames = caAgents
-            .filter((a: any) => caSelectedAgents.includes(a._id))
-            .map((a: any) => `${a.firstName} ${a.lastName}`);
-
-          const res = await api.post('/records/campaigns/bulk-assign', {
-            campaignName: caSelectedCampaign,
-            agentNames,
-            leads: parsedLeads
-          });
-
-          showToast(res.data.message || `Assigned ${parsedLeads.length} leads to ${agentNames.length} agents.`, 'success');
-          setCaFile(null);
-          
-          queryClient.invalidateQueries({ queryKey: ['records', 'leads'] });
-          loadCampaignAssignmentsData();
-        } catch (err: any) {
-          console.error(err);
-          showToast(err.response?.data?.error || 'Failed to process bulk assignment.', 'error');
-        } finally {
-          setCaAssigning(false);
+      let leadsToSend = caParsedLeads;
+      if (!leadsToSend || leadsToSend.length === 0) {
+        const fileName = caFile.name.toLowerCase();
+        const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+        const bufferOrText = await caFile.arrayBuffer();
+        if (isExcel) {
+          leadsToSend = parseExcelFile(bufferOrText);
+        } else {
+          const text = new TextDecoder().decode(bufferOrText);
+          leadsToSend = parseCSV(text);
         }
-      };
-
-      if (isExcel) {
-        reader.readAsArrayBuffer(caFile);
-      } else {
-        reader.readAsText(caFile);
       }
-    } catch (err) {
+
+      if (!leadsToSend || leadsToSend.length === 0) {
+        showToast('The uploaded file is empty or invalid.', 'warning');
+        setCaAssigning(false);
+        return;
+      }
+
+      const agentNames = caAgents
+        .filter((a: any) => caSelectedAgents.includes(a._id))
+        .map((a: any) => `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.name || 'Agent');
+
+      const res = await api.post('/records/campaigns/bulk-assign', {
+        campaignName: caSelectedCampaign,
+        agentNames,
+        leads: leadsToSend
+      });
+
+      showAlertModal({
+        title: 'Leads Allocated Successfully',
+        message: res.data?.message || `Successfully assigned ${leadsToSend.length} leads equally among ${agentNames.length} agents.`,
+        type: 'success'
+      });
+      
+      setCaFile(null);
+      setCaParsedLeads([]);
+      
+      queryClient.invalidateQueries({ queryKey: ['records', 'leads'] });
+      loadCampaignAssignmentsData();
+    } catch (err: any) {
       console.error(err);
-      showToast('Failed to read file.', 'error');
+      showToast(err.response?.data?.error || 'Failed to process bulk assignment.', 'error');
+    } finally {
       setCaAssigning(false);
     }
   };
-
   const renderCampaignAssignments = () => {
     const totalAgentAllocated = caAgents.reduce((sum: number, agent: any) => {
-      const fullName = `${agent.firstName} ${agent.lastName}`;
-      return sum + (caAllocatedStats[fullName] || 0);
+      const fullName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.name || 'Agent';
+      return sum + (caAllocatedStats[fullName] || caAllocatedStats[agent.firstName] || 0);
     }, 0);
 
-    const totalAgentDialed = caAgents.reduce((sum: number, agent: any) => {
-      const fullName = `${agent.firstName} ${agent.lastName}`;
-      return sum + (caDialedStats[fullName] || 0);
-    }, 0);
-
-    const dialRate = totalAgentAllocated > 0 ? Math.round((totalAgentDialed / totalAgentAllocated) * 100) : 0;
+    const equalPerAgent = (caSelectedAgents.length > 0 && caParsedLeads.length > 0)
+      ? Math.floor(caParsedLeads.length / caSelectedAgents.length)
+      : 0;
+    const equalRemainder = (caSelectedAgents.length > 0 && caParsedLeads.length > 0)
+      ? caParsedLeads.length % caSelectedAgents.length
+      : 0;
 
     return (
       <div className="space-y-6 text-left">
-        {/* Header Title Bar with Modern Gradient Avatar */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 flex-shrink-0">
-              <Icons.Target className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <div className="text-left">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  Assign Campaigns
-                </h1>
-                <span className="text-xs font-black px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 shadow-3xs font-mono">
-                  Lead Distribution
-                </span>
-              </div>
-              <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-                Allocate leads and upload contact files for team members
-              </p>
-            </div>
+        {/* Header Title Bar */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+              Assign Campaign
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              Allocate leads and spread contact files for team members
+            </p>
           </div>
         </div>
 
-        {/* 4 Vibrant Gradient Metric Cards */}
+        {/* 4 Vibrant Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Total Campaigns */}
-          <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
+          {/* Card 1: Available Campaigns */}
+          <div className="bg-white dark:bg-slate-900 border border-violet-100/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 to-indigo-600" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Available Campaigns
               </span>
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xs">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
                 <Icons.Layers className="w-4.5 h-4.5" />
               </div>
             </div>
@@ -386,20 +406,20 @@ export default function ModuleView() {
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
                 {caCampaigns.length}
               </span>
-              <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
+              <span className="text-[11px] font-bold text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-2.5 py-0.5 rounded-md">
                 Active Sources
               </span>
             </div>
           </div>
 
           {/* Card 2: Team Roles */}
-          <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500 to-blue-500" />
+          <div className="bg-white dark:bg-slate-900 border border-blue-100/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-indigo-600" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Team Roles
               </span>
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-xs">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
                 <Icons.Users2 className="w-4.5 h-4.5" />
               </div>
             </div>
@@ -407,20 +427,20 @@ export default function ModuleView() {
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
                 {caRoles.length}
               </span>
-              <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/50 px-2 py-0.5 rounded-md">
+              <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 rounded-md">
                 Role Groups
               </span>
             </div>
           </div>
 
-          {/* Card 3: Loaded Employees */}
-          <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+          {/* Card 3: Loaded Agents */}
+          <div className="bg-white dark:bg-slate-900 border border-teal-100/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 to-emerald-500" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Loaded Agents
               </span>
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-600 to-emerald-600 flex items-center justify-center text-white shadow-xs">
                 <Icons.UserCheck className="w-4.5 h-4.5" />
               </div>
             </div>
@@ -428,14 +448,14 @@ export default function ModuleView() {
               <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
                 {caAgents.length}
               </span>
-              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
+              <span className="text-[11px] font-bold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/50 px-2.5 py-0.5 rounded-md">
                 {caSelectedAgents.length} Selected
               </span>
             </div>
           </div>
 
-          {/* Card 4: Allocated Pool */}
-          <div className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+          {/* Card 4: Total Assigned */}
+          <div className="bg-white dark:bg-slate-900 border border-amber-100/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -445,32 +465,24 @@ export default function ModuleView() {
                 <Icons.Zap className="w-4.5 h-4.5" />
               </div>
             </div>
-            <div className="mt-3 flex items-center justify-between">
-              <div>
-                <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {totalAgentAllocated.toLocaleString()}
-                </span>
-                <span className="text-[10px] text-slate-400 block font-semibold">
-                  {totalAgentDialed.toLocaleString()} Dialed ({dialRate}%)
-                </span>
-              </div>
-              <div className="w-16 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
-                <div 
-                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all" 
-                  style={{ width: `${Math.max(dialRate, 4)}%` }} 
-                />
-              </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                {totalAgentAllocated.toLocaleString()}
+              </span>
+              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2.5 py-0.5 rounded-md">
+                Allocated Leads
+              </span>
             </div>
           </div>
         </div>
 
         {/* Top Control Card (Campaign Distribution Studio) */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden text-left">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 via-teal-500 to-emerald-500" />
           
           <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <div className="w-6 h-6 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
                 <Icons.Sparkles className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
@@ -482,17 +494,17 @@ export default function ModuleView() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
             <div className="text-left">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
-                <Icons.Layers className="w-3.5 h-3.5 text-indigo-500" />
+                <Icons.Layers className="w-3.5 h-3.5 text-violet-500" />
                 Select Campaign
               </label>
               <select 
                 value={caSelectedCampaign} 
                 onChange={e => setCaSelectedCampaign(e.target.value)} 
-                className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 transition-all cursor-pointer shadow-inner-sm"
+                className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all cursor-pointer shadow-inner-sm"
               >
                 <option value="">Select Campaign</option>
                 {caCampaigns.map((c: any) => {
-                  const name = c.data?.campaignName;
+                  const name = c.data?.campaignName || c.data?.name || c.name;
                   return <option key={c._id} value={name}>{name}</option>;
                 })}
               </select>
@@ -500,13 +512,13 @@ export default function ModuleView() {
 
             <div className="text-left">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
-                <Icons.Users2 className="w-3.5 h-3.5 text-purple-500" />
+                <Icons.Users2 className="w-3.5 h-3.5 text-blue-500" />
                 Agent Type (Role)
               </label>
               <select 
                 value={caSelectedRole} 
                 onChange={e => setCaSelectedRole(e.target.value)} 
-                className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 transition-all cursor-pointer shadow-inner-sm"
+                className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all cursor-pointer shadow-inner-sm"
               >
                 <option value="">Select Role</option>
                 {caRoles.map((r: any) => (
@@ -519,7 +531,7 @@ export default function ModuleView() {
               <button 
                 type="button" 
                 onClick={handleLoadAgents}
-                className="flex-1 h-11 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="flex-1 h-11 bg-gradient-to-r from-violet-600 via-indigo-600 to-indigo-700 hover:from-violet-700 hover:to-indigo-800 active:scale-[0.98] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-violet-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 disabled={caLoadingAgents}
               >
                 {caLoadingAgents ? (
@@ -545,7 +557,7 @@ export default function ModuleView() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
             <div className="md:col-span-2 text-left">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
-                <Icons.FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <Icons.FileSpreadsheet className="w-3.5 h-3.5 text-teal-600" />
                 Upload Excel / CSV File
               </label>
               
@@ -554,14 +566,14 @@ export default function ModuleView() {
                 className={`border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all ${
                   caFile 
                     ? 'border-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/30' 
-                    : 'border-indigo-200/90 dark:border-slate-700 hover:border-indigo-500 bg-indigo-50/15 dark:bg-slate-900/40'
+                    : 'border-slate-200/90 dark:border-slate-700 hover:border-violet-500 bg-slate-50/50 dark:bg-slate-900/40'
                 }`}
               >
                 <input 
                   id="ca-file-input"
                   type="file" 
                   accept=".csv,.xlsx,.xls"
-                  onChange={e => setCaFile(e.target.files?.[0] || null)}
+                  onChange={e => handleFileSelection(e.target.files?.[0] || null)}
                   className="hidden"
                 />
                 {caFile ? (
@@ -571,22 +583,28 @@ export default function ModuleView() {
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{caFile.name}</p>
-                      <p className="text-xs text-slate-500 font-medium">{(caFile.size / 1024).toFixed(1)} KB • Ready to assign</p>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {(caFile.size / 1024).toFixed(1)} KB • {caParsedLeads.length > 0 ? (
+                          <strong className="text-emerald-600 dark:text-emerald-400 font-mono">
+                            {caParsedLeads.length} leads loaded {caSelectedAgents.length > 0 ? `(${Math.floor(caParsedLeads.length / caSelectedAgents.length)} leads each)` : ''}
+                          </strong>
+                        ) : 'Ready to assign'}
+                      </p>
                     </div>
                     <button 
                       type="button" 
                       onClick={(e) => {
                         e.stopPropagation();
-                        setCaFile(null);
+                        handleFileSelection(null);
                       }}
-                      className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
                     >
                       <Icons.X className="w-4 h-4" />
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 py-1">
-                    <div className="p-2.5 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-slate-700 shadow-3xs">
+                    <div className="p-2.5 bg-violet-50 dark:bg-slate-800 text-violet-600 dark:text-violet-400 rounded-xl border border-violet-100 dark:border-slate-700 shadow-3xs">
                       <Icons.UploadCloud className="w-5 h-5" />
                     </div>
                     <div className="text-left">
@@ -602,8 +620,8 @@ export default function ModuleView() {
               <button 
                 type="button" 
                 onClick={handleAssignData}
-                className="w-full h-12 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 active:scale-[0.98] text-white rounded-xl font-extrabold text-xs uppercase tracking-wider shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                disabled={caAssigning}
+                className="w-full h-12 bg-gradient-to-r from-emerald-600 via-teal-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 active:scale-[0.98] text-white rounded-xl font-extrabold text-xs uppercase tracking-wider shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                disabled={caAssigning || !caFile}
               >
                 {caAssigning ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -619,7 +637,7 @@ export default function ModuleView() {
 
         {/* Employee Allocation Table Card */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs relative">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 via-teal-500 to-emerald-500" />
           
           <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
@@ -631,14 +649,28 @@ export default function ModuleView() {
               </p>
             </div>
             {caAgents.length > 0 && (
-              <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-3.5 py-1 rounded-full border border-indigo-200/80 dark:border-indigo-800/60 uppercase tracking-wider font-mono">
+              <span className="text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 px-3.5 py-1 rounded-full border border-violet-200/80 dark:border-violet-800/60 uppercase tracking-wider font-mono">
                 Selected: {caSelectedAgents.length} of {caAgents.length} Agents
               </span>
             )}
           </div>
+
+          {caParsedLeads.length > 0 && caSelectedAgents.length > 0 && (
+            <div className="mx-6 mt-4 p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between gap-3 text-xs text-emerald-900 dark:text-emerald-200">
+              <div className="flex items-center gap-2">
+                <Icons.CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="font-bold">
+                  Equal Distribution: {caParsedLeads.length} leads ÷ {caSelectedAgents.length} selected agents = {equalPerAgent} leads each {equalRemainder > 0 ? `(+${equalRemainder} distributed)` : ''}
+                </span>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-200/70 dark:bg-emerald-900/60 font-mono font-bold text-[11px] text-emerald-900 dark:text-emerald-100">
+                {equalPerAgent} Leads / Member
+              </span>
+            </div>
+          )}
           
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse min-w-[750px]">
+            <table className="w-full text-xs text-left border-collapse min-w-[700px]">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider h-11 bg-slate-50/90 dark:bg-slate-800/80">
                   <th className="py-2 px-4 w-12 text-center">
@@ -652,29 +684,31 @@ export default function ModuleView() {
                           setCaSelectedAgents([]);
                         }
                       }}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                      className="rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer w-4 h-4"
                     />
                   </th>
                   <th className="py-3 px-4">Full Name</th>
                   <th className="py-3 px-4">Role</th>
                   <th className="py-3 px-4">Reporting Manager</th>
                   <th className="py-3 px-4 text-center">Total Allocated #</th>
-                  <th className="py-3 px-4 text-center">Total Dialed #</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {caAgents.map((agent: any) => {
-                  const fullName = `${agent.firstName} ${agent.lastName}`;
-                  const allocated = caAllocatedStats[fullName] || 0;
-                  const dialed = caDialedStats[fullName] || 0;
+                  const fullName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.name || 'Agent';
+                  const allocated = caAllocatedStats[fullName] || caAllocatedStats[agent.firstName] || 0;
                   const isChecked = caSelectedAgents.includes(agent._id);
+                  const selectedIdx = isChecked ? caSelectedAgents.indexOf(agent._id) : -1;
+                  const willReceive = (isChecked && caParsedLeads.length > 0 && caSelectedAgents.length > 0)
+                    ? equalPerAgent + (selectedIdx < equalRemainder ? 1 : 0)
+                    : 0;
                   
                   return (
                     <tr 
                       key={agent._id} 
                       className={`transition-colors h-14 ${
                         isChecked 
-                          ? 'bg-indigo-50/40 dark:bg-slate-800/50 hover:bg-indigo-50/60' 
+                          ? 'bg-violet-50/40 dark:bg-slate-800/50 hover:bg-violet-50/60' 
                           : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/30'
                       }`}
                     >
@@ -689,12 +723,12 @@ export default function ModuleView() {
                               setCaSelectedAgents(caSelectedAgents.filter(id => id !== agent._id));
                             }
                           }}
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                          className="rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer w-4 h-4"
                         />
                       </td>
                       <td className="px-4 py-2 text-left">
                         <div className="flex items-center gap-3">
-                          <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-3xs">
+                          <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-3xs">
                             {agent.firstName ? agent.firstName[0] : 'U'}
                           </div>
                           <div>
@@ -708,7 +742,7 @@ export default function ModuleView() {
                         </div>
                       </td>
                       <td className="px-4 py-2 text-left">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/50">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 border border-violet-200/80 dark:border-violet-800/50">
                           {agent.roleId?.name || 'No Role'}
                         </span>
                       </td>
@@ -722,22 +756,24 @@ export default function ModuleView() {
                         )}
                       </td>
                       <td className="px-4 py-2 text-center">
-                        <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 min-w-[3rem] shadow-3xs">
-                          {allocated}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 min-w-[3rem] shadow-3xs">
-                          {dialed}
-                        </span>
+                        <div className="inline-flex items-center justify-center gap-1.5">
+                          <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 min-w-[3rem] shadow-3xs">
+                            {allocated}
+                          </span>
+                          {willReceive > 0 && (
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-extrabold font-mono bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300/80 shadow-3xs animate-pulse">
+                              +{willReceive} New
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
                 {caAgents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-14 text-center">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-500/20">
+                    <td colSpan={5} className="py-14 text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-violet-500/20">
                         <Icons.Users className="w-6 h-6" />
                       </div>
                       <p className="font-extrabold text-sm text-slate-800 dark:text-slate-200">No employees loaded</p>
@@ -868,6 +904,25 @@ export default function ModuleView() {
     }
   };
 
+  const handleDeleteCampaign = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete campaign "${name}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/records/campaigns/${id}`);
+      showAlertModal({
+        title: 'Campaign Deleted',
+        message: `Campaign "${name}" was deleted successfully.`,
+        type: 'success'
+      });
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ['records', 'campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-allocation-stats'] });
+    } catch (err: any) {
+      showToast(err.response?.data?.error || 'Failed to delete campaign', 'error');
+    }
+  };
+
   // Read ?status= from URL and apply as filter
   const urlStatus = searchParams.get('status');
 
@@ -912,20 +967,47 @@ export default function ModuleView() {
     const records = data?.records || [];
     let totalAllocated = 0;
     let totalDialed = 0;
+    let inProgressCount = 0;
+    let completedCount = 0;
+
     records.forEach((rec: any) => {
       const name = rec.data?.campaignName || rec.data?.source || rec.data?.campaign || rec.data?.name || rec.name || '';
-      totalAllocated += getAllocatedNumbers(name);
-      totalDialed += getDialedNumbers(name);
+      const allocated = getAllocatedNumbers(name);
+      const dialed = getDialedNumbers(name);
+      totalAllocated += allocated;
+      totalDialed += dialed;
+      if (allocated > 0 && dialed >= allocated) {
+        completedCount++;
+      } else {
+        inProgressCount++;
+      }
     });
+
     const overallRate = totalAllocated > 0 ? Math.round((totalDialed / totalAllocated) * 100) : 0;
     return {
       totalCampaigns: data?.pagination?.total ?? records.length,
+      inProgressCount,
+      completedCount,
       totalAllocated,
       totalDialed,
       yetToDial: Math.max(0, totalAllocated - totalDialed),
       overallRate
     };
   }, [data?.records, data?.pagination?.total, campaignStatsData]);
+
+  const filteredCampaignRecords = useMemo(() => {
+    const records = data?.records || [];
+    if (campaignFilterTab === 'all') return records;
+    return records.filter((rec: any) => {
+      const name = rec.data?.campaignName || rec.data?.source || rec.data?.campaign || rec.data?.name || rec.name || '';
+      const allocated = getAllocatedNumbers(name);
+      const dialed = getDialedNumbers(name);
+      const isCompleted = allocated > 0 && dialed >= allocated;
+      if (campaignFilterTab === 'completed') return isCompleted;
+      if (campaignFilterTab === 'in_progress') return !isCompleted;
+      return true;
+    });
+  }, [data?.records, campaignFilterTab, campaignStatsData]);
 
   const { data: usersDropdown } = useQuery({
     queryKey: ['moduleview-users-dropdown'],
@@ -1225,6 +1307,421 @@ export default function ModuleView() {
     );
   }
 
+  const renderCampaignsList = () => {
+    return (
+      <div className="space-y-6 text-left">
+        {/* Header Title Bar */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+              Campaigns
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              Create marketing campaigns, distribute batch files, and monitor team dialing progress.
+            </p>
+          </div>
+        </div>
+
+        {/* 6 Vibrant Metric Cards matching Image 1 */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          {/* Card 1: Total Campaigns */}
+          <div className="bg-white dark:bg-slate-900 border border-violet-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 to-indigo-600" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Total Campaigns
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
+                <Icons.Megaphone className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.totalCampaigns}
+              </span>
+              <span className="text-[10px] font-bold text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-2 py-0.5 rounded-md">
+                Active Drives
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: In Progress */}
+          <div className="bg-white dark:bg-slate-900 border border-blue-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-indigo-600" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                In Progress
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
+                <Icons.PhoneCall className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.inProgressCount}
+              </span>
+              <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md">
+                Active Calling
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: Completed */}
+          <div className="bg-white dark:bg-slate-900 border border-emerald-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-600 to-teal-600" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Completed
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-xs">
+                <Icons.CheckCircle className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.completedCount}
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
+                100% Dialed
+              </span>
+            </div>
+          </div>
+
+          {/* Card 4: Allocated Leads */}
+          <div className="bg-white dark:bg-slate-900 border border-cyan-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-600" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Allocated Leads
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-xs">
+                <Icons.Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.totalAllocated.toLocaleString()}
+              </span>
+              <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/50 px-2 py-0.5 rounded-md">
+                Pipeline Leads
+              </span>
+            </div>
+          </div>
+
+          {/* Card 5: Total Dialed */}
+          <div className="bg-white dark:bg-slate-900 border border-teal-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 to-emerald-600" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Total Dialed
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-600 flex items-center justify-center text-white shadow-xs">
+                <Icons.PhoneOutgoing className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.totalDialed.toLocaleString()}
+              </span>
+              <span className="text-[10px] font-bold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/50 px-2 py-0.5 rounded-md">
+                Contacted
+              </span>
+            </div>
+          </div>
+
+          {/* Card 6: Dialing Rate */}
+          <div className="bg-white dark:bg-slate-900 border border-amber-100/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Dialing Rate
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xs">
+                <Icons.Zap className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-1.5">
+              <span className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                {campaignSummaryStats.overallRate}%
+              </span>
+              <div className="w-14 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all"
+                  style={{ width: `${Math.max(campaignSummaryStats.overallRate, 4)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Create Marketing Campaign Studio Card */}
+        <form
+          onSubmit={handleSaveCampaign}
+          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden text-left"
+        >
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 to-teal-500" />
+
+          <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+                <Icons.Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                {editCampaignId ? 'Edit Campaign Details' : 'Quick Create Marketing Campaign'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex-1 max-w-2xl">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                Campaign Name <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <Icons.Tag className="w-4 h-4 text-violet-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={campaignNameInput}
+                  onChange={(e) => setCampaignNameInput(e.target.value)}
+                  placeholder="e.g. Q3 Telecalling Drive, HNI Real Estate, Loan Festival..."
+                  className="w-full h-11 pl-10 pr-4 text-xs sm:text-sm font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all shadow-inner-sm"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 self-end md:self-auto mt-2 md:mt-0">
+              {editCampaignId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCampaignNameInput('');
+                    setEditCampaignId(null);
+                  }}
+                  className="h-11 px-5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmittingCampaign || !campaignNameInput.trim()}
+                className="h-11 px-6 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-violet-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSubmittingCampaign ? (
+                  <Icons.Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
+                )}
+                <span>{editCampaignId ? 'Update Campaign' : '+ Create Campaign'}</span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* Filter Tabs Bar matching Image 1 */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 px-4 shadow-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setCampaignFilterTab('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                campaignFilterTab === 'all'
+                  ? 'bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 border border-violet-200 dark:border-violet-800 shadow-3xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Icons.Layers className="w-3.5 h-3.5" />
+              <span>All Campaigns</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-violet-100 dark:bg-violet-900/60 text-violet-800 dark:text-violet-200 text-[10px] font-mono">
+                {campaignSummaryStats.totalCampaigns}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCampaignFilterTab('in_progress')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                campaignFilterTab === 'in_progress'
+                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-3xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Icons.PhoneCall className="w-3.5 h-3.5" />
+              <span>In Progress</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 text-[10px] font-mono">
+                {campaignSummaryStats.inProgressCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCampaignFilterTab('completed')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                campaignFilterTab === 'completed'
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-3xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Icons.CheckCircle className="w-3.5 h-3.5" />
+              <span>Completed</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 text-[10px] font-mono">
+                {campaignSummaryStats.completedCount}
+              </span>
+            </button>
+          </div>
+          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Showing <span className="font-bold text-slate-900 dark:text-white font-mono">{filteredCampaignRecords.length}</span> of <span className="font-bold text-slate-900 dark:text-white font-mono">{campaignSummaryStats.totalCampaigns}</span> campaigns
+          </div>
+        </div>
+
+        {/* Campaign Table matching Image 1 */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs relative">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 via-teal-500 to-emerald-500" />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[850px] text-left text-xs text-slate-800 dark:text-slate-200">
+              <thead>
+                <tr className="bg-slate-50/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80">
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Campaign
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Created Date
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-center">
+                    Allocated Leads
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-center">
+                    Dialed
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Calling Progress
+                  </th>
+                  <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredCampaignRecords.map((rec: any) => {
+                  const name = rec.data?.campaignName || rec.data?.source || rec.data?.campaign || rec.data?.name || rec.name || 'Unnamed Campaign';
+                  const allocated = getAllocatedNumbers(name);
+                  const dialed = getDialedNumbers(name);
+                  const progress = allocated > 0 ? Math.round((dialed / allocated) * 100) : 0;
+                  const createdDate = rec.createdAt ? new Date(rec.createdAt) : new Date();
+                  const createdDateStr = createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + createdDate.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  });
+
+                  return (
+                    <tr key={rec._id} className="hover:bg-violet-50/30 dark:hover:bg-slate-800/60 transition-colors">
+                      <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-xs flex-shrink-0">
+                            <Icons.Megaphone className="w-5 h-5 stroke-[2.2]" />
+                          </div>
+                          <div>
+                            <span className="capitalize block text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">
+                              {name}
+                            </span>
+                            <span className="inline-flex items-center px-2 py-0.5 mt-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60">
+                              Active Campaign
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium">
+                        <span className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-slate-700/60 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          <Icons.Calendar className="w-3.5 h-3.5 text-violet-500" />
+                          {createdDateStr}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="inline-flex items-center justify-center font-bold px-3 py-1 rounded-full bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60 font-mono text-xs shadow-3xs">
+                          {allocated.toLocaleString()} Leads
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="inline-flex items-center justify-center font-bold px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-mono text-xs shadow-3xs">
+                          {dialed.toLocaleString()} Dialed
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 min-w-[150px]">
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-extrabold text-slate-800 dark:text-slate-100 font-mono">{progress}%</span>
+                            <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                              progress >= 100
+                                ? 'text-emerald-700 bg-emerald-100/80 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : progress > 0
+                                ? 'text-violet-700 bg-violet-100/80 dark:bg-violet-950/60 dark:text-violet-300'
+                                : 'text-slate-500 bg-slate-100 dark:bg-slate-800'
+                            }`}>
+                              {progress >= 100 ? 'Completed' : progress > 0 ? 'In Progress' : 'Pending'}
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700/60 p-0.5">
+                            <div
+                              className="h-full rounded-full transition-all bg-gradient-to-r from-violet-600 via-indigo-600 to-emerald-500"
+                              style={{ width: `${Math.max(progress, 3)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadCampaign(rec)}
+                            className="h-8.5 px-3 bg-violet-50 hover:bg-violet-100 active:bg-violet-150 text-violet-700 dark:bg-violet-950/50 dark:hover:bg-violet-900/60 dark:text-violet-300 border border-violet-200 dark:border-violet-800/80 rounded-xl text-xs font-bold shadow-3xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                            title="Download 12-Column CSV"
+                          >
+                            <Icons.Download className="w-3.5 h-3.5" />
+                            <span>Export</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditClick(rec)}
+                            className="w-8.5 h-8.5 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-150 text-amber-700 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center transition-all shadow-3xs cursor-pointer"
+                            title="Edit Campaign"
+                          >
+                            <Icons.Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCampaign(rec._id, name)}
+                            className="w-8.5 h-8.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-150 text-rose-600 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 flex items-center justify-center transition-all shadow-3xs cursor-pointer"
+                            title="Delete Campaign"
+                          >
+                            <Icons.Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredCampaignRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-16 text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-violet-500/20">
+                        <Icons.Megaphone className="w-7 h-7" />
+                      </div>
+                      <p className="font-extrabold text-base text-slate-800 dark:text-slate-100">No campaigns found</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                        {campaignFilterTab !== 'all'
+                          ? `No campaigns in "${campaignFilterTab.replace('_', ' ')}" status.`
+                          : 'Enter a campaign name above to launch your first targeted marketing drive.'}
+                      </p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (apiPath === 'campaignassignments') {
     return (
       <div className="space-y-6">
@@ -1233,187 +1730,17 @@ export default function ModuleView() {
     );
   }
 
+  if (apiPath === 'campaigns') {
+    return (
+      <div className="space-y-6">
+        {renderCampaignsList()}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {apiPath === 'campaigns' ? (
-        <div className="space-y-6">
-          {/* Header Title Bar with Modern Gradient Avatar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 flex-shrink-0">
-                <Icons.Megaphone className="w-6 h-6 stroke-[2.2]" />
-              </div>
-              <div className="text-left">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                    Campaigns
-                  </h1>
-                  <span className="text-xs font-black px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 shadow-3xs font-mono">
-                    {data?.pagination?.total ?? (data?.records?.length || 0)} Total Drives
-                  </span>
-                </div>
-                <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-                  Create and manage marketing campaign records, track allocated leads, and monitor dial progress.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* 4 Vibrant Gradient Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Total Campaigns */}
-            <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Total Campaigns
-                </span>
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xs">
-                  <Icons.Megaphone className="w-4.5 h-4.5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {campaignSummaryStats.totalCampaigns}
-                </span>
-                <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                  Active Drives
-                </span>
-              </div>
-            </div>
-
-            {/* Card 2: Allocated Leads */}
-            <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500 to-blue-500" />
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Allocated Leads
-                </span>
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-xs">
-                  <Icons.Users className="w-4.5 h-4.5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {campaignSummaryStats.totalAllocated.toLocaleString()}
-                </span>
-                <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/50 px-2 py-0.5 rounded-md">
-                  Pipeline Leads
-                </span>
-              </div>
-            </div>
-
-            {/* Card 3: Total Dialed */}
-            <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Total Dialed
-                </span>
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
-                  <Icons.PhoneCall className="w-4.5 h-4.5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {campaignSummaryStats.totalDialed.toLocaleString()}
-                </span>
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
-                  Contacted
-                </span>
-              </div>
-            </div>
-
-            {/* Card 4: Overall Progress */}
-            <div className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all group">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Dialing Rate
-                </span>
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xs">
-                  <Icons.Zap className="w-4.5 h-4.5" />
-                </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {campaignSummaryStats.overallRate}%
-                </span>
-                <div className="w-20 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
-                  <div 
-                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all" 
-                    style={{ width: `${Math.max(campaignSummaryStats.overallRate, 4)}%` }} 
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Inline Campaign Creation Form Studio Card */}
-          <form 
-            onSubmit={handleSaveCampaign} 
-            className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden text-left"
-          >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-            
-            <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                  <Icons.Sparkles className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  {editCampaignId ? 'Edit Campaign Details' : 'Quick Create Marketing Campaign'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex-1 max-w-xl">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                  Campaign Name <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Icons.Tag className="w-4 h-4 text-indigo-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={campaignNameInput}
-                    onChange={(e) => setCampaignNameInput(e.target.value)}
-                    placeholder="e.g. Q3 Telecalling Drive, HNI Real Estate, Loan Festival..."
-                    className="w-full h-11 pl-10 pr-4 text-xs sm:text-sm font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 transition-all shadow-inner-sm"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5 self-end md:self-auto mt-2 md:mt-0">
-                {editCampaignId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCampaignNameInput('');
-                      setEditCampaignId(null);
-                    }}
-                    className="h-11 px-5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={isSubmittingCampaign || !campaignNameInput.trim()}
-                  className="h-11 px-6 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {isSubmittingCampaign ? (
-                    <Icons.Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
-                  )}
-                  <span>{editCampaignId ? 'Update Campaign' : 'Create Campaign'}</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      ) : apiPath === 'leads' ? (
+      {apiPath === 'leads' ? (
         <div className="space-y-5">
           {/* Header Title Bar with Icon & Live Count */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
@@ -1604,136 +1931,7 @@ export default function ModuleView() {
       ) : (
         <>
           {viewMode === 'table' && (
-            apiPath === 'campaigns' ? (
-              <div className="space-y-6">
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs relative">
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[850px] text-left text-xs text-slate-800 dark:text-slate-200">
-                      <thead>
-                        <tr className="bg-slate-50/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80">
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Campaign</th>
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Created Date</th>
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-center">Allocated Leads</th>
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-center">Dialed</th>
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Calling Progress</th>
-                          <th className="px-6 py-4 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                        {data?.records.map((rec: any) => {
-                          const name = rec.data?.campaignName || rec.data?.source || rec.data?.campaign || rec.data?.name || rec.name || 'Unnamed Campaign';
-                          const allocated = getAllocatedNumbers(name);
-                          const dialed = getDialedNumbers(name);
-                          const progress = allocated > 0 ? Math.round((dialed / allocated) * 100) : 0;
-                          const createdDateStr = new Date(rec.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + new Date(rec.createdAt).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true
-                          });
-
-                          return (
-                            <tr key={rec._id} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/60 transition-colors">
-                              <td className="px-6 py-4.5 font-bold text-slate-900 dark:text-white">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-xs flex-shrink-0">
-                                    <Icons.Megaphone className="w-5 h-5 stroke-[2.2]" />
-                                  </div>
-                                  <div>
-                                    <span className="capitalize block text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                      {name}
-                                    </span>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded">
-                                      Active Campaign
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4.5 text-slate-500 dark:text-slate-400 font-medium">
-                                <span className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-slate-700/60 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                  <Icons.Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                                  {createdDateStr}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4.5 text-center">
-                                <span className="inline-flex items-center justify-center font-bold px-3 py-1 rounded-full bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 font-mono text-xs shadow-3xs">
-                                  {allocated.toLocaleString()} Leads
-                                </span>
-                              </td>
-                              <td className="px-6 py-4.5 text-center">
-                                <span className="inline-flex items-center justify-center font-bold px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-mono text-xs shadow-3xs">
-                                  {dialed.toLocaleString()} Dialed
-                                </span>
-                              </td>
-                              <td className="px-6 py-4.5 min-w-[140px]">
-                                <div className="space-y-1.5">
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="font-extrabold text-slate-800 dark:text-slate-100 font-mono">{progress}%</span>
-                                    <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                                      progress >= 100 ? 'text-emerald-700 bg-emerald-100/80 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                                      progress > 0 ? 'text-indigo-700 bg-indigo-100/80 dark:bg-indigo-950/60 dark:text-indigo-300' :
-                                      'text-slate-500 bg-slate-100 dark:bg-slate-800'
-                                    }`}>
-                                      {progress >= 100 ? 'Completed' : progress > 0 ? 'In Progress' : 'Pending'}
-                                    </span>
-                                  </div>
-                                  <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700/60 p-0.5">
-                                    <div 
-                                      className="h-full rounded-full transition-all bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" 
-                                      style={{ width: `${Math.max(progress, 3)}%` }} 
-                                    />
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4.5 text-right">
-                                <div className="inline-flex items-center justify-end gap-2">
-                                  <button
-                                    onClick={() => handleDownloadCampaign(rec)}
-                                    className="h-8.5 px-3 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-150 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 rounded-xl text-xs font-bold shadow-3xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                                    title="Download 12-Column CSV"
-                                  >
-                                    <Icons.Download className="w-3.5 h-3.5" />
-                                    <span className="hidden sm:inline">Export</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleEditClick(rec)}
-                                    className="w-8.5 h-8.5 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-150 text-amber-700 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 flex items-center justify-center transition-all shadow-3xs cursor-pointer"
-                                    title="Edit Campaign"
-                                  >
-                                    <Icons.Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(rec._id)}
-                                    className="w-8.5 h-8.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-150 text-rose-600 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 flex items-center justify-center transition-all shadow-3xs cursor-pointer"
-                                    title="Delete Campaign"
-                                  >
-                                    <Icons.Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-
-                        {data?.records.length === 0 && (
-                          <tr>
-                            <td colSpan={6} className="py-16 text-center">
-                              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-500/20">
-                                <Icons.Megaphone className="w-7 h-7" />
-                              </div>
-                              <p className="font-extrabold text-base text-slate-800 dark:text-slate-100">No campaigns found</p>
-                              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                                Enter a campaign name above to launch your first targeted marketing drive.
-                              </p>
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            ) : apiPath === 'leads' ? (
+            apiPath === 'leads' ? (
               <div className="space-y-6">
                 {data?.records.map((rec: any, idx: number) => {
                   const leadNo = rec._id.slice(-6).toUpperCase();
