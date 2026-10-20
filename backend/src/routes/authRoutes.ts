@@ -103,7 +103,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
           fontFamily: 'Inter',
           mode: 'light'
         },
-        enabledModules: ['dashboard', 'leads', 'deals', 'companies', 'tasks', 'settings', 'reports', 'workflows']
+        enabledModules: ['dashboard', 'leads', 'deals', 'companies', 'campaigns', 'campaignassignments', 'tasks', 'settings', 'reports', 'workflows']
       });
       try {
         await seedNewTenantData(targetOrg._id);

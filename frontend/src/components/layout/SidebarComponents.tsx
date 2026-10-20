@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, LogOut, FileText } from 'lucide-react';
@@ -128,6 +128,11 @@ export const SidebarAccordion = ({
   isCollapsed?: boolean;
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (defaultOpen) {
+      setIsOpen(true);
+    }
+  }, [defaultOpen]);
 
   if (isCollapsed) {
     return (

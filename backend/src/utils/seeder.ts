@@ -22,7 +22,13 @@ export const createRolePermissions = (modulePaths: string[]) => ({
     delete: 'all' as const
   })),
   fields: [],
-  menus: ['dashboard', ...modulePaths, 'workflows', 'reports', 'settings', 'departments']
+  menus: [
+    'dashboard', 'leads', 'campaigns', 'campaignassignments',
+    'lead_reports', 'telecaller_reports', 'telecaller_monthly',
+    'funnel_daily', 'funnel_monthly', 'funnel_annual',
+    'settings', 'access_privilege', 'lead_transfer', 'lead_import_delete', 'users_management',
+    ...modulePaths
+  ]
 });
 
 const defaultDepartments = [
@@ -145,6 +151,57 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
     ]
   });
 
+  const campaignModule = await ModuleDefinition.create({
+    organizationId,
+    name: 'Campaign',
+    singularLabel: 'Campaign',
+    pluralLabel: 'Campaigns',
+    apiPath: 'campaigns',
+    icon: 'Target',
+    isSystem: true,
+    fields: [
+      { name: 'campaignName', label: 'Campaign Name', type: 'text', required: true, unique: true },
+      {
+        name: 'status',
+        label: 'Status',
+        type: 'dropdown',
+        required: true,
+        unique: false,
+        defaultValue: 'Planned',
+        options: ['Planned', 'Active', 'Completed', 'Cancelled']
+      },
+      {
+        name: 'type',
+        label: 'Type',
+        type: 'dropdown',
+        required: true,
+        unique: false,
+        defaultValue: 'Email',
+        options: ['Email', 'Social Media', 'Cold Call', 'Webinar', 'Event']
+      },
+      { name: 'budget', label: 'Budget', type: 'currency', required: false, unique: false },
+      { name: 'startDate', label: 'Start Date', type: 'date', required: false, unique: false },
+      { name: 'endDate', label: 'End Date', type: 'date', required: false, unique: false },
+      { name: 'notes', label: 'Notes', type: 'rich-text', required: false, unique: false }
+    ]
+  });
+
+  const campaignAssignmentModule = await ModuleDefinition.create({
+    organizationId,
+    name: 'CampaignAssignment',
+    singularLabel: 'Campaign Assignment',
+    pluralLabel: 'Campaign Assignments',
+    apiPath: 'campaignassignments',
+    icon: 'UserCheck',
+    isSystem: true,
+    fields: [
+      { name: 'assignmentName', label: 'Assignment Title', type: 'text', required: true, unique: false },
+      { name: 'campaign', label: 'Campaign', type: 'dropdown', required: true, unique: false, options: [] },
+      { name: 'lead', label: 'Assigned Lead', type: 'dropdown', required: true, unique: false, options: [] },
+      { name: 'assignedDate', label: 'Assigned Date', type: 'date', required: true, unique: false }
+    ]
+  });
+
   const bankMasterModule = await ModuleDefinition.create({
     organizationId,
     name: 'BankMaster',
@@ -187,7 +244,7 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
     ]
   });
 
-  const allModulePaths = ['leads', 'deals', 'companies', 'departments', 'bankmasters', 'bankingpartners', 'products'];
+  const allModulePaths = ['leads', 'deals', 'companies', 'campaigns', 'campaignassignments', 'departments', 'bankmasters', 'bankingpartners', 'products'];
   const fullPermissions = createRolePermissions(allModulePaths);
 
   // 2. Create System Roles
@@ -343,7 +400,7 @@ export async function seedDatabase(shouldDisconnect = false): Promise<void> {
       fontFamily: 'Inter',
       mode: 'dark'
     },
-    enabledModules: ['dashboard', 'leads', 'deals', 'companies', 'tasks', 'settings', 'reports', 'workflows', 'departments', 'bankmasters', 'bankingpartners', 'products'],
+    enabledModules: ['dashboard', 'leads', 'deals', 'companies', 'campaigns', 'campaignassignments', 'tasks', 'settings', 'reports', 'workflows', 'departments', 'bankmasters', 'bankingpartners', 'products'],
     subscription: {
       plan: 'enterprise',
       status: 'active',

@@ -313,7 +313,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 {/* Dynamic Modules */}
                 {modules.filter(m => {
-                  const hiddenSettingsModules = ['departments', 'products', 'bankmasters', 'bankingpartners', 'companies', 'deals'];
+                  const hiddenSettingsModules = ['departments', 'products', 'bankmasters', 'bankingpartners', 'companies', 'deals', 'campaigns', 'campaignassignments'];
                   if (hiddenSettingsModules.includes(m.apiPath.toLowerCase())) return false;
                   if (!canAccessMenu(m.apiPath.toLowerCase())) return false;
                   if (!branding) return true;
@@ -484,8 +484,14 @@ export default function Layout({ children }: LayoutProps) {
                 })}
 
                 {/* Campaigns accordion */}
-                {modules.some(m => m.apiPath === 'campaigns') && (!branding || branding.enabledModules.includes('leads') || branding.enabledModules.includes('campaigns')) && (canAccessMenu('campaigns') || canAccessMenu('campaignassignments')) && (
-                  <SidebarAccordion label="CAMPAIGNS" icon={Icons.Megaphone} colorClass="text-[#EA580C]" isCollapsed={isCollapsed}>
+                {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments')) && (
+                  <SidebarAccordion 
+                    label="CAMPAIGNS" 
+                    icon={Icons.Megaphone} 
+                    colorClass="text-[#EA580C]" 
+                    isCollapsed={isCollapsed}
+                    defaultOpen={location.pathname.startsWith('/modules/campaign')}
+                  >
                     {canAccessMenu('campaigns') && (
                       <SidebarItem to="/modules/campaigns" label="CAMPAIGN LIST" icon={Icons.Target} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
                     )}
