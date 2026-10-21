@@ -33,12 +33,6 @@ interface SaveSuccessModalData {
   leadId: string;
   slNo: number;
   dataCode: string;
-  customerName: string;
-  firmName: string;
-  location: string;
-  phone: string;
-  status: string;
-  remarks?: string;
   nextLeadId?: string;
   nextSlNo?: number;
   hasNext: boolean;
@@ -297,10 +291,9 @@ export default function MyCampaign() {
   };
 
   const isLeadDialed = (lead: LeadRecord) => {
-    const state = leadStates[lead._id];
-    const currentStatus = (state?.status || lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
+    const savedStatus = (lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
     const hasCalls = ((lead.data?.callAttempts as number) > 0) || !!lead.data?.dialedAt || !!lead.data?.lastCallDate;
-    const isDialedStatus = currentStatus && currentStatus !== 'yet to call' && currentStatus !== 'not called' && currentStatus !== 'new';
+    const isDialedStatus = savedStatus && savedStatus !== 'yet to call' && savedStatus !== 'not called' && savedStatus !== 'new';
     return Boolean(isDialedStatus || hasCalls);
   };
 
@@ -395,7 +388,7 @@ export default function MyCampaign() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [saveSuccessModal, filteredLeads, pageSize, currentPage]);
 
-  const handleSaveLead = async (leadId: string, autoAdvance = false) => {
+  const handleSaveLead = async (leadId: string) => {
     try {
       const lead = leads.find(l => l._id === leadId);
       if (!lead) return;
@@ -413,11 +406,6 @@ export default function MyCampaign() {
       const nextSlNo = nextLead ? currentIndex + 2 : undefined;
 
       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : 'N/A');
-      const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'Unnamed';
-      const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
-      const location = lead.data?.city || lead.data?.location || 'BLORE';
-      const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '';
-      const phone = rawPhone ? rawPhone : 'XXXXXXXXXX';
 
       const payload: Record<string, any> = {
         status: currentStatus,
@@ -434,27 +422,16 @@ export default function MyCampaign() {
       // Update lead in memory so counts & UI update immediately without re-fetching 3,000 leads
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
 
-      if (autoAdvance && nextLeadId) {
-        handleGoToNextLead(nextLeadId);
-        showToast(`Lead #${slNo} saved. Moved to Lead #${nextSlNo}!`, 'success');
-      } else {
-        // Show proper popup modal with Lead Number, Return and Move to Next Lead
-        setSaveSuccessModal({
-          isOpen: true,
-          leadId,
-          slNo,
-          dataCode,
-          customerName,
-          firmName,
-          location,
-          phone,
-          status: currentStatus,
-          remarks: currentRemarks,
-          nextLeadId,
-          nextSlNo,
-          hasNext: Boolean(nextLead)
-        });
-      }
+      // Open proper popup matching user's exact design
+      setSaveSuccessModal({
+        isOpen: true,
+        leadId,
+        slNo,
+        dataCode,
+        nextLeadId,
+        nextSlNo,
+        hasNext: Boolean(nextLead)
+      });
 
       // Refresh campaigns listing in background
       api.get('/records/campaigns/my-campaigns').then(res => {
@@ -1096,24 +1073,14 @@ export default function MyCampaign() {
                                 </td>
                                 <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400 border-r border-slate-100 dark:border-slate-800">{dialedDatetime}</td>
                                 <td className="py-2 px-2 text-center">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <button
-                                      onClick={() => handleSaveLead(lead._id)}
-                                      className="h-8 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
-                                      title="Save lead and view confirmation popup"
-                                    >
-                                      <Icons.Save className="w-3.5 h-3.5" />
-                                      <span>SAVE</span>
-                                    </button>
-                                    <button
-                                      onClick={() => handleSaveLead(lead._id, true)}
-                                      className="h-8 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
-                                      title="Save & move directly to next lead"
-                                    >
-                                      <Icons.FastForward className="w-3 h-3" />
-                                      <span>NEXT</span>
-                                    </button>
-                                  </div>
+                                  <button
+                                    onClick={() => handleSaveLead(lead._id)}
+                                    className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
+                                    title="Save lead details"
+                                  >
+                                    <Icons.Save className="w-3.5 h-3.5" />
+                                    <span>SAVE</span>
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -1267,14 +1234,6 @@ export default function MyCampaign() {
                                 <span>SAVE</span>
                               </button>
                               <button
-                                onClick={() => handleSaveLead(lead._id, true)}
-                                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
-                                title="Save and immediately move to next lead"
-                              >
-                                <Icons.FastForward className="w-3.5 h-3.5" />
-                                <span>SAVE & NEXT</span>
-                              </button>
-                              <button
                                 onClick={() => navigate(`/modules/leads/${lead._id}`)}
                                 className="h-9 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-3xs active:scale-95"
                               >
@@ -1373,116 +1332,71 @@ export default function MyCampaign() {
           onClick={() => setSaveSuccessModal(null)}
         >
           <div 
-            className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 sm:p-7 space-y-6 text-left transform transition-all animate-in fade-in zoom-in-95 duration-150"
+            className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-[28px] border border-slate-100 dark:border-slate-800 shadow-2xl p-6 sm:p-7 text-center transform transition-all animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close 'X' button top-right */}
             <button
               onClick={() => setSaveSuccessModal(null)}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Close (Return)"
+              className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Close"
             >
-              <Icons.X className="w-5 h-5" />
+              <Icons.X className="w-4 h-4" />
             </button>
 
-            {/* Top Success Badge & Title */}
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm shadow-emerald-500/10">
-                <Icons.CheckCircle2 className="w-7 h-7 stroke-[2.2]" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                    Saved Successfully
-                  </span>
-                  <span className="text-xs text-slate-400 font-medium">
-                    Lead Details Updated
-                  </span>
-                </div>
-                <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  Lead Details Saved
-                </h3>
+            {/* Top rounded pill with centered checkmark circle matching Image 2 */}
+            <div className="w-full h-8 bg-[#e6f8f0] dark:bg-emerald-950/40 rounded-full flex items-center justify-center relative mb-5 mt-1">
+              <div className="w-7 h-7 rounded-full bg-white dark:bg-slate-900 border-2 border-[#10b981] text-[#10b981] flex items-center justify-center shadow-xs">
+                <Icons.Check className="w-4 h-4 stroke-[3]" />
               </div>
             </div>
 
-            {/* PROMINENT LEAD NUMBER BANNER */}
-            <div className="bg-gradient-to-r from-indigo-50 via-indigo-50/70 to-blue-50/50 dark:from-indigo-950/40 dark:via-indigo-950/30 dark:to-blue-950/30 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-3xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-sm shadow-indigo-600/30">
-                  #{saveSuccessModal.slNo}
-                </div>
-                <div>
-                  <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
-                    LEAD NUMBER
-                  </span>
-                  <span className="text-base font-black text-slate-900 dark:text-white tracking-tight">
-                    SL No. : {saveSuccessModal.slNo}
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                  DATA CODE
-                </span>
-                <span className="text-xs sm:text-sm font-black text-indigo-700 dark:text-indigo-300 font-mono">
-                  {saveSuccessModal.dataCode}
-                </span>
-              </div>
+            {/* Title: LEAD SAVED SUCCESSFULLY */}
+            <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider text-center mb-4">
+              LEAD SAVED SUCCESSFULLY
+            </h3>
+
+            {/* LEAD NUMBER Box */}
+            <div className="bg-[#e8f8f2] dark:bg-emerald-950/40 border border-[#bbf0db] dark:border-emerald-800/60 rounded-2xl py-3.5 px-4 text-center mb-3">
+              <span className="block text-[11px] font-extrabold text-[#059669] dark:text-emerald-400 uppercase tracking-widest mb-1">
+                LEAD NUMBER
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-[#047857] dark:text-emerald-300 font-mono tracking-tight">
+                {saveSuccessModal.dataCode}
+              </span>
             </div>
 
-            {/* SUMMARY DETAILS CARD */}
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3 text-xs">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-                <span className="font-semibold text-slate-500 dark:text-slate-400">Customer Name:</span>
-                <span className="font-black text-slate-800 dark:text-slate-100">{saveSuccessModal.customerName}</span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-                <span className="font-semibold text-slate-500 dark:text-slate-400">Firm Name:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[220px]">{saveSuccessModal.firmName}</span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-                <span className="font-semibold text-slate-500 dark:text-slate-400">Contact Number:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{saveSuccessModal.phone}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-500 dark:text-slate-400">Updated Status:</span>
-                <span className="px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  {saveSuccessModal.status}
-                </span>
-              </div>
-            </div>
+            {/* Subtitle */}
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 text-center font-medium mb-6">
+              Lead updated successfully and moved to next lead.
+            </p>
 
-            {/* POPUP ACTION BUTTONS: "RETURN" AND "MOVE TO NEXT LEAD" */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-              {/* RETURN BUTTON */}
-              <button
-                onClick={() => setSaveSuccessModal(null)}
-                className="w-full sm:flex-1 h-12 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-3xs active:scale-98"
-                title="Stay on this lead (Press Esc)"
-              >
-                <Icons.ArrowLeft className="w-4 h-4" />
-                <span>Return</span>
-              </button>
-
-              {/* MOVE TO NEXT LEAD BUTTON */}
+            {/* Action Buttons: "DONE AND NEXT" */}
+            <div className="space-y-2.5">
               {saveSuccessModal.hasNext ? (
                 <button
                   onClick={() => handleGoToNextLead()}
-                  className="w-full sm:flex-1 h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-98"
-                  title={`Advance to lead SL No. ${saveSuccessModal.nextSlNo} (Press Enter)`}
+                  className="w-full h-12 bg-[#008f5d] hover:bg-[#007a4f] text-white font-extrabold text-sm uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-700/20 cursor-pointer active:scale-98 transition-all"
+                  title="Move to next lead (Press Enter)"
                 >
-                  <span>Move to Next Lead</span>
-                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-[11px] font-mono">
-                    #{saveSuccessModal.nextSlNo}
-                  </span>
-                  <Icons.ArrowRight className="w-4 h-4" />
+                  <span>CONTINUE CALLING</span>
                 </button>
               ) : (
-                <div className="w-full sm:flex-1 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5">
-                  <Icons.Check className="w-4 h-4" />
-                  <span>End of Lead List</span>
-                </div>
+                <button
+                  onClick={() => setSaveSuccessModal(null)}
+                  className="w-full h-12 bg-[#008f5d] hover:bg-[#007a4f] text-white font-extrabold text-sm uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-700/20 cursor-pointer active:scale-98 transition-all"
+                >
+                  <span>ALL LEADS COMPLETED</span>
+                </button>
               )}
+
+              <button
+                onClick={() => setSaveSuccessModal(null)}
+                className="w-full h-10 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Stay on this lead (Press Esc)"
+              >
+                <span>DONE</span>
+              </button>
             </div>
           </div>
         </div>
