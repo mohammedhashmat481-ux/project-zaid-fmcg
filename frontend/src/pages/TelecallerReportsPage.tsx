@@ -12,7 +12,7 @@ export default function TelecallerReportsPage() {
   const [campaignsList, setCampaignsList] = useState<string[]>([]);
 
   // Multi-Select Filters
-  const [selectedMonths, setSelectedMonths] = useState<string[]>(['July']);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>(['2026']);
   const [selectedRoleTypes, setSelectedRoleTypes] = useState<string[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -116,14 +116,30 @@ export default function TelecallerReportsPage() {
         l.assignedTo?._id === agent.id || 
         (l.assignedTo?.name || '').toLowerCase() === agent.name.toLowerCase() ||
         (data.telecaller || '').toLowerCase() === agent.name.toLowerCase() ||
-        (data.assignedAgent || '').toLowerCase() === agent.name.toLowerCase()
+        (data.assignedAgent || '').toLowerCase() === agent.name.toLowerCase() ||
+        (data.assignedTo || '').toLowerCase() === agent.name.toLowerCase() ||
+        String(data.assignedTo || '') === String(agent.id) ||
+        (data.assignedTo || '').toLowerCase() === (agent.email || '').toLowerCase()
       );
 
       // Campaign filter
       const leadCamp = (data.campaign || data.campaignName || l.campaignName || '').trim();
       const campMatch = selectedCampaigns.length === 0 || selectedCampaigns.some(c => c.toLowerCase() === leadCamp.toLowerCase() || leadCamp.toLowerCase().includes(c.toLowerCase()));
 
-      return agentMatch && campMatch;
+      // Date filter
+      let dateMatch = true;
+      const rawDate = l.createdAt || data.createdAt || data.date;
+      if (rawDate && (selectedMonths.length > 0 || selectedYears.length > 0)) {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          const itemYear = String(d.getFullYear());
+          const itemMonth = months[d.getMonth()];
+          if (selectedYears.length > 0 && !selectedYears.includes(itemYear)) dateMatch = false;
+          if (selectedMonths.length > 0 && !selectedMonths.includes(itemMonth)) dateMatch = false;
+        }
+      }
+
+      return agentMatch && campMatch && dateMatch;
     });
 
     const assignedCount = userLeads.length > 0 ? userLeads.length : (leads.length > 0 ? Math.max(3, Math.floor(leads.length / allAgentsList.length)) : 15 + idx * 4);

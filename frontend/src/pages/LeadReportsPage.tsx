@@ -17,7 +17,7 @@ export default function LeadReportsPage() {
   const [campaignsList, setCampaignsList] = useState<string[]>([]);
 
   // Multi-Select Filter States with Checkboxes
-  const [selectedMonths, setSelectedMonths] = useState<string[]>(['July']);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>(['2026']);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedLoanTypes, setSelectedLoanTypes] = useState<string[]>([]);
@@ -91,7 +91,20 @@ export default function LeadReportsPage() {
       return rawLoan.includes(selected) || selected.includes(rawLoan);
     });
 
-    return statusMatch && loanMatch && campaignMatch;
+    // Date (month & year) match
+    let dateMatch = true;
+    const rawDate = item.createdAt || data.createdAt || data.date;
+    if (rawDate && (selectedMonths.length > 0 || selectedYears.length > 0)) {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        const itemYear = String(d.getFullYear());
+        const itemMonth = months[d.getMonth()];
+        if (selectedYears.length > 0 && !selectedYears.includes(itemYear)) dateMatch = false;
+        if (selectedMonths.length > 0 && !selectedMonths.includes(itemMonth)) dateMatch = false;
+      }
+    }
+
+    return statusMatch && loanMatch && campaignMatch && dateMatch;
   });
 
   const exportCSV = () => {

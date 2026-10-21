@@ -115,8 +115,8 @@ export default function AnnualFunnelPage() {
 
     // Check Agent
     if (selectedAgent !== 'ALL') {
-      const agentId = item.assignedTo?._id || item.assignedTo;
-      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || '';
+      const agentId = item.assignedTo?._id || item.assignedTo || data.assignedTo;
+      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || data.assignedTo || '';
       if (agentId !== selectedAgent && agentName !== selectedAgent) return false;
     }
 

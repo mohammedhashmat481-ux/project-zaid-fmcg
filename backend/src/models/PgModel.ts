@@ -49,6 +49,8 @@ export class PgQueryChain {
   private limitVal: number | null = null;
   private isSingle: boolean = false;
 
+  private populateList: Array<{ path: string; select?: string }> = [];
+
   constructor(tableName: string, mappings: FieldMapping[], queryObj: any = {}, isSingle: boolean = false) {
     this.tableName = tableName;
     this.mappings = mappings;
@@ -79,6 +81,19 @@ export class PgQueryChain {
   }
 
   populate(arg?: any, selectFields?: any) {
+    if (!arg) return this;
+    if (typeof arg === 'string') {
+      this.populateList.push({ path: arg, select: typeof selectFields === 'string' ? selectFields : undefined });
+    } else if (typeof arg === 'object') {
+      if (Array.isArray(arg)) {
+        arg.forEach((item: any) => {
+          if (typeof item === 'string') this.populateList.push({ path: item });
+          else if (item && item.path) this.populateList.push({ path: item.path, select: item.select });
+        });
+      } else if (arg.path) {
+        this.populateList.push({ path: arg.path, select: arg.select });
+      }
+    }
     return this;
   }
 
@@ -87,8 +102,127 @@ export class PgQueryChain {
   }
 
   async exec(): Promise<any> {
-    const res = await this.executeFind();
+    let res = await this.executeFind();
+    if (this.populateList.length > 0 && res.length > 0) {
+      res = await this.executePopulates(res);
+    }
     return this.isSingle ? (res.length > 0 ? res[0] : null) : res;
+  }
+
+  private async executePopulates(docs: any[]): Promise<any[]> {
+    for (const pop of this.populateList) {
+      const path = pop.path;
+      try {
+        if (path === 'roleId' || path === 'role') {
+          const ids = [...new Set(docs.map((d: any) => {
+            const v = d.roleId || d.role;
+            return typeof v === 'object' ? (v?._id || v?.id) : v;
+          }).filter(Boolean))];
+          if (ids.length > 0) {
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+            const rows = await queryPg(`SELECT id, name, is_system, permissions FROM roles WHERE id IN (${placeholders})`, ids);
+            const map = new Map<string, any>();
+            rows.forEach((r: any) => {
+              map.set(r.id, {
+                _id: r.id,
+                id: r.id,
+                name: r.name,
+                isSystem: r.is_system,
+                permissions: r.permissions
+              });
+            });
+            docs.forEach((d: any) => {
+              const rawId = typeof d.roleId === 'object' ? (d.roleId?._id || d.roleId?.id) : d.roleId;
+              if (rawId && map.has(rawId)) {
+                d.roleId = map.get(rawId);
+                d.role = map.get(rawId);
+              }
+            });
+          }
+        } else if (path === 'reportingManager') {
+          const ids = [...new Set(docs.map((d: any) => {
+            const v = d.reportingManager;
+            return typeof v === 'object' ? (v?._id || v?.id) : v;
+          }).filter(Boolean))];
+          if (ids.length > 0) {
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+            const rows = await queryPg(`SELECT id, first_name, last_name, email, department FROM users WHERE id IN (${placeholders})`, ids);
+            const map = new Map<string, any>();
+            rows.forEach((r: any) => {
+              map.set(r.id, {
+                _id: r.id,
+                id: r.id,
+                firstName: r.first_name,
+                lastName: r.last_name,
+                email: r.email,
+                department: r.department
+              });
+            });
+            docs.forEach((d: any) => {
+              const rawId = typeof d.reportingManager === 'object' ? (d.reportingManager?._id || d.reportingManager?.id) : d.reportingManager;
+              if (rawId && map.has(rawId)) {
+                d.reportingManager = map.get(rawId);
+              }
+            });
+          }
+        } else if (path === 'moduleId') {
+          const ids = [...new Set(docs.map((d: any) => {
+            const v = d.moduleId;
+            return typeof v === 'object' ? (v?._id || v?.id) : v;
+          }).filter(Boolean))];
+          if (ids.length > 0) {
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+            const rows = await queryPg(`SELECT id, name, singular_label, plural_label, api_path, icon FROM module_definitions WHERE id IN (${placeholders})`, ids);
+            const map = new Map<string, any>();
+            rows.forEach((r: any) => {
+              map.set(r.id, {
+                _id: r.id,
+                id: r.id,
+                name: r.name,
+                singularLabel: r.singular_label,
+                pluralLabel: r.plural_label,
+                apiPath: r.api_path,
+                icon: r.icon
+              });
+            });
+            docs.forEach((d: any) => {
+              const rawId = typeof d.moduleId === 'object' ? (d.moduleId?._id || d.moduleId?.id) : d.moduleId;
+              if (rawId && map.has(rawId)) {
+                d.moduleId = map.get(rawId);
+              }
+            });
+          }
+        } else if (path === 'createdBy' || path === 'updatedBy' || path === 'userId') {
+          const ids = [...new Set(docs.map((d: any) => {
+            const v = d[path];
+            return typeof v === 'object' ? (v?._id || v?.id) : v;
+          }).filter(Boolean))];
+          if (ids.length > 0) {
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+            const rows = await queryPg(`SELECT id, first_name, last_name, email FROM users WHERE id IN (${placeholders})`, ids);
+            const map = new Map<string, any>();
+            rows.forEach((r: any) => {
+              map.set(r.id, {
+                _id: r.id,
+                id: r.id,
+                firstName: r.first_name,
+                lastName: r.last_name,
+                email: r.email
+              });
+            });
+            docs.forEach((d: any) => {
+              const rawId = typeof d[path] === 'object' ? (d[path]?._id || d[path]?.id) : d[path];
+              if (rawId && map.has(rawId)) {
+                d[path] = map.get(rawId);
+              }
+            });
+          }
+        }
+      } catch (popErr) {
+        console.warn(`[PgQueryChain] Failed to populate path '${path}':`, popErr);
+      }
+    }
+    return docs;
   }
 
   then(onfulfilled?: (value: any) => any, onrejected?: (reason: any) => any) {
@@ -781,30 +915,166 @@ function setNestedProperty(obj: any, path: string, val: any): void {
   curr[parts[parts.length - 1]] = val;
 }
 
+function extractFieldFromAccum(expr: any): string | null {
+  if (!expr) return null;
+  if (typeof expr === 'string') {
+    return expr.startsWith('$') ? expr.slice(1) : expr;
+  }
+  if (typeof expr === 'object') {
+    if (expr.$toDouble && typeof expr.$toDouble === 'string') {
+      return expr.$toDouble.startsWith('$') ? expr.$toDouble.slice(1) : expr.$toDouble;
+    }
+    if (expr.$toInt && typeof expr.$toInt === 'string') {
+      return expr.$toInt.startsWith('$') ? expr.$toInt.slice(1) : expr.$toInt;
+    }
+    if (expr.$cond) {
+      if (typeof expr.$cond.then === 'string') return expr.$cond.then.startsWith('$') ? expr.$cond.then.slice(1) : expr.$cond.then;
+      if (typeof expr.$cond.else === 'string') return expr.$cond.else.startsWith('$') ? expr.$cond.else.slice(1) : expr.$cond.else;
+      if (expr.$cond.else?.$convert?.input) {
+        const inp = String(expr.$cond.else.$convert.input);
+        return inp.startsWith('$') ? inp.slice(1) : inp;
+      }
+    }
+    for (const k of Object.keys(expr)) {
+      const sub = extractFieldFromAccum(expr[k]);
+      if (sub) return sub;
+    }
+  }
+  return null;
+}
+
 async function executeMongoAggregate(tableName: string, mappings: FieldMapping[], pipeline: any[]): Promise<any[]> {
   let matchQuery: any = {};
   let groupStage: any = null;
+  let sortStage: any = null;
+  let limitStage: number | null = null;
 
   pipeline.forEach((stage) => {
     if (stage.$match) matchQuery = { ...matchQuery, ...stage.$match };
     if (stage.$group) groupStage = stage.$group;
+    if (stage.$sort) sortStage = stage.$sort;
+    if (typeof stage.$limit === 'number') limitStage = stage.$limit;
   });
 
   if (!groupStage) {
-    return new PgQueryChain(tableName, mappings, matchQuery).exec();
+    let chain = new PgQueryChain(tableName, mappings, matchQuery);
+    if (sortStage) chain = chain.sort(sortStage);
+    if (limitStage) chain = chain.limit(limitStage);
+    return chain.exec();
   }
 
   const { whereClause, params } = buildWhereClause(tableName, mappings, matchQuery);
   const groupKey = groupStage._id;
   const groupCol = groupKey ? mapJsToDbCol(tableName, mappings, String(groupKey).replace(/^\$/, '')) : null;
 
-  let groupSql = '';
+  const selectItems: string[] = [];
+  const groupCols: string[] = [];
+  let hasExplicitCount = false;
+  let hasExplicitValue = false;
+
   if (groupCol) {
-    groupSql = `SELECT ${groupCol} as _id, COUNT(*)::int as count FROM ${tableName} ${whereClause} GROUP BY ${groupCol}`;
-  } else {
-    groupSql = `SELECT COUNT(*)::int as count FROM ${tableName} ${whereClause}`;
+    selectItems.push(`${groupCol} as _id`);
+    selectItems.push(`COALESCE(NULLIF(${groupCol}, ''), 'Unassigned') as label`);
+    groupCols.push(groupCol);
+  }
+
+  // Process all accumulators in $group (excluding _id)
+  Object.keys(groupStage).forEach((alias) => {
+    if (alias === '_id') return;
+    const acc = groupStage[alias];
+    if (alias === 'count') hasExplicitCount = true;
+    if (alias === 'value') hasExplicitValue = true;
+
+    if (acc && typeof acc === 'object') {
+      if (acc.$sum !== undefined) {
+        if (acc.$sum === 1 || acc.$sum === '1') {
+          selectItems.push(`COUNT(*)::numeric as "${alias}"`);
+        } else {
+          const field = extractFieldFromAccum(acc.$sum);
+          if (field) {
+            const col = mapJsToDbCol(tableName, mappings, field);
+            selectItems.push(`COALESCE(SUM(NULLIF(regexp_replace(${col}, '[^0-9.]', '', 'g'), '')::numeric), 0) as "${alias}"`);
+          } else {
+            selectItems.push(`COUNT(*)::numeric as "${alias}"`);
+          }
+        }
+      } else if (acc.$avg !== undefined) {
+        const field = extractFieldFromAccum(acc.$avg);
+        if (field) {
+          const col = mapJsToDbCol(tableName, mappings, field);
+          selectItems.push(`COALESCE(AVG(NULLIF(regexp_replace(${col}, '[^0-9.]', '', 'g'), '')::numeric), 0) as "${alias}"`);
+        } else {
+          selectItems.push(`0::numeric as "${alias}"`);
+        }
+      } else if (acc.$min !== undefined) {
+        const field = extractFieldFromAccum(acc.$min);
+        if (field) {
+          const col = mapJsToDbCol(tableName, mappings, field);
+          selectItems.push(`COALESCE(MIN(NULLIF(regexp_replace(${col}, '[^0-9.]', '', 'g'), '')::numeric), 0) as "${alias}"`);
+        } else {
+          selectItems.push(`0::numeric as "${alias}"`);
+        }
+      } else if (acc.$max !== undefined) {
+        const field = extractFieldFromAccum(acc.$max);
+        if (field) {
+          const col = mapJsToDbCol(tableName, mappings, field);
+          selectItems.push(`COALESCE(MAX(NULLIF(regexp_replace(${col}, '[^0-9.]', '', 'g'), '')::numeric), 0) as "${alias}"`);
+        } else {
+          selectItems.push(`0::numeric as "${alias}"`);
+        }
+      } else {
+        selectItems.push(`COUNT(*)::numeric as "${alias}"`);
+      }
+    } else {
+      selectItems.push(`COUNT(*)::numeric as "${alias}"`);
+    }
+  });
+
+  if (!hasExplicitCount) {
+    selectItems.push('COUNT(*)::int as count');
+  }
+  if (!hasExplicitValue) {
+    selectItems.push('COUNT(*)::numeric as value');
+  }
+
+  let groupSql = `SELECT ${selectItems.join(', ')} FROM ${tableName} ${whereClause}`;
+  if (groupCols.length > 0) {
+    groupSql += ` GROUP BY ${groupCols.join(', ')}`;
+  }
+
+  if (sortStage) {
+    const orderParts: string[] = [];
+    if (typeof sortStage === 'object') {
+      Object.keys(sortStage).forEach((k) => {
+        const dir = Number(sortStage[k]) < 0 ? 'DESC' : 'ASC';
+        if (k === 'label' || k === 'value' || k === 'count' || k === '_id' || groupStage[k]) {
+          orderParts.push(`"${k}" ${dir}`);
+        } else if (groupCol) {
+          orderParts.push(`${groupCol} ${dir}`);
+        }
+      });
+    }
+    if (orderParts.length > 0) {
+      groupSql += ` ORDER BY ${orderParts.join(', ')}`;
+    }
+  }
+
+  if (limitStage && limitStage > 0) {
+    groupSql += ` LIMIT ${limitStage}`;
   }
 
   const rows = await queryPg(groupSql, params);
-  return rows;
+
+  return rows.map((r: any) => {
+    const item = { ...r };
+    const rawId = item._id !== undefined && item._id !== null ? item._id : item.label;
+    item._id = rawId !== undefined && rawId !== null ? String(rawId) : 'Unassigned';
+    item.label = item.label || item._id || 'Unassigned';
+    item.count = Number(item.count || item.value || 0);
+    item.value = item.value !== undefined ? Number(item.value) : item.count;
+    if (item.total !== undefined) {
+      item.total = Number(item.total);
+    }
+    return item;
+  });
 }

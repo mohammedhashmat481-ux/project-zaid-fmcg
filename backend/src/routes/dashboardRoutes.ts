@@ -104,9 +104,13 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
     let todayFollowupsCount = 0;
     let todayFollowupsList: any[] = [];
 
-    const startOfToday = new Date();
+    const now = new Date();
+    const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const utcTodayStr = now.toISOString().split('T')[0];
+
+    const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date();
+    const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
 
     if (leadModule) {
@@ -134,8 +138,10 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
       };
       const timeFilter = {
         $or: [
-          { 'data.followUpDate': { $gte: startOfToday, $lte: endOfToday } },
-          { 'data.followUpDate': { $regex: '^' + startOfToday.toISOString().split('T')[0] } }
+          { 'data.followUpDate': localTodayStr },
+          { 'data.followUpDate': utcTodayStr },
+          { 'data.followUpDate': { $regex: `^(${localTodayStr}|${utcTodayStr})` } },
+          { 'data.followUpDate': { $gte: startOfToday, $lte: endOfToday } }
         ]
       };
       if (followUpQuery.$or) {
@@ -163,8 +169,9 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
       };
       const futureFilter = {
         $or: [
-          { 'data.followUpDate': { $gt: endOfToday } },
-          { 'data.followUpDate': { $gt: endOfToday.toISOString().split('T')[0] } }
+          { 'data.followUpDate': { $gt: localTodayStr } },
+          { 'data.followUpDate': { $gt: utcTodayStr } },
+          { 'data.followUpDate': { $gt: endOfToday } }
         ]
       };
       if (upcomingQuery.$or) {

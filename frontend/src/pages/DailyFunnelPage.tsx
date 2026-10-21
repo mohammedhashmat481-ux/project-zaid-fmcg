@@ -52,7 +52,7 @@ export default function DailyFunnelPage() {
 
   // Filter States
   const [selectedDay, setSelectedDay] = useState<string>('ALL');
-  const [selectedMonth, setSelectedMonth] = useState<string>('July');
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [selectedYear, setSelectedYear] = useState<string>('2026');
   const [selectedCampaign, setSelectedCampaign] = useState<string>(initialCamp);
   const [selectedAgent, setSelectedAgent] = useState<string>('ALL');
@@ -118,8 +118,8 @@ export default function DailyFunnelPage() {
     }
 
     if (selectedAgent !== 'ALL') {
-      const agentId = item.assignedTo?._id || item.assignedTo;
-      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || '';
+      const agentId = item.assignedTo?._id || item.assignedTo || data.assignedTo;
+      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || data.assignedTo || '';
       if (agentId !== selectedAgent && agentName !== selectedAgent) return false;
     }
 

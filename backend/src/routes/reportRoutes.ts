@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import ReportDefinition from '../models/ReportDefinition';
+import ModuleDefinition from '../models/ModuleDefinition';
 import { ReportBuilderService } from '../services/reportBuilder';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
@@ -12,9 +13,28 @@ router.use(requireTenant);
 // 1. Get all report definitions
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const reports = await ReportDefinition.find({ organizationId: req.organizationId })
-      .populate('moduleId', 'pluralLabel name');
-    res.status(200).json(reports);
+    const reports = await ReportDefinition.find({ organizationId: req.organizationId });
+    const moduleIds = [...new Set(reports.map((r: any) => r.moduleId).filter(Boolean))];
+    let moduleMap = new Map();
+    if (moduleIds.length > 0) {
+      const modules = await ModuleDefinition.find({ _id: { $in: moduleIds } });
+      moduleMap = new Map(modules.map((m: any) => [m._id || m.id, m]));
+    }
+    const populated = reports.map((r: any) => {
+      const doc = { ...r };
+      const mod = moduleMap.get(r.moduleId);
+      if (mod) {
+        doc.moduleId = {
+          _id: mod._id || mod.id,
+          id: mod._id || mod.id,
+          name: mod.name,
+          pluralLabel: mod.pluralLabel,
+          singularLabel: mod.singularLabel
+        };
+      }
+      return doc;
+    });
+    res.status(200).json(populated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to retrieve reports.' });
   }
@@ -61,6 +81,19 @@ router.get('/:id/run', async (req: Request, res: Response): Promise<void> => {
     if (!report) {
       res.status(404).json({ error: 'Report definition not found.' });
       return;
+    }
+
+    if (report.moduleId) {
+      const mod = await ModuleDefinition.findById(report.moduleId);
+      if (mod) {
+        report.module = {
+          _id: mod._id || mod.id,
+          id: mod._id || mod.id,
+          name: mod.name,
+          pluralLabel: mod.pluralLabel,
+          singularLabel: mod.singularLabel
+        };
+      }
     }
 
     // Generate chart aggregation data

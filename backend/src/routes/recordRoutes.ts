@@ -445,6 +445,7 @@ router.get('/leads/filters-meta', async (req: Request, res: Response): Promise<v
         campaignsSet.add(r.data.source);
         sourcesSet.add(r.data.source);
       }
+      if (r.data?.campaign) campaignsSet.add(r.data.campaign);
       if (r.data?.campaignName) campaignsSet.add(r.data.campaignName);
       if (r.data?.status) statusesSet.add(r.data.status);
     });
@@ -535,7 +536,11 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
           status: lead.status || 'New',
           dialStatus: 'Yet To Call',
           source: campaignName, // Set source as campaign name
-          assignedTo: assignedAgent // Set agent name
+          campaign: campaignName,
+          campaignName: campaignName,
+          assignedTo: assignedAgent, // Set agent name
+          fullName: `${fName} ${lName}`.trim(),
+          customerName: `${fName} ${lName}`.trim()
         }
       });
     });

@@ -53,7 +53,7 @@ export default function MonthlyFunnelPage() {
 
   // Filter States
   const [selectedYear, setSelectedYear] = useState<string>('2026');
-  const [selectedMonth, setSelectedMonth] = useState<string>('July');
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [selectedCampaign, setSelectedCampaign] = useState<string>(initialCamp);
   const [selectedAgent, setSelectedAgent] = useState<string>('ALL');
 
@@ -104,7 +104,7 @@ export default function MonthlyFunnelPage() {
         const itemMonth = MONTHS[itemMonthIndex];
         
         if (selectedYear && itemYear !== selectedYear) return false;
-        if (selectedMonth && itemMonth !== selectedMonth) return false;
+        if (selectedMonth && selectedMonth !== 'ALL' && itemMonth !== selectedMonth) return false;
       }
     }
 
@@ -116,8 +116,8 @@ export default function MonthlyFunnelPage() {
 
     // Check Agent
     if (selectedAgent !== 'ALL') {
-      const agentId = item.assignedTo?._id || item.assignedTo;
-      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || '';
+      const agentId = item.assignedTo?._id || item.assignedTo || data.assignedTo;
+      const agentName = item.assignedTo?.name || data.telecaller || data.assignedAgent || data.assignedTo || '';
       if (agentId !== selectedAgent && agentName !== selectedAgent) return false;
     }
 
@@ -215,6 +215,7 @@ export default function MonthlyFunnelPage() {
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="w-full h-10 px-3.5 bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
           >
+            <option value="ALL">All Months</option>
             {MONTHS.map(m => (
               <option key={m} value={m}>{m}</option>
             ))}

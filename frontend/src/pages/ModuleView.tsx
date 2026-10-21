@@ -167,7 +167,10 @@ export default function ModuleView() {
     try {
       const res = await api.get('/auth/users?purpose=dropdown');
       const allUsers = res.data || [];
-      const filtered = allUsers.filter((u: any) => u.roleId?._id === caSelectedRole && u.isActive !== false);
+      const filtered = allUsers.filter((u: any) => {
+        const rId = typeof u.roleId === 'object' ? (u.roleId?._id || u.roleId?.id) : u.roleId;
+        return rId === caSelectedRole && u.isActive !== false;
+      });
       setCaAgents(filtered);
       setCaSelectedAgents(filtered.map((u: any) => u._id));
     } catch (err) {

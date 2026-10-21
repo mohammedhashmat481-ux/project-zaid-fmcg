@@ -70,7 +70,7 @@ export default function CampaignReportPage() {
 
       // Aggregate lead records
       leadsList.forEach((lead: any) => {
-        const cName = lead.data?.campaign || lead.data?.campaignName || lead.campaignName || 'General Drive';
+        const cName = lead.data?.campaign || lead.data?.campaignName || lead.campaignName || lead.data?.source || 'General Drive';
         if (!campaignMap[cName]) {
           campaignMap[cName] = {
             total: 0,

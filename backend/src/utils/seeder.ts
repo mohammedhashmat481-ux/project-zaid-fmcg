@@ -71,37 +71,65 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
     icon: 'UserPlus',
     isSystem: true,
     fields: [
+      // --- LOAN DETAILS (13 FIELDS) ---
+      { name: 'dataCode', label: 'Data Code', type: 'text', required: false },
       {
-        name: 'source',
-        label: 'Source',
+        name: 'status',
+        label: 'Current Status',
         type: 'dropdown',
-        required: false,
-        unique: false,
-        options: ['Website', 'Referral', 'Cold Call', 'Social Media', 'Excel Import']
+        required: true,
+        defaultValue: 'HOT LEADS',
+        options: defaultStatuses.map(s => s.name)
       },
+      { name: 'caseDetails', label: 'Case Details', type: 'text', required: false },
+      { name: 'leadCategory', label: 'Lead Category', type: 'text', required: false },
       {
         name: 'loanType',
         label: 'Loan Type',
         type: 'dropdown',
         required: true,
-        unique: false,
         defaultValue: 'SALARIED PERSONAL LOAN',
-        options: ['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP (LOAN AGAINST PROPERTY)']
+        options: ['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP']
       },
-      { name: 'budget', label: 'Loan Amount', type: 'currency', required: false, unique: false },
-      { name: 'dataCode', label: 'Data Code', type: 'text', required: false, unique: false },
+      { name: 'notes', label: 'Remarks', type: 'textarea', required: false },
+      { name: 'budget', label: 'Loan Amount', type: 'currency', required: true },
+      { name: 'assignedTo', label: 'Assign To Agent', type: 'dropdown', required: true },
+      { name: 'source', label: 'Source', type: 'text', required: false, defaultValue: 'Ink CRM' },
+      { name: 'businessPartner', label: 'Business Partners', type: 'dropdown', required: true },
+      { name: 'psm', label: 'PSM', type: 'text', required: true },
+      { name: 'assignToTeam', label: 'Assign To Team', type: 'dropdown', required: false },
+      { name: 'followUpDate', label: 'Follow-Up Date', type: 'date', required: false },
+
+      // --- PERSONAL DETAILS (11 FIELDS) ---
+      { name: 'firstName', label: 'First Name', type: 'text', required: true },
+      { name: 'lastName', label: 'Last Name', type: 'text', required: false },
+      { name: 'company', label: 'Company Name', type: 'text', required: false },
+      { name: 'phone', label: 'Mobile', type: 'phone', required: false },
+      { name: 'email', label: 'E-Mail', type: 'email', required: false },
+      { name: 'city', label: 'City', type: 'text', required: false },
+      { name: 'presentAddress', label: 'Present Address', type: 'textarea', required: false },
+      { name: 'pinCode', label: 'PinCode', type: 'text', required: false },
       {
-        name: 'status',
-        label: 'Status',
+        name: 'state',
+        label: 'State',
         type: 'dropdown',
-        required: true,
-        unique: false,
-        defaultValue: 'HOT LEADS',
-        options: defaultStatuses.map(s => s.name)
+        required: false,
+        options: [
+          'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
+          'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+          'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+          'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Delhi', 'Jammu and Kashmir', 'Chandigarh'
+        ]
       },
-      { name: 'bankName', label: 'Bank Name', type: 'text', required: false, unique: false },
-      { name: 'assignedTo', label: 'Assigned To', type: 'text', required: false, unique: false },
-      { name: 'notes', label: 'Notes', type: 'textarea', required: false, unique: false }
+      {
+        name: 'country',
+        label: 'Country',
+        type: 'dropdown',
+        required: false,
+        defaultValue: 'INDIA',
+        options: ['INDIA', 'USA', 'UAE', 'UK', 'Other']
+      },
+      { name: 'salary', label: 'Salary', type: 'currency', required: false }
     ]
   });
 

@@ -3,6 +3,7 @@ import Organization from '../models/Organization';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { seedDatabase } from '../utils/seeder';
+import { seedDemoData } from '../utils/seedDemoData';
 
 const router = Router();
 
@@ -158,8 +159,8 @@ router.put('/branding', authenticate, requireTenant, async (req: Request, res: R
 router.post('/seed-demo', async (req: Request, res: Response): Promise<void> => {
   try {
     console.log('User requested manual database re-seeding...');
-    await seedDatabase(false);
-    res.status(200).json({ message: 'Database successfully seeded with demo organizations, modules, and records.' });
+    await seedDemoData();
+    res.status(200).json({ message: 'Database successfully seeded with demo organizations, modules, users, campaigns, leads, and reports.' });
   } catch (error: any) {
     console.error('Failed to seed database:', error);
     res.status(500).json({ error: 'Failed to seed database: ' + error.message });
