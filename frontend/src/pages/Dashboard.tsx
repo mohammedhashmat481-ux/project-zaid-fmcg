@@ -230,10 +230,10 @@ export default function Dashboard() {
       ['DISBUSED', 'DISBURSED'].forEach(checkAndAdd);
     } else if (upper.includes('REJECT')) {
       ['REJECTED', 'REJECT'].forEach(checkAndAdd);
-    } else if (upper.includes('FOLLOW') || upper.includes('CALL') || upper.includes('REACHABLE')) {
-      ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP', 'YET TO CALL', 'NOT CONNECTED', 'NOT REACHABLE'].forEach(checkAndAdd);
-    } else if (upper.includes('DROP') || upper.includes('INTERESTED')) {
-      ['DROPPED', 'DROP', 'NOT INTERESTED'].forEach(checkAndAdd);
+    } else if (upper.includes('FOLLOW')) {
+      ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP'].forEach(checkAndAdd);
+    } else if (upper.includes('DROP')) {
+      ['DROPPED', 'DROP'].forEach(checkAndAdd);
     } else if (upper === 'PENDING' || upper.includes('INKWORLDWIDE')) {
       ['PENDING', 'INKWORLDWIDE', 'INK WORLDWIDE'].forEach(checkAndAdd);
     } else {
@@ -501,7 +501,7 @@ export default function Dashboard() {
             <Icons.Layers className="w-3.5 h-3.5 text-[#7C3AED]" />
             <span className="hidden sm:inline">All Leads:</span>
             <span className="px-1.5 py-0.5 rounded-full text-[10.5px] font-black bg-purple-100 dark:bg-purple-950/60 text-[#7C3AED] dark:text-purple-300">
-              {(metricsData?.totalLeads ?? 3190).toLocaleString()}
+              {(metricsData?.totalLeads ?? 0).toLocaleString()}
             </span>
           </Link>
 

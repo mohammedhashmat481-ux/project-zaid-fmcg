@@ -376,7 +376,7 @@ export default function Layout({ children }: LayoutProps) {
                           icon={Icons.Layers} 
                           colorClass="text-[#7C3AED]"
                           indent 
-                          badge={leadsData?.pagination?.total ?? leadsData?.pagination?.totalRecords ?? metricsData?.totalLeads ?? leadsData?.records?.length ?? 0} 
+                          badge={metricsData?.totalLeads ?? leadsData?.pagination?.total ?? leadsData?.pagination?.totalRecords ?? leadsData?.records?.length ?? 0} 
                           isCollapsed={isCollapsed}
                         />
                         {(() => {
@@ -471,10 +471,10 @@ export default function Layout({ children }: LayoutProps) {
                               ['DISBUSED', 'DISBURSED'].forEach(checkAndAdd);
                             } else if (upper.includes('REJECT')) {
                               ['REJECTED', 'REJECT'].forEach(checkAndAdd);
-                            } else if (upper.includes('FOLLOW') || upper.includes('CALL') || upper.includes('REACHABLE')) {
-                              ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP', 'YET TO CALL', 'NOT CONNECTED', 'NOT REACHABLE'].forEach(checkAndAdd);
-                            } else if (upper.includes('DROP') || upper.includes('INTERESTED')) {
-                              ['DROPPED', 'DROP', 'NOT INTERESTED'].forEach(checkAndAdd);
+                            } else if (upper.includes('FOLLOW')) {
+                              ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP'].forEach(checkAndAdd);
+                            } else if (upper.includes('DROP')) {
+                              ['DROPPED', 'DROP'].forEach(checkAndAdd);
                             } else if (upper === 'PENDING' || upper.includes('INKWORLDWIDE')) {
                               ['PENDING', 'INKWORLDWIDE', 'INK WORLDWIDE'].forEach(checkAndAdd);
                             } else {

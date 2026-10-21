@@ -898,25 +898,20 @@ export function getStatusSynonyms(statusVal: string): string[] {
     synonyms.add('Rejected');
   }
 
-  // FOLLOWUP
-  if (upper.includes('FOLLOW') || upper.includes('CALL') || upper.includes('REACHABLE') || upper.includes('CONNECTED')) {
+  // FOLLOWUP - strictly pipeline stage, not campaign telecalling statuses
+  if (upper.includes('FOLLOW')) {
     synonyms.add('FOLLOWUP');
     synonyms.add('FOLLOW UP');
     synonyms.add('FOLLOW-UP');
     synonyms.add('Followup');
     synonyms.add('Follow Up');
-    synonyms.add('Yet To Call');
-    synonyms.add('Not Connected');
-    synonyms.add('Not Reachable');
   }
 
-  // DROPPED
-  if (upper.includes('DROP') || upper.includes('INTERESTED')) {
+  // DROPPED - strictly pipeline stage, not campaign telecalling statuses
+  if (upper.includes('DROP')) {
     synonyms.add('DROPPED');
     synonyms.add('DROP');
     synonyms.add('Dropped');
-    synonyms.add('Not Interested');
-    synonyms.add('NOT INTERESTED');
   }
 
   // PENDING
@@ -929,6 +924,9 @@ export function getStatusSynonyms(statusVal: string): string[] {
 
   return Array.from(synonyms).filter(Boolean);
 }
+
+// Regex matching only the 11 official Lead Pipeline Stages (strictly excludes Campaign telecalling contacts)
+export const PIPELINE_LEAD_STATUS_REGEX = '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|CE[BD]IL(\\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\\s*WORLDWIDE)$';
 
 // 1. LIST RECORDS FOR A DYNAMIC MODULE
 router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
@@ -962,6 +960,20 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
 
     if (scope === 'own') {
       query.createdBy = req.user?.id;
+    }
+
+    // Differentiate Campaign Contacts vs Real Leads:
+    // Raw campaign contacts (dial status 'Yet To Call', 'Not Connected', 'Wrong Number', etc.) belong strictly to Campaigns,
+    // NOT to Leads Process. Only directly created leads and campaign contacts converted via Hot/Warm lead appear in Leads Process.
+    if (apiPath.toLowerCase() === 'leads') {
+      const realLeadFilter = {
+        'data.status': { $regex: PIPELINE_LEAD_STATUS_REGEX }
+      };
+      if (query.$and) {
+        query.$and.push(realLeadFilter);
+      } else {
+        query.$and = [realLeadFilter];
+      }
     }
 
     // Direct status, leadStatus, or followup query params support

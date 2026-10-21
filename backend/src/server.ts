@@ -55,7 +55,8 @@ const startServer = async () => {
     server.setTimeout(30000);
 
   } catch (error: any) {
-    logger.error('Fatal error starting the server:', error);
+    console.error('Fatal error starting the server:', error);
+    logger.error('Fatal error starting the server:', error?.stack || error?.message || error);
     process.exit(1);
   }
 };

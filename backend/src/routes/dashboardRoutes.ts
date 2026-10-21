@@ -78,6 +78,11 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
     };
     if (leadModule) {
       leadQuery.moduleId = leadModule._id;
+      // Differentiate Campaign Contacts vs Real Leads:
+      // Real pipeline leads strictly match the 11 pipeline stages. Raw campaign contacts (telecalling list) are excluded.
+      leadQuery['data.status'] = {
+        $regex: '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|CE[BD]IL(\\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\\s*WORLDWIDE)$'
+      };
     }
     const dealQuery: Record<string, any> = {
       organizationId: orgId
