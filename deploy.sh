@@ -53,10 +53,13 @@ cd ..
 echo "Running Pre-deployment Validation Checks..."
 node predeploy.js
 
-# 6. Auto-seed PostgreSQL with full record data and module definitions
-echo "Populating complete database record set..."
+# 6. Synchronize module definitions, campaigns, statuses, and permissions
+echo "Populating complete database record set and syncing campaign modules..."
 cd backend
-npx ts-node src/utils/seeder.ts || true
+node dist/utils/syncCampaignModules.js || true
+node dist/utils/syncExact11Statuses.js || true
+node dist/utils/approveExistingUsers.js || true
+node dist/utils/seeder.js || true
 cd ..
 
 # 7. PM2 worker configurations & startup

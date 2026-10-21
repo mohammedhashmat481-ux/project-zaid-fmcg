@@ -1,8 +1,15 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import { connectDB, disconnectDB } from '../config/db';
 import Status from '../models/Status';
 import Organization from '../models/Organization';
 import CustomRecord from '../models/CustomRecord';
 import ModuleDefinition from '../models/ModuleDefinition';
+
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'backend/.env') });
 
 async function main() {
   await connectDB();

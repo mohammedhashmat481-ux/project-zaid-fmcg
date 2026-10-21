@@ -1,8 +1,15 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import { connectDB, disconnectDB } from '../config/db';
 import Organization from '../models/Organization';
 import ModuleDefinition from '../models/ModuleDefinition';
 import Role from '../models/Role';
 import { logger } from './logger';
+
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'backend/.env') });
 
 export async function syncCampaignModules() {
   await connectDB();

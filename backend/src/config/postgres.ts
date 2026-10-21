@@ -5,6 +5,9 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'backend/.env') });
 
 let pool: Pool | null = null;
 let pgliteInstance: PGlite | null = null;
