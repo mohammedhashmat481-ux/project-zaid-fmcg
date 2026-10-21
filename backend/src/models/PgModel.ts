@@ -722,11 +722,21 @@ function buildWhereClause(
               }).join(', ');
               conditions.push(`${boolExpr} IN (${inPlaceholders})`);
             } else {
-              const inPlaceholders = val.$in.map((item: any) => {
-                params.push(String(item._id || item));
-                return `$${params.length}`;
-              }).join(', ');
-              conditions.push(`${col} IN (${inPlaceholders})`);
+              const hasNull = val.$in.some((item: any) => item === null || item === undefined);
+              const nonNullItems = val.$in.filter((item: any) => item !== null && item !== undefined);
+              if (nonNullItems.length > 0) {
+                const inPlaceholders = nonNullItems.map((item: any) => {
+                  params.push(String(item._id || item));
+                  return `$${params.length}`;
+                }).join(', ');
+                if (hasNull) {
+                  conditions.push(`(${col} IN (${inPlaceholders}) OR ${col} IS NULL)`);
+                } else {
+                  conditions.push(`${col} IN (${inPlaceholders})`);
+                }
+              } else if (hasNull) {
+                conditions.push(`${col} IS NULL`);
+              }
             }
           }
         }
@@ -742,7 +752,7 @@ function buildWhereClause(
               if (typeof item === 'string' && item.startsWith('/') && item.lastIndexOf('/') > 0) {
                 return item.substring(1, item.lastIndexOf('/'));
               }
-              const str = String(item._id || item);
+              const str = item !== null && item !== undefined ? String(item._id || item) : '';
               return `^\\s*${str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`;
             });
             const combined = `(${patterns.join('|')})`;
@@ -765,11 +775,21 @@ function buildWhereClause(
               }).join(', ');
               conditions.push(`(${boolExpr} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
             } else {
-              const ninPlaceholders = val.$nin.map((item: any) => {
-                params.push(String(item._id || item));
-                return `$${params.length}`;
-              }).join(', ');
-              conditions.push(`(${col} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
+              const hasNull = val.$nin.some((item: any) => item === null || item === undefined);
+              const nonNullItems = val.$nin.filter((item: any) => item !== null && item !== undefined);
+              if (nonNullItems.length > 0) {
+                const ninPlaceholders = nonNullItems.map((item: any) => {
+                  params.push(String(item._id || item));
+                  return `$${params.length}`;
+                }).join(', ');
+                if (hasNull) {
+                  conditions.push(`(${col} NOT IN (${ninPlaceholders}) AND ${col} IS NOT NULL)`);
+                } else {
+                  conditions.push(`(${col} NOT IN (${ninPlaceholders}) OR ${col} IS NULL)`);
+                }
+              } else if (hasNull) {
+                conditions.push(`${col} IS NOT NULL`);
+              }
             }
           }
         }

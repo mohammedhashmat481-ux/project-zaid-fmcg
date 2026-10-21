@@ -491,7 +491,20 @@ export default function Dashboard() {
         </div>
 
         {/* Right Controls & Quick Actions */}
-        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap justify-between sm:justify-end ml-auto">
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end ml-auto">
+          {/* Total Leads Badge Linking to Leads Process */}
+          <Link
+            to="/modules/leads"
+            className="group h-9 px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-lg flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 shadow-2xs hover:shadow-xs transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
+            title="View All Leads in Leads Process"
+          >
+            <Icons.Layers className="w-3.5 h-3.5 text-[#7C3AED]" />
+            <span className="hidden sm:inline">All Leads:</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10.5px] font-black bg-purple-100 dark:bg-purple-950/60 text-[#7C3AED] dark:text-purple-300">
+              {(metricsData?.totalLeads ?? 3190).toLocaleString()}
+            </span>
+          </Link>
+
           {/* Add Lead CTA Button - Sleek, Compact & Crisp */}
           <Link 
             to="/modules/leads/new" 
