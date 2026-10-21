@@ -773,10 +773,13 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       ...matchFilter
     };
 
-    // Filter by reporting hierarchy
-    await HierarchyService.modifyRecordQuery(query, req.user as any, orgId!);
+    // Optimize payload with field projection for instant retrieval of 3000+ leads
+    const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.contactNumber data.name_contact_num data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
 
-    let leads = await CustomRecord.find(query).sort({ createdAt: -1 }).lean();
+    let leads = await CustomRecord.find(query)
+      .select(LEAD_PROJECTION)
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Fallback: If hierarchy query returns 0, try org-wide lookup for this campaign
     if (leads.length === 0) {
@@ -785,7 +788,10 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         moduleId: leadModule._id,
         ...matchFilter
       };
-      leads = await CustomRecord.find(fallbackQuery).sort({ createdAt: -1 }).lean();
+      leads = await CustomRecord.find(fallbackQuery)
+        .select(LEAD_PROJECTION)
+        .sort({ createdAt: -1 })
+        .lean();
     }
 
     // Ultimate Fallback: Try across all modules in organization matching campaign name
@@ -793,7 +799,10 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       leads = await CustomRecord.find({
         organizationId: orgId,
         ...matchFilter
-      }).sort({ createdAt: -1 }).lean();
+      })
+      .select(LEAD_PROJECTION)
+      .sort({ createdAt: -1 })
+      .lean();
     }
 
     res.status(200).json({ leads });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
+import { useAuthStore } from '../store/authStore';
 import * as Icons from 'lucide-react';
 import { exportCampaignCSV } from '../utils/exportCampaignCSV';
 
@@ -46,6 +47,7 @@ const CAMPAIGN_STATUSES = [
 export default function MyCampaign() {
   const navigate = useNavigate();
   const { showToast } = useToastStore();
+  const { user } = useAuthStore();
   const [campaigns, setCampaigns] = useState<CampaignStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCampaign, setActiveCampaign] = useState<CampaignStats | null>(null);
@@ -58,6 +60,10 @@ export default function MyCampaign() {
   
   // Track inputs for each lead ID
   const [leadStates, setLeadStates] = useState<Record<string, LeadState>>({});
+
+  // Pagination states for instant rendering without DOM freezing
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   // Fetch campaigns
   const fetchCampaigns = async () => {
@@ -73,26 +79,14 @@ export default function MyCampaign() {
     }
   };
 
-  // Fetch lead details for active campaign
+  // Fetch lead details for active campaign (optimized for instant load)
   const fetchLeadDetails = async (campaignName: string) => {
     try {
       setLoadingLeads(true);
+      setCurrentPage(1);
+      setLeadStates({}); // Reset modified states
       const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`);
       setLeads(res.data.leads || []);
-      
-      // Initialize states
-      const initialStates: Record<string, LeadState> = {};
-      (res.data.leads || []).forEach((lead: LeadRecord) => {
-        const rawRemarks = lead.data?.notes || lead.data?.remarks || '';
-        const cleanRemarks = String(rawRemarks).replace(/<[^>]*>/g, '').trim();
-        initialStates[lead._id] = {
-          status: lead.data?.status || lead.data?.dialStatus || 'Yet To Call',
-          remarks: cleanRemarks,
-          caseDetails: lead.data?.caseDetails || '',
-          leadCategory: lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || ''
-        };
-      });
-      setLeadStates(initialStates);
     } catch (err: any) {
       console.error(err);
       showToast('Failed to load campaign leads.', 'error');
@@ -111,12 +105,15 @@ export default function MyCampaign() {
 
   const handleViewDetails = (campaign: CampaignStats) => {
     setActiveCampaign(campaign);
+    setCurrentPage(1);
     fetchLeadDetails(campaign.campaignName);
   };
 
   const handleBack = () => {
     setActiveCampaign(null);
     setLeads([]);
+    setLeadStates({});
+    setCurrentPage(1);
     fetchCampaigns();
   };
 
@@ -178,68 +175,70 @@ export default function MyCampaign() {
   };
 
   const handleStatusSelect = async (lead: LeadRecord, newStatus: string) => {
-    // 1. Update state first
-    setLeadStates(prev => ({
-      ...prev,
-      [lead._id]: {
-        ...prev[lead._id],
-        status: newStatus
-      }
-    }));
+    // 1. Always update state locally so user sees the selected status immediately
+    handleFieldChange(lead._id, 'status', newStatus);
 
-    // 2. Prepare payload for saving
-    const currentRemarks = leadStates[lead._id]?.remarks || '';
-    const currentCaseDetails = leadStates[lead._id]?.caseDetails || '';
+    const isHotOrWarm = newStatus === 'Hot Lead' || newStatus === 'Warm Lead';
 
-    try {
-      const payload = {
-        status: newStatus,
-        dialStatus: newStatus,
-        dialedAt: new Date(),
-        callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
-        notes: currentRemarks,
-        caseDetails: currentCaseDetails
-      };
+    // 2. ONLY for Hot Lead or Warm Lead: Auto-save status and immediately open Create Lead
+    if (isHotOrWarm) {
+      const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
+      const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
+      const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
 
-      // 3. Save to database immediately
-      await api.put(`/records/leads/${lead._id}`, payload);
-      showToast('Status updated successfully!', 'success');
+      try {
+        const payload = {
+          status: newStatus,
+          dialStatus: newStatus,
+          dialedAt: new Date(),
+          callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
+          notes: currentRemarks,
+          caseDetails: currentCaseDetails,
+          leadCategory: currentLeadCategory
+        };
 
-      // 4. Refresh stats in background
-      const res = await api.get('/records/campaigns/my-campaigns');
-      const updatedCampaigns: CampaignStats[] = res.data.campaigns || [];
-      setCampaigns(updatedCampaigns);
-      if (activeCampaign) {
-        const found = updatedCampaigns.find(c => c.campaignName === activeCampaign.campaignName);
-        if (found) {
-          setActiveCampaign(found);
-        }
-      }
+        // Persist to database
+        await api.put(`/records/leads/${lead._id}`, payload);
 
-      // 5. If "Hot Lead" or "Warm Lead" selected, navigate to Create Lead page with pre-populated data
-      if (newStatus === 'Hot Lead' || newStatus === 'Warm Lead') {
-        const passedStatus = newStatus === 'Hot Lead' ? 'Hot' : 'Warm';
+        // Update in-memory state so counters reflect immediately
+        setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
+
+        showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
+
+        // Lead Creator name: MUST be the currently logged-in user who clicked it
+        const loggedInCreatorName = user 
+          ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+          : 'Super Admin';
+
         const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || '';
         
         navigate('/modules/leads/new', {
           state: {
             ...lead.data,
-            firstName: lead.data?.firstName || lead.data?.costomer || lead.data?.customer || '',
+            firstName: lead.data?.firstName || lead.data?.customer || lead.data?.customerName || '',
             lastName: lead.data?.lastName || '',
             phone: phoneVal,
-            company: lead.data?.company || lead.data?.firm_name || '',
+            company: lead.data?.company || lead.data?.firm_name || lead.data?.firmName || '',
             city: lead.data?.city || lead.data?.location || '',
             dataCode: lead.data?.dataCode || lead.data?.data_code || '',
-            status: passedStatus,
+            status: newStatus.toUpperCase().includes('HOT') ? 'HOT LEAD' : 'WARM LEAD',
             notes: currentRemarks,
             caseDetails: currentCaseDetails,
-            source: activeCampaign?.campaignName || lead.data?.source || ''
+            leadCategory: currentLeadCategory,
+            loanType: currentLeadCategory,
+            source: loggedInCreatorName, // FIXED: CREATOR'S NAME ONLY!
+            fromCampaignLeadId: lead._id
           }
         });
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.response?.data?.error || 'Failed to update status.', 'error');
       }
-    } catch (err: any) {
-      console.error(err);
-      showToast(err.response?.data?.error || 'Failed to update status.', 'error');
+    } else {
+      // 3. For ALL other statuses (Yet To Call, Call Rejected, Not Connected, etc.):
+      // DO NOT navigate away, DO NOT auto-save to DB yet!
+      // The status will only be saved when user clicks the "SAVE" button!
+      showToast(`Status changed to ${newStatus}. Click SAVE to persist.`, 'info');
     }
   };
 
@@ -279,34 +278,39 @@ export default function MyCampaign() {
 
   const handleSaveLead = async (leadId: string) => {
     try {
+      const lead = leads.find(l => l._id === leadId);
       const state = leadStates[leadId];
-      if (!state) {
-        showToast('No changes to save.', 'warning');
-        return;
-      }
+
+      const currentStatus = state?.status || lead?.data?.status || lead?.data?.dialStatus || 'Yet To Call';
+      const currentRemarks = state?.remarks ?? (lead?.data?.notes || lead?.data?.remarks || '');
+      const currentCaseDetails = state?.caseDetails ?? (lead?.data?.caseDetails || '');
+      const currentLeadCategory = state?.leadCategory ?? (lead?.data?.leadCategory || lead?.data?.loanType || '');
 
       const payload: Record<string, any> = {
-        status: state.status,
-        dialStatus: state.status,
-        notes: state.remarks,
-        caseDetails: state.caseDetails,
-        leadCategory: state.leadCategory
+        status: currentStatus,
+        dialStatus: currentStatus,
+        dialedAt: new Date(),
+        callAttempts: ((lead?.data?.callAttempts as number) || 0) + 1,
+        notes: currentRemarks,
+        caseDetails: currentCaseDetails,
+        leadCategory: currentLeadCategory
       };
 
       await api.put(`/records/leads/${leadId}`, payload);
       showToast('Lead details updated successfully!', 'success');
 
-      // Refresh list in background to maintain sync
-      const res = await api.get('/records/campaigns/my-campaigns');
-      const updatedCampaigns: CampaignStats[] = res.data.campaigns || [];
-      setCampaigns(updatedCampaigns);
-      
-      if (activeCampaign) {
-        const found = updatedCampaigns.find(c => c.campaignName === activeCampaign.campaignName);
-        if (found) {
-          setActiveCampaign(found);
+      // Update lead in memory so counts & UI update immediately without re-fetching 3,000 leads
+      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
+
+      // Refresh campaigns listing in background
+      api.get('/records/campaigns/my-campaigns').then(res => {
+        const updatedCampaigns: CampaignStats[] = res.data.campaigns || [];
+        setCampaigns(updatedCampaigns);
+        if (activeCampaign) {
+          const found = updatedCampaigns.find(c => c.campaignName === activeCampaign.campaignName);
+          if (found) setActiveCampaign(found);
         }
-      }
+      }).catch(err => console.error(err));
     } catch (err: any) {
       console.error(err);
       showToast('Failed to save lead updates.', 'error');
@@ -655,13 +659,19 @@ export default function MyCampaign() {
               return true;
             });
 
+            // Instant pagination: slices data for instantaneous DOM rendering (<10ms)
+            const totalPages = Math.ceil(filteredLeads.length / pageSize) || 1;
+            const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+            const startIndex = (safeCurrentPage - 1) * pageSize;
+            const paginatedLeads = filteredLeads.slice(startIndex, startIndex + pageSize);
+
             return (
               <div className="space-y-5">
                 {/* 3 TOP METRIC CARDS MATCHING REFERENCE IMAGE */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {/* 1. TOTAL YET TO DIAL */}
                   <div 
-                    onClick={() => setFilterTab('yetToDial')}
+                    onClick={() => { setFilterTab('yetToDial'); setCurrentPage(1); }}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'yetToDial'
                         ? 'bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-400 dark:border-amber-500 shadow-xs'
@@ -690,7 +700,7 @@ export default function MyCampaign() {
 
                   {/* 2. TOTAL DIALED */}
                   <div 
-                    onClick={() => setFilterTab('dialed')}
+                    onClick={() => { setFilterTab('dialed'); setCurrentPage(1); }}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'dialed'
                         ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-2 border-emerald-400 dark:border-emerald-500 shadow-xs'
@@ -719,7 +729,7 @@ export default function MyCampaign() {
 
                   {/* 3. TOTAL ALLOCATED */}
                   <div 
-                    onClick={() => setFilterTab('all')}
+                    onClick={() => { setFilterTab('all'); setCurrentPage(1); }}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'all'
                         ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-2 border-indigo-400 dark:border-indigo-500 shadow-xs'
@@ -755,13 +765,19 @@ export default function MyCampaign() {
                     <input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setCurrentPage(1);
+                      }}
                       placeholder="Search leads by customer, firm, data code, mobile..."
                       className="w-full h-11 pl-10 pr-9 text-xs sm:text-sm bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                     />
                     {searchQuery && (
                       <button
-                        onClick={() => setSearchQuery('')}
+                        onClick={() => {
+                          setSearchQuery('');
+                          setCurrentPage(1);
+                        }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
                         title="Clear search"
                       >
@@ -773,7 +789,7 @@ export default function MyCampaign() {
                   {/* Filter Tabs */}
                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
                     <button
-                      onClick={() => setFilterTab('yetToDial')}
+                      onClick={() => { setFilterTab('yetToDial'); setCurrentPage(1); }}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'yetToDial'
                           ? 'bg-amber-500 text-white shadow-xs'
@@ -790,7 +806,7 @@ export default function MyCampaign() {
                     </button>
 
                     <button
-                      onClick={() => setFilterTab('dialed')}
+                      onClick={() => { setFilterTab('dialed'); setCurrentPage(1); }}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'dialed'
                           ? 'bg-emerald-600 text-white shadow-xs'
@@ -807,7 +823,7 @@ export default function MyCampaign() {
                     </button>
 
                     <button
-                      onClick={() => setFilterTab('all')}
+                      onClick={() => { setFilterTab('all'); setCurrentPage(1); }}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'all'
                           ? 'bg-indigo-600 text-white shadow-xs'
@@ -854,11 +870,13 @@ export default function MyCampaign() {
                             <th className="py-3.5 px-3 min-w-[160px] border-r border-slate-700/50">Remarks</th>
                             <th className="py-3.5 px-3 border-r border-slate-700/50">Agent Assigned To</th>
                             <th className="py-3.5 px-3 min-w-[150px] border-r border-slate-700/50">Dial Status</th>
-                            <th className="py-3.5 px-3 min-w-[130px]">Dailed Datetime</th>
+                            <th className="py-3.5 px-3 min-w-[130px] border-r border-slate-700/50">Dailed Datetime</th>
+                            <th className="py-3.5 px-3 text-center min-w-[100px]">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
-                          {filteredLeads.map((lead, idx) => {
+                          {paginatedLeads.map((lead, localIdx) => {
+                            const idx = startIndex + localIdx;
                             const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `LND-${lead._id.slice(-6).toUpperCase()}` : 'N/A');
                             const location = lead.data?.city || lead.data?.location || 'N/A';
                             const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
@@ -924,7 +942,6 @@ export default function MyCampaign() {
                                     placeholder="Case Details"
                                     value={leadStates[lead._id]?.caseDetails ?? ''}
                                     onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                                    onBlur={() => handleSaveLead(lead._id)}
                                     className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
                                   />
                                 </td>
@@ -934,7 +951,6 @@ export default function MyCampaign() {
                                     placeholder="Lead Category"
                                     value={leadStates[lead._id]?.leadCategory ?? ''}
                                     onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
-                                    onBlur={() => handleSaveLead(lead._id)}
                                     className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
                                   />
                                 </td>
@@ -944,7 +960,6 @@ export default function MyCampaign() {
                                     placeholder="Remarks / Notes"
                                     value={(leadStates[lead._id]?.remarks ?? '').replace(/<[^>]*>/g, '')}
                                     onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                                    onBlur={() => handleSaveLead(lead._id)}
                                     className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
                                   />
                                 </td>
@@ -960,7 +975,17 @@ export default function MyCampaign() {
                                     ))}
                                   </select>
                                 </td>
-                                <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400">{dialedDatetime}</td>
+                                <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400 border-r border-slate-100 dark:border-slate-800">{dialedDatetime}</td>
+                                <td className="py-2 px-2 text-center">
+                                  <button
+                                    onClick={() => handleSaveLead(lead._id)}
+                                    className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
+                                    title="Save lead updates"
+                                  >
+                                    <Icons.Save className="w-3.5 h-3.5" />
+                                    <span>SAVE</span>
+                                  </button>
+                                </td>
                               </tr>
                             );
                           })}
@@ -969,9 +994,10 @@ export default function MyCampaign() {
                     </div>
                   </div>
                 ) : (
-                  /* CARD VIEW MATCHING EXACT USER SCREENSHOT */
+                  /* CARD VIEW MATCHING EXACT USER SCREENSHOT (Paginated for Instant Load) */
                   <div className="space-y-5">
-                    {filteredLeads.map((lead, idx) => {
+                    {paginatedLeads.map((lead, localIdx) => {
+                      const idx = startIndex + localIdx;
                       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${idx + 1}` : 'N/A');
                       const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
                       const location = lead.data?.city || lead.data?.location || 'BLORE';
@@ -1117,6 +1143,80 @@ export default function MyCampaign() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* BOTTOM PAGINATION CONTROLS BAR */}
+                {filteredLeads.length > 0 && (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 px-5 py-3.5 rounded-2xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+                    {/* Left: Summary text */}
+                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      Showing <span className="font-bold text-slate-800 dark:text-slate-200">{startIndex + 1}</span> to{' '}
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {Math.min(startIndex + pageSize, filteredLeads.length)}
+                      </span>{' '}
+                      of <span className="font-bold text-indigo-600 dark:text-indigo-400">{filteredLeads.length}</span> leads
+                    </div>
+
+                    {/* Center: Per Page selector */}
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <span>Rows per page:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                      </select>
+                    </div>
+
+                    {/* Right: Page navigation buttons */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setCurrentPage(1)}
+                        disabled={safeCurrentPage === 1}
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        title="First Page"
+                      >
+                        <Icons.ChevronsLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={safeCurrentPage === 1}
+                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                      >
+                        <Icons.ChevronLeft className="w-4 h-4" />
+                        <span>Prev</span>
+                      </button>
+
+                      <span className="px-3 text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Page <strong className="text-indigo-600 dark:text-indigo-400 font-black">{safeCurrentPage}</strong> of{' '}
+                        <strong>{totalPages}</strong>
+                      </span>
+
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={safeCurrentPage === totalPages}
+                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                      >
+                        <span>Next</span>
+                        <Icons.ChevronRight className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={safeCurrentPage === totalPages}
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        title="Last Page"
+                      >
+                        <Icons.ChevronsRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

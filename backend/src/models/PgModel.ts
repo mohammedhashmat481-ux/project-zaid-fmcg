@@ -657,6 +657,21 @@ function buildWhereClause(
       return;
     }
 
+    if (key === '$nor' && Array.isArray(val)) {
+      const orParts: string[] = [];
+      val.forEach((subQ) => {
+        const subResult = buildWhereClause(tableName, mappings, subQ, params);
+        if (subResult.whereClause) {
+          const subStr = subResult.whereClause.replace(/^WHERE\s+/, '');
+          if (subStr) orParts.push(`(${subStr})`);
+        }
+      });
+      if (orParts.length > 0) {
+        conditions.push(`NOT (${orParts.join(' OR ')})`);
+      }
+      return;
+    }
+
     const col = mapJsToDbCol(tableName, mappings, key);
     const isJson = isJsonExtraction(col);
 

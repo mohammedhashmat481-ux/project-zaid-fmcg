@@ -114,9 +114,41 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
     endOfToday.setHours(23, 59, 59, 999);
 
     if (leadModule) {
+      // Differentiate Campaign Contacts vs Real Leads:
+      // Campaign contacts that are NOT converted to Hot / Warm Lead must NOT distort the Dashboard's lead status cards.
+      // Only Real Leads (created directly) and campaign contacts that are Hot / Warm Lead reflect on the Dashboard!
+      const campaignNonLeadFilter = {
+        $or: [
+          // 1. Direct lead (no campaign attached)
+          {
+            $and: [
+              { 'data.campaignName': { $in: [null, ''] } },
+              { 'data.campaign': { $in: [null, ''] } },
+              { 'data.campaign_name': { $in: [null, ''] } }
+            ]
+          },
+          // 2. Or if from campaign, ONLY count if status is Hot or Warm Lead
+          {
+            'data.status': {
+              $in: [
+                'HOT LEAD', 'HOT LEADS', 'Hot Lead', 'Hot Leads', 'Hot',
+                'WARM LEAD', 'WARM LEADS', 'Warm Lead', 'Warm Leads', 'Warm'
+              ]
+            }
+          }
+        ]
+      };
+
+      const dashboardLeadMatch = {
+        $and: [
+          leadQuery,
+          campaignNonLeadFilter
+        ]
+      };
+
       // 1. Group leads count by status dynamically
       const leadAgg = await CustomRecord.aggregate([
-        { $match: leadQuery },
+        { $match: dashboardLeadMatch },
         { $group: { _id: '$data.status', count: { $sum: 1 } } }
       ]);
       

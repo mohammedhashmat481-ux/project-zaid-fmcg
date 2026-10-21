@@ -272,11 +272,12 @@ export default function RecordForm() {
         if (f.defaultValue) defaults[f.name] = f.defaultValue;
       });
       defaults['country'] = 'INDIA';
+      const loggedInCreatorName = user 
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        : 'Super Admin';
+
       if (apiPath === 'leads') {
-        const loggedInName = user ? [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email.split('@')[0] : '';
-        if (loggedInName) {
-          defaults['source'] = loggedInName;
-        }
+        defaults['source'] = loggedInCreatorName;
         if (!defaults['status']) {
           defaults['status'] = dynamicStatuses.includes('HOT LEAD') ? 'HOT LEAD' : (dynamicStatuses.includes('HOT LEADS') ? 'HOT LEADS' : 'HOT LEAD');
         }
@@ -291,6 +292,12 @@ export default function RecordForm() {
         ...defaults,
         ...passedData
       };
+
+      // FIXED: When creating a new lead, SOURCE is ALWAYS fixed to the creator's name!
+      // Even if passedData contains a campaign name, the creator's name is locked in as the SOURCE!
+      if (apiPath === 'leads') {
+        finalDefaults['source'] = loggedInCreatorName;
+      }
       
       reset(finalDefaults);
       setLoading(false);
@@ -469,6 +476,21 @@ export default function RecordForm() {
     setSaving(true);
     try {
       const data = { ...formData };
+
+      // Fixed Lead Creator Name: source is always locked to creator name
+      const loggedInCreatorName = user 
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        : 'Super Admin';
+
+      if (apiPath === 'leads') {
+        if (!id) {
+          // When creating a lead, SOURCE is always the logged-in creator
+          data.source = loggedInCreatorName;
+        } else {
+          // When editing/reassigning a lead, keep the original creator's name permanently
+          data.source = watchedValues.source || data.source || loggedInCreatorName;
+        }
+      }
 
       // Auto-sync fullName, customerName, location, and currency
       if (data.firstName || data.lastName) {
@@ -1081,6 +1103,39 @@ export default function RecordForm() {
           );
         }
 
+        if (field.name === 'source' && apiPath === 'leads') {
+          const loggedInCreatorName = user 
+            ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+            : 'Super Admin';
+          const currentSourceVal = watch('source') || loggedInCreatorName;
+
+          return (
+            <div key={field.name} className="space-y-1.5 text-left">
+              <div className="flex items-center justify-between">
+                <label className={labelClass}>
+                  {field.label}{field.required && <span className="text-rose-500 ml-0.5">*</span>}
+                </label>
+                <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded uppercase tracking-wider border border-indigo-200/60 dark:border-indigo-800">
+                  Lead Creator
+                </span>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  {...register(field.name)}
+                  value={currentSourceVal}
+                  readOnly
+                  className={`${inputBase} bg-slate-50/90 dark:bg-slate-800/80 font-bold text-slate-800 dark:text-slate-100 cursor-not-allowed pr-9`}
+                />
+                <Icons.Lock className="w-4 h-4 text-slate-400 absolute right-3 pointer-events-none" />
+              </div>
+              {errors[field.name] && (
+                <p className="text-[11px] text-rose-550 font-bold mt-1">{(errors[field.name]?.message as string)}</p>
+              )}
+            </div>
+          );
+        }
+
         return (
           <div key={field.name} className="space-y-1.5 text-left">
             <label className={labelClass}>
@@ -1564,15 +1619,24 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 9. SOURCE */}
+                {/* 9. SOURCE (Locked to Lead Creator's Name) */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>SOURCE</label>
-                  <input
-                    type="text"
-                    {...register('source')}
-                    placeholder="Ink CRM"
-                    className={inputClass}
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className={labelClass}>SOURCE</label>
+                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded uppercase tracking-wider border border-indigo-200/60 dark:border-indigo-800">
+                      Lead Creator
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      {...register('source')}
+                      value={watchedValues.source || (user ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0]) : 'Super Admin')}
+                      readOnly
+                      className={`${inputClass} bg-slate-50 dark:bg-slate-800/80 font-bold text-slate-800 dark:text-slate-100 cursor-not-allowed pr-9`}
+                    />
+                    <Icons.Lock className="w-4 h-4 text-slate-400 absolute right-3 pointer-events-none" />
+                  </div>
                   {errors.source && (
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.source?.message as string)}</p>
                   )}
