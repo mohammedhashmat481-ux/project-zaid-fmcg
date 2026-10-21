@@ -24,6 +24,7 @@ interface LeadState {
   status?: string;
   remarks?: string;
   caseDetails?: string;
+  leadCategory?: string;
 }
 
 const CAMPAIGN_STATUSES = [
@@ -51,7 +52,8 @@ export default function MyCampaign() {
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [statuses, setStatuses] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [filterTab, setFilterTab] = useState<'yetToDial' | 'dialed' | 'all'>('yetToDial');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Track inputs for each lead ID
@@ -86,7 +88,8 @@ export default function MyCampaign() {
         initialStates[lead._id] = {
           status: lead.data?.status || lead.data?.dialStatus || 'Yet To Call',
           remarks: cleanRemarks,
-          caseDetails: lead.data?.caseDetails || ''
+          caseDetails: lead.data?.caseDetails || '',
+          leadCategory: lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || ''
         };
       });
       setLeadStates(initialStates);
@@ -286,7 +289,8 @@ export default function MyCampaign() {
         status: state.status,
         dialStatus: state.status,
         notes: state.remarks,
-        caseDetails: state.caseDetails
+        caseDetails: state.caseDetails,
+        leadCategory: state.leadCategory
       };
 
       await api.put(`/records/leads/${leadId}`, payload);
@@ -614,313 +618,510 @@ export default function MyCampaign() {
             </div>
           </div>
 
-          {/* ACTIVE CAMPAIGN METRICS GRID */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-[#111827] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center gap-3">
-              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                <Icons.Layers className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Allocated</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{activeCampaign.totalAssigned}</p>
-              </div>
-            </div>
+          {/* ACTIVE CAMPAIGN METRICS GRID MATCHING REFERENCE IMAGE */}
+          {(() => {
+            const isLeadDialed = (lead: LeadRecord) => {
+              const state = leadStates[lead._id];
+              const currentStatus = (state?.status || lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
+              const hasCalls = ((lead.data?.callAttempts as number) > 0) || !!lead.data?.dialedAt || !!lead.data?.lastCallDate;
+              const isDialedStatus = currentStatus && currentStatus !== 'yet to call' && currentStatus !== 'not called' && currentStatus !== 'new';
+              return Boolean(isDialedStatus || hasCalls);
+            };
 
-            <div className="bg-white dark:bg-[#111827] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                <Icons.PhoneCall className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Dialed</p>
-                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{activeCampaign.dialed}</p>
-              </div>
-            </div>
+            const totalAllocatedCount = leads.length > 0 ? leads.length : activeCampaign.totalAssigned;
+            const dialedCount = leads.length > 0 ? leads.filter(l => isLeadDialed(l)).length : activeCampaign.dialed;
+            const yetToDialCount = Math.max(0, totalAllocatedCount - dialedCount);
 
-            <div className="bg-white dark:bg-[#111827] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center gap-3">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 rounded-xl">
-                <Icons.Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Yet To Dial</p>
-                <p className="text-xl font-black text-amber-600 dark:text-amber-400">{activeCampaign.yetToDial}</p>
-              </div>
-            </div>
-          </div>
+            const filteredLeads = leads.filter(lead => {
+              const isDialed = isLeadDialed(lead);
+              
+              if (filterTab === 'yetToDial' && isDialed) return false;
+              if (filterTab === 'dialed' && !isDialed) return false;
+              
+              if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase().trim();
+                const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''} ${lead.data?.customerName || ''} ${lead.data?.customer || ''}`.toLowerCase();
+                const firm = (lead.data?.company || lead.data?.firmName || lead.data?.firm_name || '').toLowerCase();
+                const dataCode = (lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '').toLowerCase();
+                const phone = (lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '').toLowerCase();
+                const location = (lead.data?.city || lead.data?.location || '').toLowerCase();
+                const remarks = (leadStates[lead._id]?.remarks || lead.data?.notes || '').toLowerCase();
+                const caseDetails = (leadStates[lead._id]?.caseDetails || lead.data?.caseDetails || '').toLowerCase();
+                const leadCat = (leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.loanType || '').toLowerCase();
+                
+                return customer.includes(q) || firm.includes(q) || dataCode.includes(q) || phone.includes(q) || location.includes(q) || remarks.includes(q) || caseDetails.includes(q) || leadCat.includes(q);
+              }
+              
+              return true;
+            });
 
-          {loadingLeads ? (
-            <div className="flex items-center justify-center h-[40vh]">
-              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          ) : leads.length === 0 ? (
-            <div className="bg-white dark:bg-[#1a1f2c] rounded-3xl border border-slate-100 dark:border-slate-800 p-12 text-center text-slate-500 dark:text-slate-400">
-              <p className="font-bold">No leads found in this campaign.</p>
-            </div>
-          ) : viewMode === 'table' ? (
-            /* 12-COLUMN CAMPAIGN DATA TABLE VIEW (EXACT USER SPECIFICATION) */
-            <div className="bg-white dark:bg-[#111827] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto max-h-[75vh]">
-                <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-[#17223B] text-white font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-800 shadow-xs">
-                      <th className="py-3.5 px-3 text-center w-14 border-r border-slate-700/50">Sl No.</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">Data Code</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">Location</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">Customer</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">firm_name</th>
-                      <th className="py-3.5 px-3 min-w-[150px] border-r border-slate-700/50">contact num</th>
-                      <th className="py-3.5 px-3 min-w-[160px] border-r border-slate-700/50">Case Details</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">lead_category</th>
-                      <th className="py-3.5 px-3 min-w-[160px] border-r border-slate-700/50">Remarks</th>
-                      <th className="py-3.5 px-3 border-r border-slate-700/50">Agent Assigned To</th>
-                      <th className="py-3.5 px-3 min-w-[150px] border-r border-slate-700/50">Dial Status</th>
-                      <th className="py-3.5 px-3 min-w-[130px]">Dailed Datetime</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
-                    {leads.map((lead, idx) => {
-                      const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `LND-${lead._id.slice(-6).toUpperCase()}` : 'N/A');
-                      const location = lead.data?.city || lead.data?.location || 'N/A';
-                      const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
-                      const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
-                      const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || 'N/A';
-                      const leadCategory = lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || 'N/A';
-                      const agentAssigned = lead.data?.assignedTo || (lead as any).assignedToName || 'Unassigned';
-                      
-                      const dialStatus = leadStates[lead._id]?.status || lead.data?.status || 'Not Called';
-                      const isDialed = dialStatus && dialStatus !== 'Yet To Call' && dialStatus !== 'Not Called';
-
-                      let dialedDatetime = 'Not Called';
-                      if (isDialed || lead.data?.dialedAt || lead.data?.lastCallDate) {
-                        const dateVal = lead.data?.dialedAt || lead.data?.lastCallDate || (lead as any).updatedAt || lead.createdAt;
-                        if (dateVal) {
-                          const d = new Date(dateVal);
-                          if (!isNaN(d.getTime())) {
-                            dialedDatetime = d.toLocaleString('en-US', {
-                              month: 'short',
-                              day: '2-digit',
-                              year: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                              hour12: true
-                            }).replace(',', '');
-                          }
-                        }
-                      }
-
-                      return (
-                        <tr key={lead._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                          {/* 1. Slno */}
-                          <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
-                          
-                          {/* 2. Data Code */}
-                          <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white border-r border-slate-100 dark:border-slate-800">{dataCode}</td>
-                          
-                          {/* 3. Location */}
-                          <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold">{location}</td>
-                          
-                          {/* 4. Customer */}
-                          <td className="py-3 px-3 font-extrabold text-slate-900 dark:text-white border-r border-slate-100 dark:border-slate-800">{customer}</td>
-                          
-                          {/* 5. firm_name */}
-                          <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">{firmName}</td>
-                          
-                          {/* 6. contact num */}
-                          <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800">
-                            <div className="space-y-1">
-                              <span className="font-bold text-slate-900 dark:text-white block">{phoneVal}</span>
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleWhatsAppChat(lead)}
-                                  className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] font-bold rounded flex items-center gap-1 transition-all"
-                                  title="WhatsApp Chat"
-                                >
-                                  <Icons.MessageSquare className="w-3 h-3 text-emerald-600" />
-                                  WA
-                                </button>
-                                <button
-                                  onClick={() => handleInitiateCall(lead)}
-                                  className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold rounded flex items-center gap-1 transition-all"
-                                  title="Initiate Call"
-                                >
-                                  <Icons.PhoneCall className="w-3 h-3 text-blue-600" />
-                                  Call
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                          
-                          {/* 7. Case Details */}
-                          <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
-                            <input
-                              type="text"
-                              placeholder="Case Details"
-                              value={leadStates[lead._id]?.caseDetails ?? ''}
-                              onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                              onBlur={() => handleSaveLead(lead._id)}
-                              className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
-                            />
-                          </td>
-                          
-                          {/* 8. lead_category */}
-                          <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold">{leadCategory}</td>
-                          
-                          {/* 9. Remarks */}
-                          <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
-                            <input
-                              type="text"
-                              placeholder="Remarks / Notes"
-                              value={(leadStates[lead._id]?.remarks ?? '').replace(/<[^>]*>/g, '')}
-                              onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                              onBlur={() => handleSaveLead(lead._id)}
-                              className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
-                            />
-                          </td>
-                          
-                          {/* 10. Agent Assigned To */}
-                          <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold text-slate-800 dark:text-slate-300">{agentAssigned}</td>
-                          
-                          {/* 11. Dial Status */}
-                          <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
-                            <select
-                              value={leadStates[lead._id]?.status || 'Yet To Call'}
-                              onChange={(e) => handleStatusSelect(lead, e.target.value)}
-                              className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 dark:text-white cursor-pointer"
-                            >
-                              {CAMPAIGN_STATUSES.map(statusOpt => (
-                                <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
-                              ))}
-                            </select>
-                          </td>
-                          
-                          {/* 12. Dailed Datetime */}
-                          <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400">{dialedDatetime}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            /* CARD VIEW */
-            <div className="space-y-5">
-              {leads.map((lead) => (
-                <div 
-                  key={lead._id}
-                  className="bg-white dark:bg-[#111827] rounded-2xl border-l-[4px] border-l-[#17223B] dark:border-l-indigo-500 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs hover:shadow-md transition-all duration-200 space-y-4"
-                >
-                  {/* Lead Row 1 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-center">
-                    <div>
-                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Allocated No.</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">**********</span>
+            return (
+              <div className="space-y-5">
+                {/* 3 TOP METRIC CARDS MATCHING REFERENCE IMAGE */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* 1. TOTAL YET TO DIAL */}
+                  <div 
+                    onClick={() => setFilterTab('yetToDial')}
+                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                      filterTab === 'yetToDial'
+                        ? 'bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-400 dark:border-amber-500 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-amber-500 flex-shrink-0">
+                        <Icons.Clock className="w-6 h-6 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          TOTAL YET TO DIAL
+                        </span>
+                        <span className="text-3xl font-black text-amber-500 leading-tight">
+                          {yetToDialCount}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lead Name</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        {`${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || 'N/A'}
+                    {filterTab === 'yetToDial' && (
+                      <span className="bg-amber-500 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                        ACTIVE FILTER
                       </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">FirmName</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
-                        {lead.data?.company || 'N/A'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</span>
-                      <select 
-                        value={leadStates[lead._id]?.status || 'Yet To Call'}
-                        onChange={(e) => handleStatusSelect(lead, e.target.value)}
-                        className="w-full text-xs font-bold bg-slate-50/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 dark:focus:border-indigo-400 text-slate-800 dark:text-white shadow-xs transition-all cursor-pointer"
-                      >
-                        {CAMPAIGN_STATUSES.map(statusOpt => (
-                          <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
-                        ))}
-                      </select>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Lead Row 2 */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <div className="md:col-span-1">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Remarks:</label>
-                      <textarea 
-                        value={leadStates[lead._id]?.remarks ?? ''}
-                        onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                        rows={2}
-                        className="w-full text-xs bg-slate-50/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 dark:focus:border-indigo-400 text-slate-850 dark:text-white resize-none shadow-xs transition-all"
-                      />
-                    </div>
-                    
-                    <div className="md:col-span-1">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Case Details:</label>
-                      <textarea 
-                        placeholder="case Details"
-                        value={leadStates[lead._id]?.caseDetails ?? ''}
-                        onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                        rows={2}
-                        className="w-full text-xs bg-slate-50/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 dark:focus:border-indigo-400 text-slate-850 dark:text-white resize-none shadow-xs transition-all"
-                      />
-                    </div>
-
-                    <div className="md:col-span-1 flex flex-col justify-between">
+                  {/* 2. TOTAL DIALED */}
+                  <div 
+                    onClick={() => setFilterTab('dialed')}
+                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                      filterTab === 'dialed'
+                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-2 border-emerald-400 dark:border-emerald-500 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-900/50 flex items-center justify-center text-emerald-500 flex-shrink-0">
+                        <Icons.PhoneCall className="w-6 h-6 stroke-[2.2]" />
+                      </div>
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Location </span>
-                        <span className="text-xs font-bold text-slate-900 dark:text-white uppercase ml-1">
-                          {lead.data?.city || lead.data?.location || 'N/A'}
+                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          TOTAL DIALED
                         </span>
-                      </div>
-                      
-                      <div className="flex gap-1.5 mt-2 flex-wrap sm:flex-nowrap">
-                        <button 
-                          onClick={() => handleWhatsAppChat(lead)}
-                          className="flex-1 py-2 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                          title="Open WhatsApp Chat"
-                        >
-                          <Icons.MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          WA Chat
-                        </button>
-                        <button 
-                          onClick={() => handleInitiateCall(lead)}
-                          className="flex-1 py-2 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 dark:border-blue-800 text-[11px] font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                          title="Initiate Call"
-                        >
-                          <Icons.PhoneCall className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                          Call
-                        </button>
-                        <button 
-                          onClick={() => handleSaveLead(lead._id)}
-                          className="flex-1 py-2 px-2 bg-[#17223B] hover:bg-[#223050] text-white text-[11px] font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                          title="Save Lead Update"
-                        >
-                          <Icons.Save className="w-3.5 h-3.5 text-white" />
-                          Save
-                        </button>
-                        <button 
-                          onClick={() => navigate(`/modules/leads/${lead._id}`)}
-                          className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-700 text-[11px] font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                          title="Edit Lead Details"
-                        >
-                          <Icons.Edit className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
-                          Edit
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-1 flex items-start">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data Code </span>
-                        <span className="text-xs font-bold text-slate-900 dark:text-white ml-1">
-                          {lead.data?.dataCode || lead.data?.source || 'N/A'}
+                        <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 leading-tight">
+                          {dialedCount}
                         </span>
                       </div>
                     </div>
+                    {filterTab === 'dialed' && (
+                      <span className="bg-emerald-600 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                        ACTIVE FILTER
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 3. TOTAL ALLOCATED */}
+                  <div 
+                    onClick={() => setFilterTab('all')}
+                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                      filterTab === 'all'
+                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-2 border-indigo-400 dark:border-indigo-500 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/50 flex items-center justify-center text-indigo-500 flex-shrink-0">
+                        <Icons.Layers className="w-6 h-6 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          TOTAL ALLOCATED
+                        </span>
+                        <span className="text-3xl font-black text-slate-900 dark:text-white leading-tight">
+                          {totalAllocatedCount}
+                        </span>
+                      </div>
+                    </div>
+                    {filterTab === 'all' && (
+                      <span className="bg-indigo-600 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                        ACTIVE FILTER
+                      </span>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* SEARCH & FILTER BAR MATCHING REFERENCE IMAGE */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                  {/* Search input */}
+                  <div className="relative flex-1">
+                    <Icons.Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search leads by customer, firm, data code, mobile..."
+                      className="w-full h-11 pl-10 pr-9 text-xs sm:text-sm bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        title="Clear search"
+                      >
+                        <Icons.X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
+                    <button
+                      onClick={() => setFilterTab('yetToDial')}
+                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        filterTab === 'yetToDial'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <Icons.Clock className="w-4 h-4" />
+                      <span>Yet To Dial</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                        filterTab === 'yetToDial' ? 'bg-amber-600/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {yetToDialCount}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => setFilterTab('dialed')}
+                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        filterTab === 'dialed'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <Icons.PhoneCall className="w-4 h-4" />
+                      <span>Dialed</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                        filterTab === 'dialed' ? 'bg-emerald-700/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {dialedCount}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => setFilterTab('all')}
+                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        filterTab === 'all'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <Icons.Layers className="w-4 h-4" />
+                      <span>All Leads</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                        filterTab === 'all' ? 'bg-indigo-700/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {totalAllocatedCount}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* LEADS LIST / CARDS */}
+                {loadingLeads ? (
+                  <div className="flex items-center justify-center h-[40vh]">
+                    <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : filteredLeads.length === 0 ? (
+                  <div className="bg-white dark:bg-[#1a1f2c] rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center text-slate-500 dark:text-slate-400">
+                    <Icons.Search className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="font-bold text-sm text-slate-800 dark:text-slate-200">No leads found matching your criteria.</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Try switching filter tabs or clearing your search query.</p>
+                  </div>
+                ) : viewMode === 'table' ? (
+                  /* TABLE VIEW */
+                  <div className="bg-white dark:bg-[#111827] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto max-h-[75vh]">
+                      <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-[#17223B] text-white font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-800 shadow-xs">
+                            <th className="py-3.5 px-3 text-center w-14 border-r border-slate-700/50">Sl No.</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">Data Code</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">Location</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">Customer</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">firm_name</th>
+                            <th className="py-3.5 px-3 min-w-[150px] border-r border-slate-700/50">contact num</th>
+                            <th className="py-3.5 px-3 min-w-[160px] border-r border-slate-700/50">Case Details</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">lead_category</th>
+                            <th className="py-3.5 px-3 min-w-[160px] border-r border-slate-700/50">Remarks</th>
+                            <th className="py-3.5 px-3 border-r border-slate-700/50">Agent Assigned To</th>
+                            <th className="py-3.5 px-3 min-w-[150px] border-r border-slate-700/50">Dial Status</th>
+                            <th className="py-3.5 px-3 min-w-[130px]">Dailed Datetime</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                          {filteredLeads.map((lead, idx) => {
+                            const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `LND-${lead._id.slice(-6).toUpperCase()}` : 'N/A');
+                            const location = lead.data?.city || lead.data?.location || 'N/A';
+                            const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
+                            const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
+                            const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || 'N/A';
+                            const leadCategory = leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || 'N/A';
+                            const agentAssigned = lead.data?.assignedTo || (lead as any).assignedToName || 'Unassigned';
+                            
+                            const dialStatus = leadStates[lead._id]?.status || lead.data?.status || 'Not Called';
+                            const isDialed = isLeadDialed(lead);
+
+                            let dialedDatetime = 'Not Called';
+                            if (isDialed || lead.data?.dialedAt || lead.data?.lastCallDate) {
+                              const dateVal = lead.data?.dialedAt || lead.data?.lastCallDate || (lead as any).updatedAt || lead.createdAt;
+                              if (dateVal) {
+                                const d = new Date(dateVal);
+                                if (!isNaN(d.getTime())) {
+                                  dialedDatetime = d.toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: '2-digit',
+                                    year: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  }).replace(',', '');
+                                }
+                              }
+                            }
+
+                            return (
+                              <tr key={lead._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                                <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
+                                <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white border-r border-slate-100 dark:border-slate-800">{dataCode}</td>
+                                <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold">{location}</td>
+                                <td className="py-3 px-3 font-extrabold text-slate-900 dark:text-white border-r border-slate-100 dark:border-slate-800">{customer}</td>
+                                <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">{firmName}</td>
+                                <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800">
+                                  <div className="space-y-1">
+                                    <span className="font-bold text-slate-900 dark:text-white block">{phoneVal}</span>
+                                    <div className="flex gap-1">
+                                      <button
+                                        onClick={() => handleWhatsAppChat(lead)}
+                                        className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] font-bold rounded flex items-center gap-1 transition-all"
+                                        title="WhatsApp Chat"
+                                      >
+                                        <Icons.MessageSquare className="w-3 h-3 text-emerald-600" />
+                                        WA
+                                      </button>
+                                      <button
+                                        onClick={() => handleInitiateCall(lead)}
+                                        className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold rounded flex items-center gap-1 transition-all"
+                                        title="Initiate Call"
+                                      >
+                                        <Icons.PhoneCall className="w-3 h-3 text-blue-600" />
+                                        Call
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
+                                  <input
+                                    type="text"
+                                    placeholder="Case Details"
+                                    value={leadStates[lead._id]?.caseDetails ?? ''}
+                                    onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
+                                    onBlur={() => handleSaveLead(lead._id)}
+                                    className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
+                                  />
+                                </td>
+                                <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
+                                  <input
+                                    type="text"
+                                    placeholder="Lead Category"
+                                    value={leadStates[lead._id]?.leadCategory ?? ''}
+                                    onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
+                                    onBlur={() => handleSaveLead(lead._id)}
+                                    className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
+                                  />
+                                </td>
+                                <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
+                                  <input
+                                    type="text"
+                                    placeholder="Remarks / Notes"
+                                    value={(leadStates[lead._id]?.remarks ?? '').replace(/<[^>]*>/g, '')}
+                                    onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
+                                    onBlur={() => handleSaveLead(lead._id)}
+                                    className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-600"
+                                  />
+                                </td>
+                                <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold text-slate-800 dark:text-slate-300">{agentAssigned}</td>
+                                <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
+                                  <select
+                                    value={leadStates[lead._id]?.status || 'Yet To Call'}
+                                    onChange={(e) => handleStatusSelect(lead, e.target.value)}
+                                    className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 dark:text-white cursor-pointer"
+                                  >
+                                    {CAMPAIGN_STATUSES.map(statusOpt => (
+                                      <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400">{dialedDatetime}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  /* CARD VIEW MATCHING EXACT USER SCREENSHOT */
+                  <div className="space-y-5">
+                    {filteredLeads.map((lead, idx) => {
+                      const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${idx + 1}` : 'N/A');
+                      const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
+                      const location = lead.data?.city || lead.data?.location || 'BLORE';
+                      const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
+                      const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '';
+                      const phoneDisplay = rawPhone ? rawPhone : 'XXXXXXXXXX';
+                      const assignedTo = lead.data?.assignedTo || (lead as any).assignedToName || 'Pavitra P';
+                      const createdDateStr = lead.data?.createdDate || lead.data?.created_at || (lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-GB') : 'N/A');
+
+                      return (
+                        <div
+                          key={lead._id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl border-l-[5px] border-l-indigo-600 border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs hover:shadow-md transition-all duration-200 space-y-5"
+                        >
+                          {/* Top Header Row */}
+                          <div className="flex items-center justify-between pb-1">
+                            <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50">
+                              SL No. : {idx + 1}
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              Created Date: <strong className="text-slate-800 dark:text-slate-200 font-bold">{createdDateStr}</strong>
+                            </span>
+                          </div>
+
+                          {/* 3-Column Field Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-y-4 gap-x-6 text-left">
+                            {/* Row 1 */}
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">DATA CODE:</span>
+                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 tracking-tight block">{dataCode}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">CUSTOMER NAME:</span>
+                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 block">{customerName}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">LOCATION:</span>
+                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase block">{location}</span>
+                            </div>
+
+                            {/* Row 2 */}
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">FIRM NAME:</span>
+                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 truncate block">{firmName}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">STATUS:</span>
+                              <div className="relative">
+                                <select
+                                  value={leadStates[lead._id]?.status || 'Yet To Call'}
+                                  onChange={(e) => handleStatusSelect(lead, e.target.value)}
+                                  className="w-full h-10 pl-3 pr-8 text-sm font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs cursor-pointer uppercase appearance-none"
+                                >
+                                  {CAMPAIGN_STATUSES.map(st => (
+                                    <option key={st} value={st}>{st.toUpperCase()}</option>
+                                  ))}
+                                </select>
+                                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              </div>
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">CASE DETAILS:</span>
+                              <input
+                                type="text"
+                                placeholder="Case Details"
+                                value={leadStates[lead._id]?.caseDetails ?? ''}
+                                onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
+                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
+                              />
+                            </div>
+
+                            {/* Row 3 */}
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">LEAD CATEGORY:</span>
+                              <input
+                                type="text"
+                                placeholder="Lead Category"
+                                value={leadStates[lead._id]?.leadCategory ?? ''}
+                                onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
+                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
+                              />
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">REMARKS:</span>
+                              <input
+                                type="text"
+                                placeholder="Remarks"
+                                value={leadStates[lead._id]?.remarks ?? ''}
+                                onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
+                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
+                              />
+                            </div>
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">MOBILE NUMBER:</span>
+                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 block">{phoneDisplay}</span>
+                            </div>
+
+                            {/* Row 4 */}
+                            <div>
+                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">ASSIGNED TO:</span>
+                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 block">{assignedTo}</span>
+                            </div>
+                          </div>
+
+                          {/* Card Actions Bottom Row */}
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                            {/* Left Side: WA CHAT & CALL */}
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                onClick={() => handleWhatsAppChat(lead)}
+                                className="h-9 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
+                              >
+                                <Icons.MessageSquare className="w-4 h-4 text-emerald-600" />
+                                <span>WA CHAT</span>
+                              </button>
+                              <button
+                                onClick={() => handleInitiateCall(lead)}
+                                className="h-9 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
+                              >
+                                <Icons.PhoneCall className="w-4 h-4 text-blue-600" />
+                                <span>CALL</span>
+                              </button>
+                            </div>
+
+                            {/* Right Side: SAVE & EDIT */}
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                onClick={() => handleSaveLead(lead._id)}
+                                className="h-9 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-xs active:scale-95"
+                              >
+                                <Icons.Save className="w-4 h-4" />
+                                <span>SAVE</span>
+                              </button>
+                              <button
+                                onClick={() => navigate(`/modules/leads/${lead._id}`)}
+                                className="h-9 px-5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
+                              >
+                                <Icons.Edit className="w-4 h-4" />
+                                <span>EDIT</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
