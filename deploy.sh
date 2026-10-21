@@ -53,7 +53,7 @@ cd ..
 echo "Running Pre-deployment Validation Checks..."
 node predeploy.js
 
-# 6. Auto-seed MongoDB with full record data
+# 6. Auto-seed PostgreSQL with full record data and module definitions
 echo "Populating complete database record set..."
 cd backend
 npx ts-node src/utils/seeder.ts || true
