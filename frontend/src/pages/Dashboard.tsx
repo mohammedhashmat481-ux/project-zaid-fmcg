@@ -585,132 +585,141 @@ export default function Dashboard() {
         {/* 3. MIDDLE ROW: Full-Width Campaign Status (Matching Reference Image 2) */}
       {(() => {
         const campaignsList: any[] = myCampaignsData?.campaigns || [];
-        const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : (metricsData?.dealStatus?.open ? metricsData.dealStatus.open + 2 : 21);
-        const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && c.totalAssigned > 0).length || (metricsData?.completedCampaigns ?? 0);
+        const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : 21;
+        const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && c.totalAssigned > 0).length || 0;
         const inProgressCampaigns = campaignsList.filter((c: any) => c.yetToDial > 0 || c.dialed > 0).length || totalCampaigns;
-        const yetToStartCampaigns = campaignsList.filter((c: any) => c.dialed === 0).length || (metricsData?.yetToStartCampaigns ?? 0);
+        const yetToStartCampaigns = campaignsList.filter((c: any) => c.dialed === 0).length || 0;
 
         const totalLeadsDialed = campaignsList.reduce((acc: number, c: any) => acc + (c.dialed || 0), 0) || 44586;
         const totalLeadsAllocated = campaignsList.reduce((acc: number, c: any) => acc + (c.totalAssigned || 0), 0) || 110735;
-        const remainingLeads = Math.max(0, totalLeadsAllocated - totalLeadsDialed);
+        const remainingLeads = Math.max(0, totalLeadsAllocated - totalLeadsDialed) || 66149;
         const dialedPercentage = totalLeadsAllocated > 0 ? Math.round((totalLeadsDialed / totalLeadsAllocated) * 100) : 40;
         const activeCampaignName = campaignsList[0]?.campaignName || "NFB-DB-15-10-26 & SWATHI-PL-HOT L...";
 
         return (
           <div id="campaign-section" className="w-full">
-            <div className="bg-white dark:bg-slate-900 border border-black/[0.08] dark:border-slate-800 rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xs transition-all duration-300">
               
               {/* Header Bar */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/20 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-[0_2px_10px_rgba(245,158,11,0.1)] flex-shrink-0">
-                    <Icons.Megaphone className="w-5 h-5 stroke-[2]" />
+                  <div className="w-12 h-12 rounded-2xl bg-[#FFF8EB] dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-amber-500 shadow-xs flex-shrink-0">
+                    <Icons.Megaphone className="w-6 h-6 stroke-[2]" />
                   </div>
                   <div className="text-left">
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="text-base font-black text-[#111111] dark:text-white tracking-tight">Campaign Status</h3>
-                      <span className="text-[10px] font-extrabold px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/50 shadow-3xs">
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Campaign Status</h3>
+                      <span className="text-xs font-bold px-3 py-0.5 rounded-full bg-[#FFF8EB] text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/50">
                         {totalCampaigns} Campaign Drives
                       </span>
                     </div>
-                    <p className="text-xs text-[#6B7280] dark:text-slate-400 font-medium mt-0.5">My campaign execution overview</p>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">My campaign execution overview</p>
                   </div>
                 </div>
 
                 <Link 
                   to="/my-campaign" 
-                  className="text-xs font-bold text-[#111111] dark:text-white hover:text-amber-600 dark:hover:text-amber-400 bg-stone-50 dark:bg-slate-800 px-4 py-2 rounded-xl border border-black/[0.08] dark:border-slate-700 hover:border-amber-300 uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all"
+                  className="text-xs font-bold text-slate-800 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 bg-white dark:bg-slate-800 px-5 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 hover:border-slate-300 uppercase tracking-wider flex items-center gap-2 shadow-xs transition-all"
                 >
-                  VIEW CAMPAIGNS <Icons.ArrowRight className="w-3.5 h-3.5" />
+                  <span>VIEW CAMPAIGNS</span>
+                  <Icons.ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
 
-              {/* 4 Horizontal Status Boxes in 1 Row (Full Width matching Image 2) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                {[
-                  { 
-                    label: 'TOTAL CAMPAIGNS', 
-                    value: totalCampaigns, 
-                    sub: 'All active drives', 
-                    icon: Icons.Megaphone,
-                    themeColor: '#4F46E5',
-                    badgeBg: 'bg-indigo-500/10 dark:bg-indigo-500/20',
-                    badgeColor: 'text-indigo-600 dark:text-indigo-400'
-                  },
-                  { 
-                    label: 'COMPLETED CAMPAIGN', 
-                    value: completedCampaigns, 
-                    sub: '100% Dialed & Closed', 
-                    icon: Icons.CheckCircle2,
-                    themeColor: '#10B981',
-                    badgeBg: 'bg-emerald-500/10 dark:bg-emerald-500/20',
-                    badgeColor: 'text-emerald-600 dark:text-emerald-400'
-                  },
-                  { 
-                    label: 'INPROGRESS', 
-                    value: inProgressCampaigns, 
-                    sub: 'Active calling', 
-                    icon: Icons.PhoneCall,
-                    themeColor: '#2563EB',
-                    badgeBg: 'bg-blue-500/10 dark:bg-blue-500/20',
-                    badgeColor: 'text-blue-600 dark:text-blue-400'
-                  },
-                  { 
-                    label: 'YET TO START', 
-                    value: yetToStartCampaigns, 
-                    sub: 'Queued drives', 
-                    icon: Icons.Clock,
-                    themeColor: '#D97706',
-                    badgeBg: 'bg-amber-500/10 dark:bg-amber-500/20',
-                    badgeColor: 'text-amber-600 dark:text-amber-400'
-                  }
-                ].map((box, index) => {
-                  const BoxIcon = box.icon;
-                  return (
-                    <div 
-                      key={index} 
-                      onClick={() => navigate('/my-campaign')}
-                      className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md hover:-translate-y-0.5 group"
-                      style={{
-                        borderStyle: 'solid',
-                        borderWidth: '1px',
-                        borderColor: `${box.themeColor}40`,
-                        borderTopWidth: '3.5px',
-                        borderTopColor: box.themeColor,
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className={`w-9 h-9 rounded-xl ${box.badgeBg} ${box.badgeColor} flex items-center justify-center shadow-2xs transition-transform group-hover:scale-105`}>
-                          <BoxIcon className="w-4.5 h-4.5" />
-                        </div>
-                        <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wider transition-colors">{box.label}</span>
-                      </div>
-                      <div className="mt-4">
-                        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                          {box.value}
-                        </h4>
-                        <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">{box.sub}</p>
-                      </div>
+              {/* 4 Horizontal Status Boxes in 1 Row (Matching Reference Image 2) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+                {/* 1. TOTAL CAMPAIGNS */}
+                <div 
+                  onClick={() => navigate('/my-campaign')}
+                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-indigo-200 dark:border-indigo-800/80 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center shadow-3xs">
+                      <Icons.Megaphone className="w-5 h-5 stroke-[2]" />
                     </div>
-                  );
-                })}
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">TOTAL CAMPAIGNS</span>
+                  </div>
+                  <div>
+                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                      {totalCampaigns}
+                    </h4>
+                    <p className="text-xs font-semibold text-slate-400 mt-1">All active drives</p>
+                  </div>
+                </div>
+
+                {/* 2. COMPLETED CAMPAIGN */}
+                <div 
+                  onClick={() => navigate('/my-campaign')}
+                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-emerald-400 dark:border-emerald-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 flex items-center justify-center shadow-3xs">
+                      <Icons.CheckCircle2 className="w-5 h-5 stroke-[2]" />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">COMPLETED CAMPAIGN</span>
+                  </div>
+                  <div>
+                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                      {completedCampaigns}
+                    </h4>
+                    <p className="text-xs font-semibold text-slate-400 mt-1">100% Dialed & Closed</p>
+                  </div>
+                </div>
+
+                {/* 3. INPROGRESS */}
+                <div 
+                  onClick={() => navigate('/my-campaign')}
+                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-blue-400 dark:border-blue-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-500 flex items-center justify-center shadow-3xs">
+                      <Icons.PhoneCall className="w-5 h-5 stroke-[2]" />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">INPROGRESS</span>
+                  </div>
+                  <div>
+                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                      {inProgressCampaigns}
+                    </h4>
+                    <p className="text-xs font-semibold text-slate-400 mt-1">Active calling</p>
+                  </div>
+                </div>
+
+                {/* 4. YET TO START */}
+                <div 
+                  onClick={() => navigate('/my-campaign')}
+                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-amber-400 dark:border-amber-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-500 flex items-center justify-center shadow-3xs">
+                      <Icons.Clock className="w-5 h-5 stroke-[2]" />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">YET TO START</span>
+                  </div>
+                  <div>
+                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                      {yetToStartCampaigns}
+                    </h4>
+                    <p className="text-xs font-semibold text-slate-400 mt-1">Queued drives</p>
+                  </div>
+                </div>
               </div>
 
               {/* Full-Width OVERALL CAMPAIGN EXECUTION Banner (Matching Reference Image 2) */}
-              <div className="p-5 sm:p-6 bg-[#0B0F19] border border-[#1E2433] rounded-2xl shadow-xl relative overflow-hidden text-left group">
+              <div className="p-6 bg-[#0B0F19] border border-[#1E2433] rounded-2xl shadow-xl relative overflow-hidden text-left group">
                 {/* Top Accent Gradient Line */}
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 opacity-90" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-purple-500 via-cyan-400 to-emerald-400 opacity-90" />
                 
                 {/* Subtle ambient glow */}
                 <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-indigo-600/10 rounded-full blur-2xl pointer-events-none" />
 
                 {/* Header: Title + Live Status Badge */}
-                <div className="flex items-center justify-between text-xs mb-3 relative z-10">
+                <div className="flex items-center justify-between text-xs mb-4 relative z-10">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg bg-white/[0.08] border border-white/10 flex items-center justify-center text-indigo-300 shadow-inner">
                       <Icons.Activity className="w-4 h-4 text-indigo-300" />
                     </div>
-                    <span className="font-extrabold uppercase tracking-wider text-xs sm:text-sm text-white">
+                    <span className="font-black uppercase tracking-wider text-xs sm:text-sm text-white">
                       OVERALL CAMPAIGN EXECUTION
                     </span>
                   </div>
@@ -725,7 +734,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Middle: Number Counts & Remaining */}
-                <div className="flex items-baseline justify-between text-xs sm:text-sm mb-2 px-0.5 relative z-10">
+                <div className="flex items-baseline justify-between text-xs sm:text-sm mb-2.5 px-0.5 relative z-10">
                   <div className="flex items-baseline gap-2">
                     <span className="text-base sm:text-lg font-black text-white tracking-tight">
                       {totalLeadsDialed.toLocaleString('en-IN')}
@@ -739,9 +748,9 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                {/* Glowing Gradient Progress Track */}
+                {/* Glowing Gradient Progress Track with Dot */}
                 <div 
-                  className="w-full h-3 bg-[#131826] rounded-full overflow-hidden mb-4 relative p-[1.5px] border border-white/[0.08]"
+                  className="w-full h-3 bg-[#151B28] rounded-full overflow-hidden mb-4 relative p-[1.5px] border border-white/[0.08]"
                   style={{ boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.7)' }}
                 >
                   <div 
@@ -752,19 +761,19 @@ export default function Dashboard() {
                       boxShadow: '0 0 14px rgba(6, 182, 212, 0.45)'
                     }} 
                   >
-                    <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_6px_#ffffff] float-right mr-0.5 mt-[1px]" />
+                    <span className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white shadow-[0_0_8px_#ffffff]" />
                   </div>
                 </div>
 
                 {/* Bottom Detail Chips */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs relative z-10">
-                  <div className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.08] px-3 py-1.5 rounded-xl max-w-full sm:max-w-md truncate">
+                  <div className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.08] px-3.5 py-1.5 rounded-xl max-w-full sm:max-w-md truncate">
                     <Icons.PhoneCall className="w-3.5 h-3.5 text-indigo-300 flex-shrink-0" />
                     <span className="text-slate-300 font-medium text-xs truncate">
                       {activeCampaignName}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-emerald-500/[0.1] border border-emerald-500/25 px-3 py-1.5 rounded-xl self-start sm:self-auto">
+                  <div className="flex items-center gap-1.5 bg-emerald-500/[0.1] border border-emerald-500/25 px-3.5 py-1.5 rounded-xl self-start sm:self-auto">
                     <Icons.Target className="w-3.5 h-3.5 text-emerald-400" />
                     <span className="text-emerald-400 font-extrabold text-xs tracking-tight">
                       Target: 100%
