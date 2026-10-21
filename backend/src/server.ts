@@ -5,7 +5,9 @@ import Organization from './models/Organization';
 import { seedDatabase } from './utils/seeder';
 import { logger } from './utils/logger';
 import dotenv from 'dotenv';
+import path from 'path';
 
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 // 1. Validate Production Environment Variables

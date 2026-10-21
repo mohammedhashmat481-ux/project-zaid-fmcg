@@ -60,8 +60,9 @@ npx ts-node src/utils/seeder.ts || true
 cd ..
 
 # 7. PM2 worker configurations & startup
-echo "Configuring and reloading PM2 cluster processes..."
-pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
+echo "Configuring and restarting PM2 processes..."
+pm2 delete inkcrm-backend 2>/dev/null || true
+pm2 start ecosystem.config.cjs --env production
 
 # Save PM2 process list to persist across OS reboots
 pm2 save
