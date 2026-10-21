@@ -28,6 +28,22 @@ interface LeadState {
   leadCategory?: string;
 }
 
+interface SaveSuccessModalData {
+  isOpen: boolean;
+  leadId: string;
+  slNo: number;
+  dataCode: string;
+  customerName: string;
+  firmName: string;
+  location: string;
+  phone: string;
+  status: string;
+  remarks?: string;
+  nextLeadId?: string;
+  nextSlNo?: number;
+  hasNext: boolean;
+}
+
 const CAMPAIGN_STATUSES = [
   'Yet To Call',
   'Hot Lead',
@@ -64,6 +80,10 @@ export default function MyCampaign() {
   // Pagination states for instant rendering without DOM freezing
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
+
+  // Modal & Navigation States for Lead Save Confirmation
+  const [saveSuccessModal, setSaveSuccessModal] = useState<SaveSuccessModalData | null>(null);
+  const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
 
   // Fetch campaigns
   const fetchCampaigns = async () => {
@@ -276,31 +296,165 @@ export default function MyCampaign() {
     window.location.href = `tel:${cleanPhone}`;
   };
 
-  const handleSaveLead = async (leadId: string) => {
+  const isLeadDialed = (lead: LeadRecord) => {
+    const state = leadStates[lead._id];
+    const currentStatus = (state?.status || lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
+    const hasCalls = ((lead.data?.callAttempts as number) > 0) || !!lead.data?.dialedAt || !!lead.data?.lastCallDate;
+    const isDialedStatus = currentStatus && currentStatus !== 'yet to call' && currentStatus !== 'not called' && currentStatus !== 'new';
+    return Boolean(isDialedStatus || hasCalls);
+  };
+
+  const totalAllocatedCount = leads.length > 0 ? leads.length : (activeCampaign?.totalAssigned || 0);
+  const dialedCount = leads.length > 0 ? leads.filter(l => isLeadDialed(l)).length : (activeCampaign?.dialed || 0);
+  const yetToDialCount = Math.max(0, totalAllocatedCount - dialedCount);
+
+  const filteredLeads = React.useMemo(() => {
+    if (!leads || leads.length === 0) return [];
+    return leads.filter(lead => {
+      const isDialed = isLeadDialed(lead);
+      
+      if (filterTab === 'yetToDial' && isDialed) return false;
+      if (filterTab === 'dialed' && !isDialed) return false;
+      
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''} ${lead.data?.customerName || ''} ${lead.data?.customer || ''}`.toLowerCase();
+        const firm = (lead.data?.company || lead.data?.firmName || lead.data?.firm_name || '').toLowerCase();
+        const dataCode = (lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '').toLowerCase();
+        const phone = (lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '').toLowerCase();
+        const location = (lead.data?.city || lead.data?.location || '').toLowerCase();
+        const remarks = (leadStates[lead._id]?.remarks || lead.data?.notes || '').toLowerCase();
+        const caseDetails = (leadStates[lead._id]?.caseDetails || lead.data?.caseDetails || '').toLowerCase();
+        const leadCat = (leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.loanType || '').toLowerCase();
+        
+        return customer.includes(q) || firm.includes(q) || dataCode.includes(q) || phone.includes(q) || location.includes(q) || remarks.includes(q) || caseDetails.includes(q) || leadCat.includes(q);
+      }
+      
+      return true;
+    });
+  }, [leads, leadStates, filterTab, searchQuery]);
+
+  // Instant pagination: slices data for instantaneous DOM rendering (<10ms)
+  const totalPages = Math.ceil(filteredLeads.length / pageSize) || 1;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const paginatedLeads = filteredLeads.slice(startIndex, startIndex + pageSize);
+
+  const handleGoToNextLead = (targetNextId?: string) => {
+    const nextId = targetNextId || saveSuccessModal?.nextLeadId;
+    setSaveSuccessModal(null);
+
+    if (!nextId) {
+      showToast('You have reached the last lead in this list!', 'info');
+      return;
+    }
+
+    // Calculate target page if next lead is on another page
+    const nextIndex = filteredLeads.findIndex(l => l._id === nextId);
+    if (nextIndex !== -1) {
+      const targetPage = Math.floor(nextIndex / pageSize) + 1;
+      if (targetPage !== currentPage) {
+        setCurrentPage(targetPage);
+      }
+    }
+
+    // Set highlight ring
+    setHighlightedLeadId(nextId);
+
+    // Smooth scroll to next lead card or table row
+    setTimeout(() => {
+      const el = document.getElementById(`lead-card-${nextId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+
+    // Auto clear highlight after 2.5s
+    setTimeout(() => {
+      setHighlightedLeadId(prev => (prev === nextId ? null : prev));
+    }, 2500);
+  };
+
+  // Keyboard shortcut support for save confirmation popup
+  useEffect(() => {
+    if (!saveSuccessModal?.isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSaveSuccessModal(null);
+      } else if (e.key === 'Enter') {
+        if (saveSuccessModal.hasNext) {
+          handleGoToNextLead();
+        } else {
+          setSaveSuccessModal(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveSuccessModal, filteredLeads, pageSize, currentPage]);
+
+  const handleSaveLead = async (leadId: string, autoAdvance = false) => {
     try {
       const lead = leads.find(l => l._id === leadId);
-      const state = leadStates[leadId];
+      if (!lead) return;
 
-      const currentStatus = state?.status || lead?.data?.status || lead?.data?.dialStatus || 'Yet To Call';
-      const currentRemarks = state?.remarks ?? (lead?.data?.notes || lead?.data?.remarks || '');
-      const currentCaseDetails = state?.caseDetails ?? (lead?.data?.caseDetails || '');
-      const currentLeadCategory = state?.leadCategory ?? (lead?.data?.leadCategory || lead?.data?.loanType || '');
+      const state = leadStates[leadId];
+      const currentStatus = state?.status || lead.data?.status || lead.data?.dialStatus || 'Yet To Call';
+      const currentRemarks = state?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
+      const currentCaseDetails = state?.caseDetails ?? (lead.data?.caseDetails || '');
+      const currentLeadCategory = state?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
+
+      const currentIndex = filteredLeads.findIndex(l => l._id === leadId);
+      const slNo = currentIndex >= 0 ? currentIndex + 1 : 1;
+      const nextLead = currentIndex >= 0 && currentIndex + 1 < filteredLeads.length ? filteredLeads[currentIndex + 1] : null;
+      const nextLeadId = nextLead?._id;
+      const nextSlNo = nextLead ? currentIndex + 2 : undefined;
+
+      const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : 'N/A');
+      const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'Unnamed';
+      const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
+      const location = lead.data?.city || lead.data?.location || 'BLORE';
+      const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '';
+      const phone = rawPhone ? rawPhone : 'XXXXXXXXXX';
 
       const payload: Record<string, any> = {
         status: currentStatus,
         dialStatus: currentStatus,
         dialedAt: new Date(),
-        callAttempts: ((lead?.data?.callAttempts as number) || 0) + 1,
+        callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
         notes: currentRemarks,
         caseDetails: currentCaseDetails,
         leadCategory: currentLeadCategory
       };
 
       await api.put(`/records/leads/${leadId}`, payload);
-      showToast('Lead details updated successfully!', 'success');
 
       // Update lead in memory so counts & UI update immediately without re-fetching 3,000 leads
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
+
+      if (autoAdvance && nextLeadId) {
+        handleGoToNextLead(nextLeadId);
+        showToast(`Lead #${slNo} saved. Moved to Lead #${nextSlNo}!`, 'success');
+      } else {
+        // Show proper popup modal with Lead Number, Return and Move to Next Lead
+        setSaveSuccessModal({
+          isOpen: true,
+          leadId,
+          slNo,
+          dataCode,
+          customerName,
+          firmName,
+          location,
+          phone,
+          status: currentStatus,
+          remarks: currentRemarks,
+          nextLeadId,
+          nextSlNo,
+          hasNext: Boolean(nextLead)
+        });
+      }
 
       // Refresh campaigns listing in background
       api.get('/records/campaigns/my-campaigns').then(res => {
@@ -623,50 +777,7 @@ export default function MyCampaign() {
           </div>
 
           {/* ACTIVE CAMPAIGN METRICS GRID MATCHING REFERENCE IMAGE */}
-          {(() => {
-            const isLeadDialed = (lead: LeadRecord) => {
-              const state = leadStates[lead._id];
-              const currentStatus = (state?.status || lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
-              const hasCalls = ((lead.data?.callAttempts as number) > 0) || !!lead.data?.dialedAt || !!lead.data?.lastCallDate;
-              const isDialedStatus = currentStatus && currentStatus !== 'yet to call' && currentStatus !== 'not called' && currentStatus !== 'new';
-              return Boolean(isDialedStatus || hasCalls);
-            };
-
-            const totalAllocatedCount = leads.length > 0 ? leads.length : activeCampaign.totalAssigned;
-            const dialedCount = leads.length > 0 ? leads.filter(l => isLeadDialed(l)).length : activeCampaign.dialed;
-            const yetToDialCount = Math.max(0, totalAllocatedCount - dialedCount);
-
-            const filteredLeads = leads.filter(lead => {
-              const isDialed = isLeadDialed(lead);
-              
-              if (filterTab === 'yetToDial' && isDialed) return false;
-              if (filterTab === 'dialed' && !isDialed) return false;
-              
-              if (searchQuery.trim()) {
-                const q = searchQuery.toLowerCase().trim();
-                const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''} ${lead.data?.customerName || ''} ${lead.data?.customer || ''}`.toLowerCase();
-                const firm = (lead.data?.company || lead.data?.firmName || lead.data?.firm_name || '').toLowerCase();
-                const dataCode = (lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '').toLowerCase();
-                const phone = (lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '').toLowerCase();
-                const location = (lead.data?.city || lead.data?.location || '').toLowerCase();
-                const remarks = (leadStates[lead._id]?.remarks || lead.data?.notes || '').toLowerCase();
-                const caseDetails = (leadStates[lead._id]?.caseDetails || lead.data?.caseDetails || '').toLowerCase();
-                const leadCat = (leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.loanType || '').toLowerCase();
-                
-                return customer.includes(q) || firm.includes(q) || dataCode.includes(q) || phone.includes(q) || location.includes(q) || remarks.includes(q) || caseDetails.includes(q) || leadCat.includes(q);
-              }
-              
-              return true;
-            });
-
-            // Instant pagination: slices data for instantaneous DOM rendering (<10ms)
-            const totalPages = Math.ceil(filteredLeads.length / pageSize) || 1;
-            const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-            const startIndex = (safeCurrentPage - 1) * pageSize;
-            const paginatedLeads = filteredLeads.slice(startIndex, startIndex + pageSize);
-
-            return (
-              <div className="space-y-5">
+          <div className="space-y-5">
                 {/* 3 TOP METRIC CARDS MATCHING REFERENCE IMAGE */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {/* 1. TOTAL YET TO DIAL */}
@@ -907,7 +1018,15 @@ export default function MyCampaign() {
                             }
 
                             return (
-                              <tr key={lead._id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                              <tr
+                                key={lead._id}
+                                id={`lead-card-${lead._id}`}
+                                className={`transition-all duration-300 ${
+                                  highlightedLeadId === lead._id
+                                    ? 'bg-indigo-50/90 dark:bg-indigo-950/70 ring-2 ring-indigo-500'
+                                    : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50'
+                                }`}
+                              >
                                 <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
                                 <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white border-r border-slate-100 dark:border-slate-800">{dataCode}</td>
                                 <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold">{location}</td>
@@ -977,14 +1096,24 @@ export default function MyCampaign() {
                                 </td>
                                 <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400 border-r border-slate-100 dark:border-slate-800">{dialedDatetime}</td>
                                 <td className="py-2 px-2 text-center">
-                                  <button
-                                    onClick={() => handleSaveLead(lead._id)}
-                                    className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
-                                    title="Save lead updates"
-                                  >
-                                    <Icons.Save className="w-3.5 h-3.5" />
-                                    <span>SAVE</span>
-                                  </button>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={() => handleSaveLead(lead._id)}
+                                      className="h-8 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
+                                      title="Save lead and view confirmation popup"
+                                    >
+                                      <Icons.Save className="w-3.5 h-3.5" />
+                                      <span>SAVE</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleSaveLead(lead._id, true)}
+                                      className="h-8 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg inline-flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
+                                      title="Save & move directly to next lead"
+                                    >
+                                      <Icons.FastForward className="w-3 h-3" />
+                                      <span>NEXT</span>
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1010,7 +1139,12 @@ export default function MyCampaign() {
                       return (
                         <div
                           key={lead._id}
-                          className="bg-white dark:bg-slate-900 rounded-2xl border-l-[5px] border-l-indigo-600 border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs hover:shadow-md transition-all duration-200 space-y-5"
+                          id={`lead-card-${lead._id}`}
+                          className={`bg-white dark:bg-slate-900 rounded-2xl border-l-[5px] border-l-indigo-600 border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs hover:shadow-md transition-all duration-300 space-y-5 ${
+                            highlightedLeadId === lead._id
+                              ? 'ring-4 ring-indigo-500/50 shadow-xl border-indigo-500 scale-[1.005]'
+                              : ''
+                          }`}
                         >
                           {/* Top Header Row */}
                           <div className="flex items-center justify-between pb-1">
@@ -1122,20 +1256,29 @@ export default function MyCampaign() {
                               </button>
                             </div>
 
-                            {/* Right Side: SAVE & EDIT */}
-                            <div className="flex items-center gap-2.5">
+                            {/* Right Side: SAVE, SAVE & NEXT, EDIT */}
+                            <div className="flex items-center gap-2 flex-wrap">
                               <button
                                 onClick={() => handleSaveLead(lead._id)}
-                                className="h-9 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-xs active:scale-95"
+                                className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
+                                title="Save lead and view confirmation popup"
                               >
                                 <Icons.Save className="w-4 h-4" />
                                 <span>SAVE</span>
                               </button>
                               <button
-                                onClick={() => navigate(`/modules/leads/${lead._id}`)}
-                                className="h-9 px-5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
+                                onClick={() => handleSaveLead(lead._id, true)}
+                                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
+                                title="Save and immediately move to next lead"
                               >
-                                <Icons.Edit className="w-4 h-4" />
+                                <Icons.FastForward className="w-3.5 h-3.5" />
+                                <span>SAVE & NEXT</span>
+                              </button>
+                              <button
+                                onClick={() => navigate(`/modules/leads/${lead._id}`)}
+                                className="h-9 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-3xs active:scale-95"
+                              >
+                                <Icons.Edit className="w-3.5 h-3.5" />
                                 <span>EDIT</span>
                               </button>
                             </div>
@@ -1220,8 +1363,128 @@ export default function MyCampaign() {
                   </div>
                 )}
               </div>
-            );
-          })()}
+            </div>
+          )}
+
+      {/* PROPER SAVE CONFIRMATION POPUP MODAL */}
+      {saveSuccessModal && saveSuccessModal.isOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all duration-200"
+          onClick={() => setSaveSuccessModal(null)}
+        >
+          <div 
+            className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 sm:p-7 space-y-6 text-left transform transition-all animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close 'X' button top-right */}
+            <button
+              onClick={() => setSaveSuccessModal(null)}
+              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Close (Return)"
+            >
+              <Icons.X className="w-5 h-5" />
+            </button>
+
+            {/* Top Success Badge & Title */}
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm shadow-emerald-500/10">
+                <Icons.CheckCircle2 className="w-7 h-7 stroke-[2.2]" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    Saved Successfully
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium">
+                    Lead Details Updated
+                  </span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  Lead Details Saved
+                </h3>
+              </div>
+            </div>
+
+            {/* PROMINENT LEAD NUMBER BANNER */}
+            <div className="bg-gradient-to-r from-indigo-50 via-indigo-50/70 to-blue-50/50 dark:from-indigo-950/40 dark:via-indigo-950/30 dark:to-blue-950/30 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-3xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-sm shadow-indigo-600/30">
+                  #{saveSuccessModal.slNo}
+                </div>
+                <div>
+                  <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
+                    LEAD NUMBER
+                  </span>
+                  <span className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                    SL No. : {saveSuccessModal.slNo}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                  DATA CODE
+                </span>
+                <span className="text-xs sm:text-sm font-black text-indigo-700 dark:text-indigo-300 font-mono">
+                  {saveSuccessModal.dataCode}
+                </span>
+              </div>
+            </div>
+
+            {/* SUMMARY DETAILS CARD */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">Customer Name:</span>
+                <span className="font-black text-slate-800 dark:text-slate-100">{saveSuccessModal.customerName}</span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">Firm Name:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[220px]">{saveSuccessModal.firmName}</span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">Contact Number:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{saveSuccessModal.phone}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">Updated Status:</span>
+                <span className="px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  {saveSuccessModal.status}
+                </span>
+              </div>
+            </div>
+
+            {/* POPUP ACTION BUTTONS: "RETURN" AND "MOVE TO NEXT LEAD" */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              {/* RETURN BUTTON */}
+              <button
+                onClick={() => setSaveSuccessModal(null)}
+                className="w-full sm:flex-1 h-12 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-3xs active:scale-98"
+                title="Stay on this lead (Press Esc)"
+              >
+                <Icons.ArrowLeft className="w-4 h-4" />
+                <span>Return</span>
+              </button>
+
+              {/* MOVE TO NEXT LEAD BUTTON */}
+              {saveSuccessModal.hasNext ? (
+                <button
+                  onClick={() => handleGoToNextLead()}
+                  className="w-full sm:flex-1 h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-98"
+                  title={`Advance to lead SL No. ${saveSuccessModal.nextSlNo} (Press Enter)`}
+                >
+                  <span>Move to Next Lead</span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/20 text-[11px] font-mono">
+                    #{saveSuccessModal.nextSlNo}
+                  </span>
+                  <Icons.ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <div className="w-full sm:flex-1 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5">
+                  <Icons.Check className="w-4 h-4" />
+                  <span>End of Lead List</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
