@@ -40,33 +40,33 @@ const INDIAN_STATES = [
 
 const getFallbackField = (name: string): FieldDefinition => {
   const map: Record<string, FieldDefinition> = {
-    dataCode: { name: 'dataCode', label: 'DATA CODE', type: 'text', required: false },
-    status: { name: 'status', label: 'CURRENT STATUS', type: 'dropdown', required: true, defaultValue: 'HOT LEADS' },
-    caseDetails: { name: 'caseDetails', label: 'CASE DETAILS', type: 'text', required: false },
-    leadCategory: { name: 'leadCategory', label: 'LEAD CATEGORY', type: 'text', required: false },
-    loanType: { name: 'loanType', label: 'LOAN TYPE', type: 'dropdown', required: true, defaultValue: 'SALARIED PERSONAL LOAN' },
-    notes: { name: 'notes', label: 'REMARKS', type: 'textarea', required: false },
-    budget: { name: 'budget', label: 'LOAN AMOUNT', type: 'currency', required: true },
-    assignedTo: { name: 'assignedTo', label: 'ASSIGN TO AGENT', type: 'dropdown', required: true },
-    source: { name: 'source', label: 'SOURCE', type: 'text', required: false, defaultValue: 'Ink CRM' },
-    businessPartner: { name: 'businessPartner', label: 'BUSINESS PARTNERS', type: 'dropdown', required: true },
-    psm: { name: 'psm', label: 'PSM', type: 'text', required: true },
-    assignToTeam: { name: 'assignToTeam', label: 'ASSIGN TO TEAM', type: 'dropdown', required: false },
-    followUpDate: { name: 'followUpDate', label: 'FOLLOW-UP DATE', type: 'date', required: false },
+    dataCode: { name: 'dataCode', label: 'DATA CODE', type: 'text', required: false, unique: false },
+    status: { name: 'status', label: 'CURRENT STATUS', type: 'dropdown', required: true, unique: false, defaultValue: 'HOT LEADS' },
+    caseDetails: { name: 'caseDetails', label: 'CASE DETAILS', type: 'text', required: false, unique: false },
+    leadCategory: { name: 'leadCategory', label: 'LEAD CATEGORY', type: 'text', required: false, unique: false },
+    loanType: { name: 'loanType', label: 'LOAN TYPE', type: 'dropdown', required: true, unique: false, defaultValue: 'SALARIED PERSONAL LOAN' },
+    notes: { name: 'notes', label: 'REMARKS', type: 'rich-text', required: false, unique: false },
+    budget: { name: 'budget', label: 'LOAN AMOUNT', type: 'currency', required: true, unique: false },
+    assignedTo: { name: 'assignedTo', label: 'ASSIGN TO AGENT', type: 'dropdown', required: true, unique: false },
+    source: { name: 'source', label: 'SOURCE', type: 'text', required: false, unique: false, defaultValue: 'Ink CRM' },
+    businessPartner: { name: 'businessPartner', label: 'BUSINESS PARTNERS', type: 'dropdown', required: true, unique: false },
+    psm: { name: 'psm', label: 'PSM', type: 'text', required: true, unique: false },
+    assignToTeam: { name: 'assignToTeam', label: 'ASSIGN TO TEAM', type: 'dropdown', required: false, unique: false },
+    followUpDate: { name: 'followUpDate', label: 'FOLLOW-UP DATE', type: 'date', required: false, unique: false },
 
-    firstName: { name: 'firstName', label: 'FIRST NAME', type: 'text', required: true },
-    lastName: { name: 'lastName', label: 'LAST NAME', type: 'text', required: false },
-    company: { name: 'company', label: 'COMPANY NAME', type: 'text', required: false },
-    phone: { name: 'phone', label: 'MOBILE', type: 'phone', required: false },
-    email: { name: 'email', label: 'E-MAIL', type: 'email', required: false },
-    city: { name: 'city', label: 'CITY', type: 'text', required: false },
-    presentAddress: { name: 'presentAddress', label: 'PRESENT ADDRESS', type: 'textarea', required: false },
-    pinCode: { name: 'pinCode', label: 'PINCODE', type: 'text', required: false },
-    state: { name: 'state', label: 'STATE', type: 'dropdown', required: false },
-    country: { name: 'country', label: 'COUNTRY', type: 'dropdown', required: false, defaultValue: 'INDIA' },
-    salary: { name: 'salary', label: 'SALARY', type: 'currency', required: false }
+    firstName: { name: 'firstName', label: 'FIRST NAME', type: 'text', required: true, unique: false },
+    lastName: { name: 'lastName', label: 'LAST NAME', type: 'text', required: false, unique: false },
+    company: { name: 'company', label: 'COMPANY NAME', type: 'text', required: false, unique: false },
+    phone: { name: 'phone', label: 'MOBILE', type: 'phone', required: false, unique: false },
+    email: { name: 'email', label: 'E-MAIL', type: 'email', required: false, unique: false },
+    city: { name: 'city', label: 'CITY', type: 'text', required: false, unique: false },
+    presentAddress: { name: 'presentAddress', label: 'PRESENT ADDRESS', type: 'rich-text', required: false, unique: false },
+    pinCode: { name: 'pinCode', label: 'PINCODE', type: 'text', required: false, unique: false },
+    state: { name: 'state', label: 'STATE', type: 'dropdown', required: false, unique: false },
+    country: { name: 'country', label: 'COUNTRY', type: 'dropdown', required: false, unique: false, defaultValue: 'INDIA' },
+    salary: { name: 'salary', label: 'SALARY', type: 'currency', required: false, unique: false }
   };
-  return map[name] || { name, label: name, type: 'text' };
+  return map[name] || { name, label: name, type: 'text', required: false, unique: false };
 };
 
 export default function RecordForm() {

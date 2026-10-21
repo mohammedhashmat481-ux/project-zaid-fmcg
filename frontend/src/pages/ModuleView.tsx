@@ -1301,7 +1301,7 @@ export default function ModuleView() {
     );
   };
 
-  if (!activeModule) {
+  if (!activeModule && apiPath !== 'campaigns' && apiPath !== 'campaignassignments') {
     if (loadingModules) {
       return (
         <div className="space-y-4 p-4 animate-pulse">
@@ -1745,6 +1745,15 @@ export default function ModuleView() {
     return (
       <div className="space-y-6">
         {renderCampaignsList()}
+      </div>
+    );
+  }
+
+  if (!activeModule) {
+    return (
+      <div className="py-16 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+        <Icons.FolderClosed className="w-10 h-10 mx-auto mb-2 text-slate-400" />
+        <p className="font-bold text-sm">Module not found</p>
       </div>
     );
   }
