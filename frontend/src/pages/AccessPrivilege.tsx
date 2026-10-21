@@ -59,36 +59,44 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
 
   // 2. REPORTS & ANALYTICS
   {
+    key: 'telecaller_reports',
+    label: 'Live Caller Status',
+    category: 'Reports & Analytics',
+    path: '/reports/telecaller-reports',
+    icon: 'Radio',
+    description: 'Live active caller status, calling velocity, and telecaller connectivity.'
+  },
+  {
     key: 'lead_reports',
     label: 'Lead Reports',
     category: 'Reports & Analytics',
     path: '/reports/lead-reports',
     icon: 'ListFilter',
-    description: 'Comprehensive lead reports with advanced filters and 18-col Excel exports.'
+    description: 'Comprehensive pipeline lead reports with 19-col Excel exports.'
   },
   {
-    key: 'telecaller_reports',
-    label: "Telecaller's Reports",
+    key: 'campaign_daily',
+    label: 'Daily Campaign Report',
     category: 'Reports & Analytics',
-    path: '/reports/telecaller-reports',
+    path: '/reports/campaign-daily',
     icon: 'PhoneCall',
-    description: 'Daily agent performance, call connectivity, and conversion metrics.'
+    description: 'Daily telecaller calling matrix, dial attempts, and outbound contact progress.'
   },
   {
-    key: 'telecaller_monthly',
-    label: "Telecaller's Monthly",
+    key: 'campaign_monthly',
+    label: 'Monthly Campaign Report',
     category: 'Reports & Analytics',
-    path: '/reports/telecaller-monthly',
+    path: '/reports/campaign-monthly',
     icon: 'Calendar',
-    description: 'Month-on-month telecaller conversion velocity and disposition analysis.'
+    description: 'Monthly telecaller calling matrix and cumulative outbound performance.'
   },
   {
-    key: 'campaign_report',
-    label: 'Campaign Report',
+    key: 'campaign_annual',
+    label: 'Annual Campaign Report',
     category: 'Reports & Analytics',
-    path: '/reports/campaign-report',
-    icon: 'Megaphone',
-    description: 'Daily, monthly, and annual campaign outbound calling matrix with 6-card KPI controls.'
+    path: '/reports/campaign-annual',
+    icon: 'CalendarDays',
+    description: 'Annual telecaller calling matrix and multi-year outreach trends.'
   },
 
   // 3. FUNNEL

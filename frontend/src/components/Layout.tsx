@@ -530,7 +530,7 @@ export default function Layout({ children }: LayoutProps) {
                     icon={Icons.Megaphone} 
                     colorClass="text-[#EA580C]" 
                     isCollapsed={isCollapsed}
-                    defaultOpen={location.pathname.startsWith('/modules/campaign') || location.pathname === '/reports/campaign-report'}
+                    defaultOpen={location.pathname.startsWith('/modules/campaign')}
                   >
                     {canAccessMenu('campaigns') && (
                       <SidebarItem to="/modules/campaigns" label="CAMPAIGN LIST" icon={Icons.Target} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
@@ -538,23 +538,23 @@ export default function Layout({ children }: LayoutProps) {
                     {canAccessMenu('campaignassignments') && (
                       <SidebarItem to="/modules/campaignassignments" label="ASSIGN CAMPAIGN" icon={Icons.UserCheck} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
                     )}
-                    <SidebarItem to="/reports/campaign-report" label="CAMPAIGN REPORT" icon={Icons.BarChart2} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
                   </SidebarAccordion>
                 )}
 
-                {/* Reports accordion */}
-                {(canAccessMenu('lead_reports') || canAccessMenu('telecaller_reports') || canAccessMenu('telecaller_monthly')) && (
-                  <SidebarAccordion label="REPORTS & ANALYTICS" icon={Icons.BarChart3} colorClass="text-[#059669]" isCollapsed={isCollapsed}>
-                    {canAccessMenu('lead_reports') && (
-                      <SidebarItem to="/reports/lead-reports" label="LEAD REPORTS" icon={Icons.ListFilter} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
-                    )}
-                    <SidebarItem to="/reports/campaign-report" label="CAMPAIGN REPORT" icon={Icons.Megaphone} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
-                    {canAccessMenu('telecaller_reports') && (
-                      <SidebarItem to="/reports/telecaller-reports" label="TELECALLER'S REPORTS" icon={Icons.PhoneCall} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
-                    )}
-                    {canAccessMenu('telecaller_monthly') && (
-                      <SidebarItem to="/reports/telecaller-monthly" label="TELECALLER'S MONTHLY" icon={Icons.Calendar} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
-                    )}
+                {/* Reports & Analytics accordion - Exact order matching Image 1 */}
+                {(canAccessMenu('lead_reports') || canAccessMenu('telecaller_reports') || canAccessMenu('campaign_report')) && (
+                  <SidebarAccordion 
+                    label="REPORTS & ANALYTICS" 
+                    icon={Icons.BarChart3} 
+                    colorClass="text-[#059669]" 
+                    isCollapsed={isCollapsed}
+                    defaultOpen={location.pathname.startsWith('/reports')}
+                  >
+                    <SidebarItem to="/reports/telecaller-reports" label="LIVE CALLER STATUS" icon={Icons.Radio} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
+                    <SidebarItem to="/reports/lead-reports" label="LEAD REPORTS" icon={Icons.ListFilter} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
+                    <SidebarItem to="/reports/campaign-daily" label="DAILY CAMPAIGN REPORT" icon={Icons.PhoneCall} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
+                    <SidebarItem to="/reports/campaign-monthly" label="MONTHLY CAMPAIGN REPORT" icon={Icons.Calendar} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
+                    <SidebarItem to="/reports/campaign-annual" label="ANNUAL CAMPAIGN REPORT" icon={Icons.CalendarDays} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
                   </SidebarAccordion>
                 )}
 
@@ -625,8 +625,10 @@ export default function Layout({ children }: LayoutProps) {
                   {(() => {
                     const path = location.pathname;
                     if (path === '/reports/lead-reports') return 'Lead Reports';
-                    if (path === '/reports/telecaller-reports') return "Telecaller's Reports";
-                    if (path === '/reports/telecaller-monthly') return "Telecaller's Monthly Report";
+                    if (path === '/reports/telecaller-reports') return "Live Caller Status";
+                    if (path === '/reports/campaign-daily') return 'Daily Campaign Report';
+                    if (path === '/reports/campaign-monthly') return 'Monthly Campaign Report';
+                    if (path === '/reports/campaign-annual') return 'Annual Campaign Report';
                     if (path === '/reports/campaign-report') return 'Campaign Calling & Performance Matrix';
                     if (path === '/reports/funnel-daily') return 'Daily Lead Funnel';
                     if (path === '/reports/funnel-monthly') return 'Monthly Lead Funnel';

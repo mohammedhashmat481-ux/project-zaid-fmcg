@@ -94,61 +94,59 @@ export const exportCampaignKPIDataset = (
   const dateStamp = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
 
   if (kpiType === 'campaigns') {
-    const headers = ['Sl.No.', 'Campaign Name', 'Assigned Callers', 'Total Target Leads', 'Status'];
+    const headers = ['Sl.No.', 'Campaign Metric', 'Value'];
     const rows = [
-      [1, 'Diwali Festive Loan Bonanza', 12, 65000, 'Active'],
-      [2, 'Q3 SME Business Expansion Drive', 8, 48000, 'Active'],
-      [3, 'Home Loan Super Saver Scheme', 10, 52000, 'Active'],
-      [4, 'August Mega Personal Loan Drive', 15, 45000, 'Active'],
-      [5, 'Quarterly MSME Loan Outreach', 6, 33726, 'Active']
+      [1, 'Campaigns Assigned', summary.campaignsAssigned],
+      [2, 'Total Leads Assigned', summary.totalLeadsAssigned],
+      [3, 'Leads Called', summary.leadsCalled],
+      [4, 'Yet To Call', summary.yetToCall],
+      [5, 'Calls Made', summary.callsMade],
+      [6, 'Progress %', `${summary.progressPct}%`]
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws, 'Campaigns Summary');
+    ws['!cols'] = [{ wch: 8 }, { wch: 28 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Campaign Summary');
     XLSX.writeFile(wb, `Campaigns_Assigned_Report_${dateStamp}.xlsx`);
     return;
   }
 
   if (kpiType === 'leads') {
-    const headers = ['Sl.No.', 'Telecaller Name', 'Total Assigned Leads', 'Percentage Share'];
+    const headers = ['Sl.No.', 'Telecaller Name', 'Total Assigned Leads'];
     const rows = matrix.rows.map((r, i) => [
       i + 1,
       r.callerName,
-      Math.round(r.total * 2.18),
-      `${Math.min(100, Math.round((r.total / (matrix.grandTotal || 1)) * 100))}%`
+      r.total
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 22 }, { wch: 18 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 22 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Assigned Leads');
     XLSX.writeFile(wb, `Total_Leads_Assigned_Report_${dateStamp}.xlsx`);
     return;
   }
 
   if (kpiType === 'called') {
-    const headers = ['Sl.No.', 'Telecaller Name', 'Leads Called', 'Status'];
+    const headers = ['Sl.No.', 'Telecaller Name', 'Leads Called'];
     const rows = matrix.rows.map((r, i) => [
       i + 1,
       r.callerName,
-      Math.round(r.total * 0.88),
-      'Dialed & Contacted'
+      r.total
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }, { wch: 20 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Leads Called');
     XLSX.writeFile(wb, `Leads_Called_Report_${dateStamp}.xlsx`);
     return;
   }
 
   if (kpiType === 'pending') {
-    const headers = ['Sl.No.', 'Telecaller Name', 'Pending Leads (Yet To Call)', 'Priority'];
+    const headers = ['Sl.No.', 'Telecaller Name', 'Pending Leads (Yet To Call)'];
     const rows = matrix.rows.map((r, i) => [
       i + 1,
       r.callerName,
-      Math.round(r.total * 1.15),
-      'Pending Outreach'
+      r.total
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 28 }, { wch: 20 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 28 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Pending Leads');
     XLSX.writeFile(wb, `Yet_To_Call_Report_${dateStamp}.xlsx`);
     return;
@@ -161,15 +159,14 @@ export const exportCampaignKPIDataset = (
   }
 
   if (kpiType === 'progress') {
-    const headers = ['Sl.No.', 'Telecaller Name', 'Assigned', 'Dialed', 'Completion %'];
-    const rows = matrix.rows.map((r, i) => {
-      const assigned = Math.round(r.total * 2.18);
-      const dialed = Math.round(r.total * 0.88);
-      const pct = assigned > 0 ? Math.min(100, Math.round((dialed / assigned) * 100)) : 0;
-      return [i + 1, r.callerName, assigned, dialed, `${pct}%`];
-    });
+    const headers = ['Sl.No.', 'Telecaller Name', 'Performance Metric'];
+    const rows = matrix.rows.map((r, i) => [
+      i + 1,
+      r.callerName,
+      r.total
+    ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Progress Summary');
     XLSX.writeFile(wb, `Campaign_Progress_Report_${dateStamp}.xlsx`);
   }

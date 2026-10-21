@@ -162,10 +162,34 @@ export default function App() {
           }
         />
         <Route
+          path="/reports/campaign-daily"
+          element={
+            <ProtectedRoute>
+              <CampaignReportPage initialPeriod="daily" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/campaign-monthly"
+          element={
+            <ProtectedRoute>
+              <CampaignReportPage initialPeriod="monthly" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/campaign-annual"
+          element={
+            <ProtectedRoute>
+              <CampaignReportPage initialPeriod="annually" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/reports/campaign-report"
           element={
             <ProtectedRoute>
-              <CampaignReportPage />
+              <CampaignReportPage initialPeriod="daily" />
             </ProtectedRoute>
           }
         />

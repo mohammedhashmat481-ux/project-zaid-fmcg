@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as Icons from 'lucide-react';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
@@ -114,11 +115,16 @@ const KPI_CARDS: KPICardConfig[] = [
   }
 ];
 
-export default function CampaignReportPage() {
+interface CampaignReportPageProps {
+  initialPeriod?: PeriodType;
+}
+
+export default function CampaignReportPage({ initialPeriod = 'daily' }: CampaignReportPageProps) {
+  const navigate = useNavigate();
   const { showToast } = useToastStore();
 
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<PeriodType>('daily');
+  const [period, setPeriod] = useState<PeriodType>(initialPeriod);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('08'); // August default
@@ -127,12 +133,12 @@ export default function CampaignReportPage() {
 
   const [campaignsList, setCampaignsList] = useState<string[]>([]);
   const [summary, setSummary] = useState<CampaignSummaryData>({
-    campaignsAssigned: 21,
-    totalLeadsAssigned: 243726,
-    leadsCalled: 110085,
-    yetToCall: 133641,
-    callsMade: 111874,
-    progressPct: 45
+    campaignsAssigned: 0,
+    totalLeadsAssigned: 0,
+    leadsCalled: 0,
+    yetToCall: 0,
+    callsMade: 0,
+    progressPct: 0
   });
 
   const [matrixData, setMatrixData] = useState<CampaignMatrixData>({
@@ -141,6 +147,12 @@ export default function CampaignReportPage() {
     totals: {},
     grandTotal: 0
   });
+
+  useEffect(() => {
+    if (initialPeriod) {
+      setPeriod(initialPeriod);
+    }
+  }, [initialPeriod]);
 
   const months = [
     { label: 'January', val: '01' },
@@ -248,10 +260,10 @@ export default function CampaignReportPage() {
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
-              Campaign Calling & Performance Matrix
+              {period === 'daily' ? 'Daily Campaign Report' : period === 'monthly' ? 'Monthly Campaign Report' : 'Annual Campaign Report'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Daily, Monthly, and Annual telecaller calling matrix, dial attempts, and contact progress.
+              {period === 'daily' ? 'Daily' : period === 'monthly' ? 'Monthly' : 'Annual'} telecaller calling matrix, dial attempts, and outbound contact progress.
             </p>
           </div>
 
@@ -282,7 +294,10 @@ export default function CampaignReportPage() {
           {/* Period Tabs: Daily | Monthly | Annually */}
           <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-black/[0.06] dark:border-slate-700/80 shadow-inner">
             <button
-              onClick={() => setPeriod('daily')}
+              onClick={() => {
+                setPeriod('daily');
+                navigate('/reports/campaign-daily');
+              }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 period === 'daily'
                   ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
@@ -292,7 +307,10 @@ export default function CampaignReportPage() {
               Daily Matrix
             </button>
             <button
-              onClick={() => setPeriod('monthly')}
+              onClick={() => {
+                setPeriod('monthly');
+                navigate('/reports/campaign-monthly');
+              }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 period === 'monthly'
                   ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
@@ -302,7 +320,10 @@ export default function CampaignReportPage() {
               Monthly Matrix
             </button>
             <button
-              onClick={() => setPeriod('annually')}
+              onClick={() => {
+                setPeriod('annually');
+                navigate('/reports/campaign-annual');
+              }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 period === 'annually'
                   ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
