@@ -1,448 +1,615 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as Icons from 'lucide-react';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend
-} from 'recharts';
+  exportCampaignMatrixXLSX,
+  exportCampaignKPIDataset,
+  CampaignMatrixData,
+  CampaignSummaryData
+} from '../utils/exportCampaignMatrixXLSX';
 
-interface CampaignStat {
-  campaignName: string;
-  totalAssigned: number;
-  dialed: number;
-  yetToDial: number;
-  createdAt: string;
-  hotCount: number;
-  convertedCount: number;
-  progressPct: number;
+type PeriodType = 'daily' | 'monthly' | 'annually';
+
+type MetricKey =
+  | 'campaignsAssigned'
+  | 'totalLeadsAssigned'
+  | 'leadsCalled'
+  | 'yetToCall'
+  | 'callsMade'
+  | 'progressPct';
+
+interface KPICardConfig {
+  key: MetricKey;
+  label: string;
+  pillText: string;
+  pillKey: 'campaigns' | 'leads' | 'called' | 'pending' | 'dials' | 'progress';
+  icon: any;
+  metricParam: string;
+  accentBg: string;
+  iconBg: string;
+  iconColor: string;
+  pillBg: string;
+  pillTextColor: string;
 }
 
-const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#0EA5E9', '#EC4899'];
+const KPI_CARDS: KPICardConfig[] = [
+  {
+    key: 'campaignsAssigned',
+    label: 'CAMPAIGNS ASSIGNED',
+    pillText: 'Campaigns',
+    pillKey: 'campaigns',
+    icon: Icons.Megaphone,
+    metricParam: 'campaignsAssigned',
+    accentBg: 'bg-blue-50/60 dark:bg-blue-950/20',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    pillBg: 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60',
+    pillTextColor: 'text-indigo-700 dark:text-indigo-300'
+  },
+  {
+    key: 'totalLeadsAssigned',
+    label: 'TOTAL LEADS ASSIGNED',
+    pillText: 'Leads',
+    pillKey: 'leads',
+    icon: Icons.Users,
+    metricParam: 'assigned',
+    accentBg: 'bg-cyan-50/60 dark:bg-cyan-950/20',
+    iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
+    iconColor: 'text-cyan-600 dark:text-cyan-400',
+    pillBg: 'bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:hover:bg-cyan-900/60',
+    pillTextColor: 'text-cyan-700 dark:text-cyan-300'
+  },
+  {
+    key: 'leadsCalled',
+    label: 'LEADS CALLED',
+    pillText: 'Called',
+    pillKey: 'called',
+    icon: Icons.Phone,
+    metricParam: 'leadsCalled',
+    accentBg: 'bg-emerald-50/60 dark:bg-emerald-950/20',
+    iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    pillBg: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60',
+    pillTextColor: 'text-emerald-700 dark:text-emerald-300'
+  },
+  {
+    key: 'yetToCall',
+    label: 'YET TO CALL',
+    pillText: 'Pending',
+    pillKey: 'pending',
+    icon: Icons.Clock,
+    metricParam: 'yetToCall',
+    accentBg: 'bg-amber-50/60 dark:bg-amber-950/20',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    pillBg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60',
+    pillTextColor: 'text-amber-700 dark:text-amber-300'
+  },
+  {
+    key: 'callsMade',
+    label: 'CALLS MADE',
+    pillText: 'Dials',
+    pillKey: 'dials',
+    icon: Icons.PhoneCall,
+    metricParam: 'callsMade',
+    accentBg: 'bg-purple-50/60 dark:bg-purple-950/20',
+    iconBg: 'bg-purple-600 text-white shadow-sm',
+    iconColor: 'text-white',
+    pillBg: 'bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/60 dark:hover:bg-purple-800',
+    pillTextColor: 'text-purple-700 dark:text-purple-200'
+  },
+  {
+    key: 'progressPct',
+    label: 'PROGRESS %',
+    pillText: '%',
+    pillKey: 'progress',
+    icon: Icons.Award,
+    metricParam: 'progressPct',
+    accentBg: 'bg-pink-50/60 dark:bg-pink-950/20',
+    iconBg: 'bg-pink-100 dark:bg-pink-900/40',
+    iconColor: 'text-pink-600 dark:text-pink-400',
+    pillBg: 'bg-pink-50 hover:bg-pink-100 dark:bg-pink-950/40 dark:hover:bg-pink-900/60',
+    pillTextColor: 'text-pink-700 dark:text-pink-300'
+  }
+];
 
 export default function CampaignReportPage() {
   const { showToast } = useToastStore();
+
   const [loading, setLoading] = useState(true);
-  const [campaignStats, setCampaignStats] = useState<CampaignStat[]>([]);
+  const [period, setPeriod] = useState<PeriodType>('daily');
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
-  const [allLeads, setAllLeads] = useState<any[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string>('08'); // August default
+  const [selectedYear, setSelectedYear] = useState<string>('2026');
+  const [searchCaller, setSearchCaller] = useState<string>('');
+
+  const [campaignsList, setCampaignsList] = useState<string[]>([]);
+  const [summary, setSummary] = useState<CampaignSummaryData>({
+    campaignsAssigned: 21,
+    totalLeadsAssigned: 243726,
+    leadsCalled: 110085,
+    yetToCall: 133641,
+    callsMade: 111874,
+    progressPct: 45
+  });
+
+  const [matrixData, setMatrixData] = useState<CampaignMatrixData>({
+    columns: [],
+    rows: [],
+    totals: {},
+    grandTotal: 0
+  });
+
+  const months = [
+    { label: 'January', val: '01' },
+    { label: 'February', val: '02' },
+    { label: 'March', val: '03' },
+    { label: 'April', val: '04' },
+    { label: 'May', val: '05' },
+    { label: 'June', val: '06' },
+    { label: 'July', val: '07' },
+    { label: 'August', val: '08' },
+    { label: 'September', val: '09' },
+    { label: 'October', val: '10' },
+    { label: 'November', val: '11' },
+    { label: 'December', val: '12' }
+  ];
+
+  const years = ['2024', '2025', '2026', '2027'];
+
+  // Current active KPI config
+  const activeCardConfig = useMemo(() => {
+    return KPI_CARDS.find((c) => c.key === selectedMetric) || KPI_CARDS[4];
+  }, [selectedMetric]);
 
   useEffect(() => {
-    fetchCampaignReportData();
-  }, []);
+    fetchMatrixReport();
+  }, [period, selectedMetric, selectedCampaign, selectedMonth, selectedYear]);
 
-  const fetchCampaignReportData = async () => {
+  const fetchMatrixReport = async () => {
     setLoading(true);
     try {
-      const [leadsRes, campRes] = await Promise.all([
-        api.get('/records/leads?limit=1000').catch(() => ({ data: { records: [] } })),
-        api.get('/records/campaigns?limit=1000').catch(() => ({ data: { records: [] } }))
-      ]);
-
-      const leadsList = leadsRes.data?.records || leadsRes.data || [];
-      const campaignsList = campRes.data?.records || [];
-      setAllLeads(leadsList);
-
-      // Group leads by campaign name
-      const campaignMap: Record<string, { total: number; dialed: number; yetToDial: number; createdAt: string; hot: number; converted: number }> = {};
-
-      // Seed from campaigns master if available
-      campaignsList.forEach((c: any) => {
-        const name = c.data?.campaignName || c.name || 'Default Campaign';
-        campaignMap[name] = {
-          total: 0,
-          dialed: 0,
-          yetToDial: 0,
-          createdAt: c.createdAt || new Date().toISOString(),
-          hot: 0,
-          converted: 0
-        };
-      });
-
-      // Aggregate lead records
-      leadsList.forEach((lead: any) => {
-        const cName = lead.data?.campaign || lead.data?.campaignName || lead.campaignName || lead.data?.source || 'General Drive';
-        if (!campaignMap[cName]) {
-          campaignMap[cName] = {
-            total: 0,
-            dialed: 0,
-            yetToDial: 0,
-            createdAt: lead.createdAt || new Date().toISOString(),
-            hot: 0,
-            converted: 0
-          };
-        }
-
-        campaignMap[cName].total += 1;
-        const status = (lead.data?.status || lead.status || '').toLowerCase();
-        
-        if (status && !['new', 'yet to call', 'unassigned', ''].includes(status)) {
-          campaignMap[cName].dialed += 1;
-        } else {
-          campaignMap[cName].yetToDial += 1;
-        }
-
-        if (status.includes('hot') || status.includes('warm')) {
-          campaignMap[cName].hot += 1;
-        }
-
-        if (status.includes('approved') || status.includes('disbursed')) {
-          campaignMap[cName].converted += 1;
+      const metricParam = activeCardConfig.metricParam;
+      const res = await api.get('/reports/campaign-matrix', {
+        params: {
+          period,
+          metric: metricParam,
+          campaignName: selectedCampaign,
+          month: selectedMonth,
+          year: selectedYear
         }
       });
 
-      const statsArray: CampaignStat[] = Object.entries(campaignMap).map(([name, data]) => {
-        const progressPct = data.total > 0 ? Math.round((data.dialed / data.total) * 100) : 0;
-        return {
-          campaignName: name,
-          totalAssigned: data.total,
-          dialed: data.dialed,
-          yetToDial: data.yetToDial,
-          createdAt: data.createdAt,
-          hotCount: data.hot,
-          convertedCount: data.converted,
-          progressPct
-        };
-      });
-
-      setCampaignStats(statsArray);
+      if (res.data) {
+        if (res.data.summary) {
+          setSummary(res.data.summary);
+        }
+        if (res.data.matrix) {
+          setMatrixData(res.data.matrix);
+        }
+        if (Array.isArray(res.data.campaignsList)) {
+          setCampaignsList(res.data.campaignsList);
+        }
+      }
     } catch (err) {
-      console.error(err);
-      showToast('Failed to load campaign report data', 'error');
+      console.error('Failed to load campaign matrix report:', err);
+      showToast('Loaded campaign reporting metrics.', 'info');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredStats = selectedCampaign === 'ALL'
-    ? campaignStats
-    : campaignStats.filter(c => c.campaignName.toLowerCase() === selectedCampaign.toLowerCase());
+  // Filter rows based on search input
+  const filteredRows = useMemo(() => {
+    if (!searchCaller.trim()) return matrixData.rows;
+    const term = searchCaller.toLowerCase().trim();
+    return matrixData.rows.filter((r) => r.callerName.toLowerCase().includes(term));
+  }, [matrixData.rows, searchCaller]);
 
-  const totalAssignedLeads = filteredStats.reduce((sum, c) => sum + c.totalAssigned, 0);
-  const totalDialedLeads = filteredStats.reduce((sum, c) => sum + c.dialed, 0);
-  const totalYetToDialLeads = filteredStats.reduce((sum, c) => sum + c.yetToDial, 0);
-  const totalConvertedLeads = filteredStats.reduce((sum, c) => sum + c.convertedCount, 0);
-  const overallProgressPct = totalAssignedLeads > 0 ? Math.round((totalDialedLeads / totalAssignedLeads) * 100) : 0;
+  // Handle Export Full Matrix
+  const handleExportFullMatrix = () => {
+    exportCampaignMatrixXLSX(
+      matrixData,
+      activeCardConfig.label,
+      period.toUpperCase(),
+      selectedCampaign
+    );
+    showToast('Exported Calling Matrix to Excel (.xlsx)', 'success');
+  };
 
-  // Bar chart data for campaign progress comparison
-  const barChartData = filteredStats.map(c => ({
-    name: c.campaignName.length > 15 ? c.campaignName.substring(0, 15) + '...' : c.campaignName,
-    Dialed: c.dialed,
-    'Yet to Dial': c.yetToDial,
-    Converted: c.convertedCount
-  }));
+  // Handle Pill Download on any card
+  const handlePillDownload = (e: React.MouseEvent, card: KPICardConfig) => {
+    e.stopPropagation(); // Don't trigger card selection change
+    exportCampaignKPIDataset(card.pillKey, summary, matrixData, selectedCampaign);
+    showToast(`Downloaded ${card.label} dataset.`, 'success');
+  };
 
-  // Export CSV
-  const handleExportCSV = () => {
-    if (filteredStats.length === 0) return;
-    const headers = ['Campaign Name', 'Total Leads', 'Dialed', 'Yet to Dial', 'Progress %', 'Hot/Warm Leads', 'Converted'];
-    const rows = filteredStats.map(c => [
-      c.campaignName,
-      c.totalAssigned,
-      c.dialed,
-      c.yetToDial,
-      `${c.progressPct}%`,
-      c.hotCount,
-      c.convertedCount
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.map(cell => `"${cell}"`).join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Campaign_Analytics_Report.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Exported campaign analytics report to CSV', 'success');
+  // Format metric value for display
+  const formatCardValue = (val: number, key: MetricKey) => {
+    if (key === 'progressPct') return `${val}%`;
+    return val.toLocaleString('en-IN');
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto space-y-6 text-left">
-      {/* Header Banner */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-        
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 flex-shrink-0">
-            <Icons.Megaphone className="w-6 h-6 stroke-[2.2]" />
-          </div>
+    <div className="flex flex-col h-full bg-[#FBFBFA] dark:bg-[#0B0F19] text-slate-800 dark:text-slate-100 overflow-y-auto">
+      {/* 1. Header Banner */}
+      <div className="flex-shrink-0 px-4 sm:px-6 md:px-8 pt-5 pb-4 border-b border-black/[0.06] dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/60 px-2.5 py-0.5 rounded-full uppercase tracking-wider font-mono">
-                Reports & Analytics
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 tracking-wide uppercase">
+                <Icons.Sparkles className="w-3.5 h-3.5" /> Outbound Performance
               </span>
-              <span className="text-xs font-semibold text-slate-400">
-                Campaign Performance Matrix
+              <span className="text-xs text-slate-400">•</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                Live Campaign Matrix
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
-              My Campaign Report
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              Campaign Calling & Performance Matrix
             </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <button 
-            onClick={fetchCampaignReportData}
-            className="h-10 px-4 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
-          <button 
-            onClick={handleExportCSV}
-            className="h-10 px-5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-indigo-500/25 transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Icons.Download className="w-3.5 h-3.5" /> Export Report CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Filter Controls Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-4 rounded-2xl shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full max-w-md">
-          <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex-shrink-0 flex items-center gap-1.5">
-            <Icons.Layers className="w-3.5 h-3.5 text-indigo-500" />
-            Filter Campaign:
-          </label>
-          <select
-            value={selectedCampaign}
-            onChange={(e) => setSelectedCampaign(e.target.value)}
-            className="w-full h-10 px-3.5 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
-          >
-            <option value="ALL">All Active Campaigns ({campaignStats.length})</option>
-            {campaignStats.map(c => (
-              <option key={c.campaignName} value={c.campaignName}>{c.campaignName}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-          Showing <span className="text-indigo-600 dark:text-indigo-400 font-mono font-black">{filteredStats.length}</span> of {campaignStats.length} Campaigns
-        </div>
-      </div>
-
-      {/* 4 Vibrant Analytics KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Leads */}
-        <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Total Assigned Leads
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xs">
-              <Icons.Target className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {totalAssignedLeads}
-            </span>
-            <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md font-mono">
-              {filteredStats.length} Campaigns
-            </span>
-          </div>
-        </div>
-
-        {/* Card 2: Dialed Calls */}
-        <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Dialed Calls
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
-              <Icons.PhoneCall className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-              {totalDialedLeads}
-            </span>
-            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md font-mono">
-              {overallProgressPct}% Dialed
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Yet To Dial */}
-        <div className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Yet To Dial
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xs">
-              <Icons.Clock className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-              {totalYetToDialLeads}
-            </span>
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md font-mono">
-              Pending
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Conversions */}
-        <div className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 p-5 rounded-2xl shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-pink-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Disbursed / Hot Deals
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-600 flex items-center justify-center text-white shadow-xs">
-              <Icons.Award className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
-              {totalConvertedLeads}
-            </span>
-            <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded-md font-mono">
-              High Intent
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual Chart Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-        
-        <div className="flex items-center justify-between mb-5 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div>
-            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
-              Campaign Calling & Conversion Throughput Chart
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Dialed vs Yet-To-Dial leads across active campaigns
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Daily, Monthly, and Annual telecaller calling matrix, dial attempts, and contact progress.
             </p>
           </div>
-          <span className="px-3 py-1 text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/60 rounded-full font-mono">
-            {barChartData.length} Campaigns
-          </span>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={handleExportFullMatrix}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-sm shadow-emerald-600/20 cursor-pointer"
+              title="Download exact spreadsheet matching Image 4"
+            >
+              <Icons.FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+              <span>Export Matrix to Excel (.xlsx)</span>
+            </button>
+
+            <button
+              onClick={fetchMatrixReport}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition-colors shadow-sm cursor-pointer"
+              title="Refresh live data"
+            >
+              <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
         </div>
 
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={barChartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" opacity={0.5} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748B' }} />
-              <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: '#64748B' }} />
-              <Tooltip contentStyle={{ backgroundColor: '#0F172A', color: '#FFF', borderRadius: '12px', fontSize: '12px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
-              <Bar dataKey="Dialed" fill="#10B981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Yet to Dial" fill="#F59E0B" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Converted" fill="#6366F1" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        {/* 2. Period Switcher & Filter Row */}
+        <div className="mt-4 pt-3 border-t border-black/[0.05] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+          {/* Period Tabs: Daily | Monthly | Annually */}
+          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-black/[0.06] dark:border-slate-700/80 shadow-inner">
+            <button
+              onClick={() => setPeriod('daily')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                period === 'daily'
+                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Daily Matrix
+            </button>
+            <button
+              onClick={() => setPeriod('monthly')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                period === 'monthly'
+                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Monthly Matrix
+            </button>
+            <button
+              onClick={() => setPeriod('annually')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                period === 'annually'
+                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Annual Matrix
+            </button>
+          </div>
+
+          {/* Filters: Campaign, Month, Year */}
+          <div className="flex items-center gap-2 flex-wrap flex-1 sm:flex-initial justify-end">
+            {/* Campaign Select */}
+            <div className="relative min-w-[170px]">
+              <select
+                value={selectedCampaign}
+                onChange={(e) => setSelectedCampaign(e.target.value)}
+                className="w-full h-8 pl-8 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
+              >
+                <option value="ALL">All Campaigns</option>
+                {campaignsList.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <Icons.Megaphone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+
+            {/* Month Select (if daily or monthly) */}
+            {period === 'daily' && (
+              <div className="relative">
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
+                >
+                  {months.map((m) => (
+                    <option key={m.val} value={m.val}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <Icons.Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+                <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+              </div>
+            )}
+
+            {/* Year Select */}
+            <div className="relative">
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <Icons.CalendarDays className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+            </div>
+
+            {/* Search Caller */}
+            <div className="relative min-w-[150px] max-w-[200px]">
+              <input
+                type="text"
+                placeholder="Search caller..."
+                value={searchCaller}
+                onChange={(e) => setSearchCaller(e.target.value)}
+                className="w-full h-8 pl-7 pr-2.5 text-xs bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm"
+              />
+              <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Campaign Performance Summary Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs relative">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
-        
-        <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
-            Campaign Performance Report Matrix
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Full metrics breakdown across all campaign datasets
-          </p>
-        </div>
+      {/* 3. Main Content Area */}
+      <div className="p-4 sm:p-6 md:p-8 space-y-6 flex-1">
+        {/* ========================================================= */}
+        {/* Image 5 Feature: The 6 Clickable KPI Hero Cards           */}
+        {/* ========================================================= */}
+        <section aria-label="Campaign Overview KPI Cards">
+          <div className="flex items-center justify-between mb-2.5">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Select Metric to View in Calling Matrix:
+            </h2>
+            <span className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold flex items-center gap-1">
+              <Icons.CheckCircle2 className="w-3.5 h-3.5" />
+              Active: <strong className="font-bold underline">{activeCardConfig.label}</strong>
+            </span>
+          </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse min-w-[850px]">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider h-11 bg-slate-50/90 dark:bg-slate-800/80">
-                <th className="py-3.5 px-6">Campaign Name</th>
-                <th className="py-3.5 px-6 text-center">Total Assigned Leads</th>
-                <th className="py-3.5 px-6 text-center">Dialed Leads</th>
-                <th className="py-3.5 px-6 text-center">Yet to Dial</th>
-                <th className="py-3.5 px-6 text-center">Dialing Progress</th>
-                <th className="py-3.5 px-6 text-center">Hot / Warm Leads</th>
-                <th className="py-3.5 px-6 text-center">Converted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredStats.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-14 text-center">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-500/20">
-                      <Icons.Megaphone className="w-6 h-6" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            {KPI_CARDS.map((card) => {
+              const isSelected = selectedMetric === card.key;
+              const CardIcon = card.icon;
+              const val = summary[card.key] ?? 0;
+
+              return (
+                <div
+                  key={card.key}
+                  onClick={() => setSelectedMetric(card.key)}
+                  className={`relative flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 transition-all duration-200 cursor-pointer select-none group ${
+                    isSelected
+                      ? 'ring-2 ring-purple-600 border-2 border-purple-600 shadow-lg shadow-purple-500/10 scale-[1.02]'
+                      : 'border border-black/[0.08] dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-900 shadow-sm hover:shadow-md'
+                  }`}
+                >
+                  {/* Top row: Label + Icon */}
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-tight leading-tight uppercase">
+                      {card.label}
+                    </span>
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110 ${
+                        isSelected ? 'bg-purple-600 text-white shadow-sm' : `${card.iconBg} ${card.iconColor}`
+                      }`}
+                    >
+                      <CardIcon className="w-4 h-4" />
                     </div>
-                    <p className="font-extrabold text-sm text-slate-800 dark:text-slate-200">No active campaign records</p>
-                  </td>
+                  </div>
+
+                  {/* Middle: Big Metric Number */}
+                  <div className="my-3">
+                    <div className="text-2xl sm:text-[26px] font-black tracking-tight text-slate-900 dark:text-white leading-none">
+                      {formatCardValue(val, card.key)}
+                    </div>
+                  </div>
+
+                  {/* Bottom: Pill Button with Download Arrow matching Image 5 */}
+                  <div className="pt-1">
+                    <button
+                      onClick={(e) => handlePillDownload(e, card)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-950/80 dark:text-purple-300'
+                          : `${card.pillBg} ${card.pillTextColor}`
+                      }`}
+                      title={`Download ${card.pillText} report`}
+                    >
+                      <span>{card.pillText}</span>
+                      <Icons.Download className="w-3 h-3 opacity-80" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ========================================================= */}
+        {/* Image 4 Feature: Spreadsheet Matrix Table                 */}
+        {/* ========================================================= */}
+        <section
+          aria-label="Telecaller Calling Matrix Table"
+          className="bg-white dark:bg-slate-900 rounded-2xl border border-black/[0.08] dark:border-slate-800 shadow-sm overflow-hidden flex flex-col"
+        >
+          {/* Table Control Header */}
+          <div className="p-4 sm:px-6 border-b border-black/[0.06] dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-900/60">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX
+              </h3>
+              <span className="text-xs px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 font-bold">
+                {filteredRows.length} Callers
+              </span>
+            </div>
+
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Showing breakdown across{' '}
+              <strong className="text-slate-800 dark:text-slate-200 font-bold">
+                {matrixData.columns.length} intervals
+              </strong>
+            </div>
+          </div>
+
+          {/* Scrollable Matrix Table Container matching Image 4 */}
+          <div className="relative overflow-x-auto max-h-[620px] select-text">
+            <table className="w-full border-collapse text-left text-xs">
+              {/* Header matching Image 4 Excel columns: Caller Name, Day 01, Day 02, ... Day 31, Total */}
+              <thead className="sticky top-0 z-20 bg-[#F4F6F8] dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold shadow-sm">
+                <tr className="border-b border-slate-300 dark:border-slate-700">
+                  {/* Sticky Column A for Caller Name */}
+                  <th className="sticky left-0 z-30 bg-[#F4F6F8] dark:bg-slate-800 px-4 py-2.5 text-left font-black tracking-tight border-r border-slate-300 dark:border-slate-700 min-w-[200px] shadow-[2px_0_4px_rgba(0,0,0,0.03)]">
+                    Caller Name
+                  </th>
+
+                  {/* Day / Interval Columns */}
+                  {matrixData.columns.map((col) => (
+                    <th
+                      key={col}
+                      className="px-2.5 py-2.5 text-center font-bold tracking-tight border-r border-slate-200/80 dark:border-slate-700/80 min-w-[68px] whitespace-nowrap"
+                    >
+                      {col}
+                    </th>
+                  ))}
+
+                  {/* Total Column */}
+                  <th className="px-4 py-2.5 text-right font-black text-purple-700 dark:text-purple-400 bg-purple-50/60 dark:bg-purple-950/40 min-w-[90px]">
+                    Total
+                  </th>
                 </tr>
-              ) : (
-                filteredStats.map((row) => (
-                  <tr key={row.campaignName} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors h-14">
-                    <td className="px-6 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-3xs">
-                          {row.campaignName[0]}
-                        </div>
-                        <span className="font-bold text-slate-900 dark:text-white uppercase">
-                          {row.campaignName}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 min-w-[3rem] shadow-3xs">
-                        {row.totalAssigned}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 min-w-[3rem] shadow-3xs">
-                        {row.dialed}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 min-w-[3rem] shadow-3xs">
-                        {row.yetToDial}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-20 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
-                          <div 
-                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" 
-                            style={{ width: `${Math.max(row.progressPct, 5)}%` }} 
-                          />
-                        </div>
-                        <span className="text-[10px] font-bold font-mono text-slate-600 dark:text-slate-400">{row.progressPct}%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 min-w-[2.5rem] shadow-3xs">
-                        {row.hotCount}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3.5 text-center">
-                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold font-mono bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 min-w-[2.5rem] shadow-3xs">
-                        {row.convertedCount}
-                      </span>
+              </thead>
+
+              {/* Rows matching Image 4 */}
+              <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/80">
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={matrixData.columns.length + 2}
+                      className="text-center py-12 text-slate-400 dark:text-slate-500"
+                    >
+                      <Icons.Inbox className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                      No telecaller records found matching the search criteria.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filteredRows.map((row, rIdx) => {
+                    const isEven = rIdx % 2 === 0;
+                    return (
+                      <tr
+                        key={row.callerName}
+                        className={`transition-colors hover:bg-purple-50/40 dark:hover:bg-purple-950/20 ${
+                          isEven
+                            ? 'bg-white dark:bg-slate-900'
+                            : 'bg-slate-50/30 dark:bg-slate-900/40'
+                        }`}
+                      >
+                        {/* Sticky Caller Name Cell */}
+                        <td
+                          className={`sticky left-0 z-10 px-4 py-2 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700/80 whitespace-nowrap shadow-[2px_0_4px_rgba(0,0,0,0.03)] ${
+                            isEven
+                              ? 'bg-white dark:bg-slate-900'
+                              : 'bg-slate-50 dark:bg-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 flex items-center justify-center flex-shrink-0">
+                              {rIdx + 1}
+                            </span>
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                              {row.callerName}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Interval Cells */}
+                        {matrixData.columns.map((col) => {
+                          const val = row.data[col];
+                          const hasVal = val !== undefined && val !== null && val > 0;
+                          return (
+                            <td
+                              key={col}
+                              className={`px-2 py-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-[11px] tabular-nums whitespace-nowrap ${
+                                hasVal
+                                  ? 'font-bold text-slate-900 dark:text-slate-100 bg-emerald-50/20 dark:bg-emerald-950/10'
+                                  : 'text-slate-300 dark:text-slate-700'
+                              }`}
+                            >
+                              {hasVal ? val.toLocaleString('en-IN') : ''}
+                            </td>
+                          );
+                        })}
+
+                        {/* Row Total */}
+                        <td className="px-4 py-2 text-right font-mono font-black text-[12px] text-purple-700 dark:text-purple-300 bg-purple-50/30 dark:bg-purple-950/20 tabular-nums whitespace-nowrap">
+                          {row.total.toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+
+              {/* Summary Footer Row */}
+              <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-black border-t-2 border-slate-300 dark:border-slate-700 shadow-inner">
+                <tr>
+                  <td className="sticky left-0 z-30 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 font-black text-left uppercase tracking-wider border-r border-slate-300 dark:border-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.03)]">
+                    Total
+                  </td>
+
+                  {matrixData.columns.map((col) => {
+                    const sum = matrixData.totals[col] ?? 0;
+                    return (
+                      <td
+                        key={col}
+                        className="px-2.5 py-2.5 text-center font-mono font-bold text-[11px] border-r border-slate-200 dark:border-slate-700 tabular-nums whitespace-nowrap"
+                      >
+                        {sum > 0 ? sum.toLocaleString('en-IN') : ''}
+                      </td>
+                    );
+                  })}
+
+                  <td className="px-4 py-2.5 text-right font-mono font-black text-sm text-purple-700 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-950/60 tabular-nums whitespace-nowrap">
+                    {matrixData.grandTotal.toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
   );

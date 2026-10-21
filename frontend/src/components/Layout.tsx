@@ -530,7 +530,7 @@ export default function Layout({ children }: LayoutProps) {
                     icon={Icons.Megaphone} 
                     colorClass="text-[#EA580C]" 
                     isCollapsed={isCollapsed}
-                    defaultOpen={location.pathname.startsWith('/modules/campaign')}
+                    defaultOpen={location.pathname.startsWith('/modules/campaign') || location.pathname === '/reports/campaign-report'}
                   >
                     {canAccessMenu('campaigns') && (
                       <SidebarItem to="/modules/campaigns" label="CAMPAIGN LIST" icon={Icons.Target} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
@@ -538,6 +538,7 @@ export default function Layout({ children }: LayoutProps) {
                     {canAccessMenu('campaignassignments') && (
                       <SidebarItem to="/modules/campaignassignments" label="ASSIGN CAMPAIGN" icon={Icons.UserCheck} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
                     )}
+                    <SidebarItem to="/reports/campaign-report" label="CAMPAIGN REPORT" icon={Icons.BarChart2} colorClass="text-[#EA580C]" indent isCollapsed={isCollapsed} />
                   </SidebarAccordion>
                 )}
 
@@ -547,6 +548,7 @@ export default function Layout({ children }: LayoutProps) {
                     {canAccessMenu('lead_reports') && (
                       <SidebarItem to="/reports/lead-reports" label="LEAD REPORTS" icon={Icons.ListFilter} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
                     )}
+                    <SidebarItem to="/reports/campaign-report" label="CAMPAIGN REPORT" icon={Icons.Megaphone} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
                     {canAccessMenu('telecaller_reports') && (
                       <SidebarItem to="/reports/telecaller-reports" label="TELECALLER'S REPORTS" icon={Icons.PhoneCall} colorClass="text-[#059669]" indent isCollapsed={isCollapsed} />
                     )}
@@ -625,7 +627,7 @@ export default function Layout({ children }: LayoutProps) {
                     if (path === '/reports/lead-reports') return 'Lead Reports';
                     if (path === '/reports/telecaller-reports') return "Telecaller's Reports";
                     if (path === '/reports/telecaller-monthly') return "Telecaller's Monthly Report";
-                    if (path === '/reports/campaign-report') return 'My Campaign Report';
+                    if (path === '/reports/campaign-report') return 'Campaign Calling & Performance Matrix';
                     if (path === '/reports/funnel-daily') return 'Daily Lead Funnel';
                     if (path === '/reports/funnel-monthly') return 'Monthly Lead Funnel';
                     if (path === '/reports/funnel-annual') return 'Annual Lead Funnel';

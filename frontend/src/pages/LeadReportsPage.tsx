@@ -30,8 +30,17 @@ export default function LeadReportsPage() {
   const years = ['2024', '2025', '2026', '2027'];
   
   const statusOptions = [
-    'New', 'Hot', 'Warm', 'Cedil Pending', 'Document Pending',
-    'Approval Pending', 'Approved', 'Disbursed', 'Rejected', 'Followup', 'Dropped', 'Pending'
+    'HOT LEADS',
+    'WARM LEADS',
+    'CEBIL PENDING',
+    'DOCUMENT PENDING',
+    'APPROVAL PENDING',
+    'APPROVED BUT NOT DISBUSE',
+    'DISBUSED',
+    'REJECTED',
+    'FOLLOWUP',
+    'DROPPED',
+    'PENDING'
   ];
 
   // Master Product Names matching website database (from Products module)
@@ -50,7 +59,7 @@ export default function LeadReportsPage() {
     setLoading(true);
     try {
       const [leadsRes, campRes] = await Promise.all([
-        api.get('/records/leads?limit=1000').catch(() => ({ data: [] })),
+        api.get('/records/leads?limit=5000').catch(() => ({ data: [] })),
         api.get('/records/campaigns?limit=1000').catch(() => ({ data: [] }))
       ]);
 
@@ -76,7 +85,11 @@ export default function LeadReportsPage() {
   // Filter leads based on selected criteria
   const filteredLeads = leads.filter((item) => {
     const data = item.data || {};
-    const statusMatch = selectedStatuses.length === 0 || selectedStatuses.some(s => (data.status || '').toLowerCase() === s.toLowerCase());
+    const itemStatus = (data.status || '').toLowerCase().trim();
+    const statusMatch = selectedStatuses.length === 0 || selectedStatuses.some(s => {
+      const sLower = s.toLowerCase().trim();
+      return itemStatus === sLower || itemStatus.includes(sLower) || sLower.includes(itemStatus);
+    });
     
     // Campaign match
     const leadCamp = (data.campaign || data.campaignName || item.campaignName || '').trim();
@@ -116,22 +129,43 @@ export default function LeadReportsPage() {
     showToast(`Exported ${filteredLeads.length} lead records to Excel!`, 'success');
   };
 
+  // Helper date formatters matching spreadsheet
+  const formatDateShort = (dateStr?: any) => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${String(d.getDate()).padStart(2, '0')}-${m[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+  };
+
+  const formatDateTimeFull = (dateStr?: any) => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${m[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}, ${hours}:${minutes} ${ampm}`;
+  };
+
   // Compute summary stats for the hero cards
   const totalAmount = filteredLeads.reduce((acc, item) => {
     const data = item.data || {};
-    const amt = Number(data.amount || data.loanAmount || 250000);
+    const amt = Number(data.amount || data.loanAmount || data.budget || 250000);
     return acc + (isNaN(amt) ? 0 : amt);
   }, 0);
 
   const hotAndConvertedCount = filteredLeads.filter((item) => {
     const st = (item.data?.status || item.status || '').toLowerCase();
-    return st.includes('hot') || st.includes('approved') || st.includes('disbursed');
+    return st.includes('hot') || st.includes('approved') || st.includes('disburs');
   }).length;
 
   const hotRate = filteredLeads.length > 0 ? Math.round((hotAndConvertedCount / filteredLeads.length) * 100) : 0;
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-4">
+    <div className="space-y-6 max-w-[1600px] mx-auto text-left px-3 sm:px-6 md:px-8 py-4">
       {/* 4 Vibrant Metric Hero Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Leads */}
@@ -139,7 +173,7 @@ export default function LeadReportsPage() {
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Filtered Leads
+              Filtered Pipeline Leads
             </span>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xs">
               <Icons.Users className="w-4.5 h-4.5" />
@@ -219,7 +253,7 @@ export default function LeadReportsPage() {
         </div>
       </div>
 
-      {/* FILTER CONTROL CARD (With Multi-Select Checkboxes) */}
+      {/* FILTER CONTROL CARD */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-visible z-20">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
         
@@ -234,15 +268,14 @@ export default function LeadReportsPage() {
           </div>
           <button
             onClick={exportCSV}
-            className="h-9 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all flex items-center justify-center gap-2"
+            className="h-9 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <Icons.Download className="w-3.5 h-3.5" />
-            Export Excel
+            Export Excel (19 Columns)
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Select Month */}
           <MultiSelectDropdown
             label="Select Month"
             options={months}
@@ -250,8 +283,6 @@ export default function LeadReportsPage() {
             onChange={setSelectedMonths}
             placeholder="-All Months-"
           />
-
-          {/* Select Year */}
           <MultiSelectDropdown
             label="Select Year"
             options={years}
@@ -259,8 +290,6 @@ export default function LeadReportsPage() {
             onChange={setSelectedYears}
             placeholder="-All Years-"
           />
-
-          {/* Campaign Filter */}
           <MultiSelectDropdown
             label="Campaign Filter"
             options={campaignsList.length > 0 ? campaignsList : ['No Active Campaigns']}
@@ -268,8 +297,6 @@ export default function LeadReportsPage() {
             onChange={setSelectedCampaigns}
             placeholder="-All Campaigns-"
           />
-
-          {/* Lead Status */}
           <MultiSelectDropdown
             label="Lead Status"
             options={statusOptions}
@@ -277,8 +304,6 @@ export default function LeadReportsPage() {
             onChange={setSelectedStatuses}
             placeholder="-All Statuses-"
           />
-
-          {/* Loan Type */}
           <MultiSelectDropdown
             label="Loan Type"
             options={loanTypes}
@@ -288,7 +313,6 @@ export default function LeadReportsPage() {
           />
         </div>
 
-        {/* View Detail Report Action */}
         <div className="flex justify-end mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
           <button
             onClick={handleFilterClick}
@@ -300,19 +324,26 @@ export default function LeadReportsPage() {
         </div>
       </div>
 
-      {/* DETAILED DATA TABLE */}
+      {/* DETAILED DATA TABLE (19 Columns matching user's spreadsheet in Images 1, 2, 3) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs relative">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
         
         <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div>
             <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
-              Detailed Lead Audit Matrix
+              Detailed Lead Audit Matrix (19 Columns)
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Showing {filteredLeads.length} record entries with live data attributes
+              Showing {filteredLeads.length} real pipeline records matching official report structure
             </p>
           </div>
+          <button
+            onClick={exportCSV}
+            className="h-8 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold uppercase rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Icons.FileSpreadsheet className="w-3.5 h-3.5" />
+            Download XLSX
+          </button>
         </div>
 
         {loading ? (
@@ -328,96 +359,105 @@ export default function LeadReportsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[850px]">
+          <div className="overflow-x-auto max-w-full">
+            <table className="w-full text-left text-xs whitespace-nowrap min-w-[2000px]">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider h-11 bg-slate-50/90 dark:bg-slate-800/80">
-                  <th className="py-3.5 px-6">Lead ID</th>
-                  <th className="py-3.5 px-6">Client Name</th>
-                  <th className="py-3.5 px-6">Contact Info</th>
-                  <th className="py-3.5 px-6">Loan Type</th>
-                  <th className="py-3.5 px-6">Status</th>
-                  <th className="py-3.5 px-6">Amount</th>
-                  <th className="py-3.5 px-6">Period</th>
-                  <th className="py-3.5 px-6">Assigned Agent</th>
+                <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider h-11 bg-slate-50/90 dark:bg-slate-800/80 sticky top-0">
+                  <th className="py-3 px-4 font-mono">Sl.No.:</th>
+                  <th className="py-3 px-4">Createddate</th>
+                  <th className="py-3 px-4">data code</th>
+                  <th className="py-3 px-4">location</th>
+                  <th className="py-3 px-5">Customer Name</th>
+                  <th className="py-3 px-5">Company name</th>
+                  <th className="py-3 px-4">Mobile No</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">CASE DEATAILS</th>
+                  <th className="py-3 px-5">Remarks</th>
+                  <th className="py-3 px-4">lead_category</th>
+                  <th className="py-3 px-4">Loan Amount</th>
+                  <th className="py-3 px-5">Loan type</th>
+                  <th className="py-3 px-5">Bank Names</th>
+                  <th className="py-3 px-4">Source</th>
+                  <th className="py-3 px-4">PSM</th>
+                  <th className="py-3 px-4">Assigned To</th>
+                  <th className="py-3 px-4">FollowUp Date</th>
+                  <th className="py-3 px-4">Modified Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
                 {filteredLeads.map((item, idx) => {
                   const data = item.data || {};
                   
-                  // Clean realistic client name resolver
-                  const rawName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.fullName || data.name || data.companyName || data.company;
-                  const fallbackNames = ['Rahul Sharma', 'Ananya Patel', 'Vikram Malhotra', 'Priya Nair', 'Amitabh Roy', 'Siddharth Rao', 'Neha Deshmukh', 'Karan Sengupta'];
-                  const name = (rawName && !rawName.toLowerCase().includes('hotlead') && !rawName.toLowerCase().includes('lead #')) 
-                    ? rawName 
-                    : fallbackNames[idx % fallbackNames.length];
-
-                  // Clean realistic contact info
-                  const rawEmail = data.email || '';
-                  const email = (rawEmail && !rawEmail.includes('@test.com'))
-                    ? rawEmail
-                    : `${name.toLowerCase().replace(/\s+/g, '.')}@gmail.com`;
-
-                  const phone = data.phone || data.mobile || `+91 98${76543210 + (idx * 137) % 8999999}`;
-
-                  const loanType = data.loanType || data.serviceType || data.product || 'SALARIED PERSONAL LOAN';
-                  const status = data.status || 'New';
-                  const amount = data.amount || data.loanAmount || (250000 + (idx * 50000) % 500000);
-                  const agent = item.assignedTo?.name || data.assignedTo || data.psm || data.telecaller || 'Rajabaksh Ilyala';
-
-                  // Format created date period
-                  const dateObj = item.createdAt ? new Date(item.createdAt) : new Date();
-                  const period = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                  const slNo = idx + 1;
+                  const createdDate = formatDateShort(item.createdAt || data.createdAt);
+                  const dataCode = data.dataCode || data.data_code || data.code || 'N/A';
+                  const location = data.location || data.city || data.presentAddress || 'N/A';
+                  
+                  const customerName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.customerName || data.fullName || data.customer || data.name || 'N/A';
+                  const companyName = data.company || data.firmName || data.firm_name || data.companyName || 'N/A';
+                  const mobileNo = data.phone || data.mobile || data.contactNum || data.mobileNo || 'N/A';
+                  const status = (data.status || 'HOT LEADS').toUpperCase();
+                  const caseDetails = data.caseDetails || data.case_details || data.caseStatus || 'N/A';
+                  const remarks = data.remarks || data.notes || data.remark || 'N/A';
+                  const leadCategory = data.leadCategory || data.lead_category || data.category || 'N/A';
+                  
+                  const loanAmountNum = Number(data.loanAmount || data.budget || data.amount);
+                  const loanAmount = !isNaN(loanAmountNum) && loanAmountNum > 0 ? `₹${loanAmountNum.toLocaleString('en-IN')}` : 'N/A';
+                  
+                  const loanType = data.loanType || data.loanProduct || data.product || 'SALARIED PERSONAL LOAN';
+                  const bankNames = data.bankNames || data.bank || data.businessPartner || 'N/A';
+                  const source = data.source || data.creatorName || 'Ink CRM';
+                  const psm = data.psm || data.psmName || 'N/A';
+                  
+                  let assignedTo = 'Unassigned';
+                  if (data.assignedTo) {
+                    if (typeof data.assignedTo === 'object') {
+                      assignedTo = `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim() || data.assignedTo.name || 'Assigned';
+                    } else {
+                      assignedTo = String(data.assignedTo);
+                    }
+                  }
+                  
+                  const followUpDate = data.followUpDate ? formatDateShort(data.followUpDate) : 'N/A';
+                  const modifiedDate = formatDateTimeFull(item.updatedAt || data.updatedAt || item.createdAt);
 
                   return (
-                    <tr key={item._id || idx} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors h-14">
-                      <td className="py-3.5 px-6 font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
-                        #{item._id ? item._id.substring(item._id.length - 6).toUpperCase() : `LD-100${idx}`}
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-3xs">
-                            {name[0]}
-                          </div>
-                          <span className="font-bold text-slate-900 dark:text-slate-100">
-                            {name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">{phone}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{email}</div>
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <span className="px-2.5 py-1 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/50 text-[11px] font-bold">
-                          {loanType}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border font-mono ${
-                          status.toLowerCase() === 'disbursed' || status.toLowerCase() === 'approved'
+                    <tr key={item._id || idx} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors h-12">
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-500 dark:text-slate-400">{slNo}</td>
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-300">{createdDate}</td>
+                      <td className="py-2.5 px-4 font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400">{dataCode}</td>
+                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300">{location}</td>
+                      <td className="py-2.5 px-5 font-bold text-slate-900 dark:text-white">{customerName}</td>
+                      <td className="py-2.5 px-5 text-slate-700 dark:text-slate-200">{companyName}</td>
+                      <td className="py-2.5 px-4 font-mono text-slate-800 dark:text-slate-200">{mobileNo}</td>
+                      <td className="py-2.5 px-4">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border font-mono ${
+                          status.includes('DISBUS') || status.includes('APPROVED')
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                            : status.toLowerCase() === 'hot'
+                            : status.includes('HOT')
                             ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
-                            : status.toLowerCase() === 'followup' || status.toLowerCase() === 'warm'
+                            : status.includes('WARM') || status.includes('PENDING')
                             ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
                             : 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800'
                         }`}>
                           {status}
                         </span>
                       </td>
-                      <td className="py-3.5 px-6 font-bold text-slate-900 dark:text-white font-mono">
-                        ₹{Number(amount).toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-3.5 px-6 font-medium text-slate-500 dark:text-slate-400 text-[11px]">
-                        {period}
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
-                          {agent}
+                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300 max-w-[200px] truncate" title={caseDetails}>{caseDetails}</td>
+                      <td className="py-2.5 px-5 text-slate-600 dark:text-slate-300 max-w-[220px] truncate" title={remarks}>{remarks}</td>
+                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300">{leadCategory}</td>
+                      <td className="py-2.5 px-4 font-mono font-bold text-slate-900 dark:text-white">{loanAmount}</td>
+                      <td className="py-2.5 px-5">
+                        <span className="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10.5px] font-bold">
+                          {loanType}
                         </span>
                       </td>
+                      <td className="py-2.5 px-5 text-slate-700 dark:text-slate-200">{bankNames}</td>
+                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300">{source}</td>
+                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300">{psm}</td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">{assignedTo}</td>
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-300">{followUpDate}</td>
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-500 dark:text-slate-400">{modifiedDate}</td>
                     </tr>
                   );
                 })}
@@ -429,3 +469,4 @@ export default function LeadReportsPage() {
     </div>
   );
 }
+

@@ -1,29 +1,31 @@
 import * as XLSX from 'xlsx';
 
 export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lead_Report') => {
+  // Exact 19 Columns matching user specification and screenshots (Images 1, 2, 3)
   const headers = [
-    'Sl.No.',
+    'Sl.No.:',
     'Createddate',
+    'data code',
+    'location',
     'Customer Name',
+    'Company name',
     'Mobile No',
-    'Firm / Company',
-    'Turnover / Salary',
-    'Loan Amount',
-    'present address',
-    'City',
-    'Loan Product',
-    'Bank Names',
-    'PSM',
     'Status',
+    'CASE DEATAILS',
     'Remarks',
+    'lead_category',
+    'Loan Amount',
+    'Loan type',
+    'Bank Names',
     'Source',
+    'PSM',
     'Assigned To',
     'FollowUp Date',
     'Modified Date'
   ];
 
   const formatDateShort = (dateStr?: any) => {
-    if (!dateStr) return '';
+    if (!dateStr) return 'N/A';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -34,23 +36,35 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
   };
 
   const formatDateTimeFull = (dateStr?: any) => {
-    if (!dateStr) return '';
+    if (!dateStr) return 'N/A';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
-    return d.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    }).replace(',', '');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${month} ${day} ${year}, ${hours}:${minutes} ${ampm}`;
+  };
+
+  const formatCurrency = (val: any) => {
+    if (val === undefined || val === null || val === '') return 'N/A';
+    const num = Number(val);
+    if (isNaN(num)) return String(val);
+    return `₹${num.toLocaleString('en-IN')}`;
   };
 
   const dataRows = (leads || []).map((lead: any, idx: number) => {
     const data = lead.data || lead;
     const slNo = idx + 1;
     const createdDate = formatDateShort(lead.createdAt || data.createdAt || data.createddate);
+
+    const dataCode = String(data.dataCode || data.data_code || data.code || 'N/A').trim();
+    const location = String(data.location || data.city || data.presentAddress || 'N/A').trim();
 
     const customerName = String(
       `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
@@ -62,18 +76,20 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       'N/A'
     ).trim();
 
+    const companyName = String(data.company || data.firmName || data.firm_name || data.firm || data.companyName || 'N/A').trim();
     const mobileNo = String(data.phone || data.mobile || data.contactNum || data.contact_num || data.mobileNo || 'N/A').trim();
-    const firmCompany = String(data.company || data.firmName || data.firm_name || data.firm || data.firmCompany || '').trim();
-    const turnoverSalary = String(data.turnover || data.salary || data.income || data.turnoverSalary || '').trim();
-    const loanAmount = String(data.loanAmount || data.budget || data.amount || data.requiredLoan || '').trim();
-    const presentAddress = String(data.presentAddress || data.address || data.locationAddress || data.present_address || '').trim();
-    const city = String(data.city || data.location || '').trim();
-    const loanProduct = String(data.loanProduct || data.loanType || data.product || data.serviceType || '').trim();
-    const bankNames = String(data.bankNames || data.bank || data.preferredBank || '').trim();
-    const psm = String(data.psm || data.psmName || data.psm_name || '').trim();
-    const status = String(data.status || 'New').trim();
-    const remarks = String(data.remarks || data.notes || '').trim();
-    const source = String(data.source || data.campaign || data.campaignName || data.campaign_name || '').trim();
+    const status = String(data.status || 'HOT LEADS').trim().toUpperCase();
+    const caseDetails = String(data.caseDetails || data.case_details || data.caseStatus || data.case_status || 'N/A').trim();
+    const remarks = String(data.remarks || data.notes || data.remark || 'N/A').trim();
+    const leadCategory = String(data.leadCategory || data.lead_category || data.category || 'N/A').trim();
+
+    const loanAmountRaw = data.loanAmount || data.budget || data.amount || data.requiredLoan;
+    const loanAmount = formatCurrency(loanAmountRaw);
+
+    const loanType = String(data.loanType || data.loanProduct || data.product || data.serviceType || 'SALARIED PERSONAL LOAN').trim().toUpperCase();
+    const bankNames = String(data.bankNames || data.bank || data.businessPartner || data.preferredBank || 'N/A').trim();
+    const source = String(data.source || data.creatorName || data.assignedAgent || 'Ink CRM').trim();
+    const psm = String(data.psm || data.psmName || data.psm_name || 'N/A').trim();
 
     let assignedTo = 'Unassigned';
     if (data.assignedTo) {
@@ -88,25 +104,26 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       assignedTo = String(lead.assignedToName);
     }
 
-    const followUpDate = formatDateTimeFull(data.followUpDate || data.nextFollowup || data.dialedAt || data.lastCallDate);
-    const modifiedDate = formatDateTimeFull(lead.updatedAt || data.updatedAt);
+    const followUpDate = data.followUpDate ? formatDateShort(data.followUpDate) : 'N/A';
+    const modifiedDate = formatDateTimeFull(lead.updatedAt || data.updatedAt || lead.createdAt);
 
     return {
-      'Sl.No.': slNo,
+      'Sl.No.:': slNo,
       'Createddate': createdDate,
+      'data code': dataCode,
+      'location': location,
       'Customer Name': customerName,
+      'Company name': companyName,
       'Mobile No': mobileNo,
-      'Firm / Company': firmCompany,
-      'Turnover / Salary': turnoverSalary,
-      'Loan Amount': loanAmount,
-      'present address': presentAddress,
-      'City': city,
-      'Loan Product': loanProduct,
-      'Bank Names': bankNames,
-      'PSM': psm,
       'Status': status,
+      'CASE DEATAILS': caseDetails,
       'Remarks': remarks,
+      'lead_category': leadCategory,
+      'Loan Amount': loanAmount,
+      'Loan type': loanType,
+      'Bank Names': bankNames,
       'Source': source,
+      'PSM': psm,
       'Assigned To': assignedTo,
       'FollowUp Date': followUpDate,
       'Modified Date': modifiedDate
@@ -148,7 +165,6 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Lead Report');
 
   const cleanPrefix = (fileNamePrefix || 'Lead_Report').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-  const fileName = `${cleanPrefix}.xlsx`;
-
-  XLSX.writeFile(workbook, fileName);
+  const dateStamp = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(workbook, `${cleanPrefix}_${dateStamp}.xlsx`);
 };

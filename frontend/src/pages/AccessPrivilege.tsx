@@ -82,6 +82,14 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
     icon: 'Calendar',
     description: 'Month-on-month telecaller conversion velocity and disposition analysis.'
   },
+  {
+    key: 'campaign_report',
+    label: 'Campaign Report',
+    category: 'Reports & Analytics',
+    path: '/reports/campaign-report',
+    icon: 'Megaphone',
+    description: 'Daily, monthly, and annual campaign outbound calling matrix with 6-card KPI controls.'
+  },
 
   // 3. FUNNEL
   {
