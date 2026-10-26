@@ -3,26 +3,69 @@ import * as Icons from 'lucide-react';
 import api, { FILE_BASE_URL } from '../services/api';
 import { useThemeStore } from '../store/themeStore';
 import { Link, useNavigate } from 'react-router-dom';
-import { DynamicIcon } from '../components/Layout';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { formatDate } from '../utils/dateFormatter';
 import { useToastStore } from '../store/toastStore';
 import SalesFunnel3D from '../components/SalesFunnel3D';
+import { getStatusTokens } from '../utils/statusTokenMapper';
+
+// Reusable Animated Number component with tabular-nums and ease-out interpolation
+function AnimatedNumber({
+  value,
+  duration = 500,
+  prefix = '',
+  suffix = '',
+  format
+}: {
+  value: number;
+  duration?: number;
+  prefix?: string;
+  suffix?: string;
+  format?: (n: number) => string;
+}) {
+  const [displayValue, setDisplayValue] = useState<number>(0);
+  const startRef = useRef<number | null>(null);
+  const targetRef = useRef<number>(value);
+
+  useEffect(() => {
+    targetRef.current = value;
+    startRef.current = null;
+    let frameId: number;
+
+    const animate = (timestamp: number) => {
+      if (!startRef.current) startRef.current = timestamp;
+      const progress = Math.min((timestamp - startRef.current) / duration, 1);
+      // easeOutCubic
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(targetRef.current * ease);
+      setDisplayValue(current);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(animate);
+      }
+    };
+
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [value, duration]);
+
+  const formatted = format ? format(displayValue) : displayValue.toLocaleString('en-IN');
+  return (
+    <span className="tabular-nums">
+      {prefix}{formatted}{suffix}
+    </span>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { showToast } = useToastStore();
   const { branding } = useThemeStore();
-  const [animate, setAnimate] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [activeTab] = useState<'overview' | 'pipeline' | 'followups'>('overview');
   const [followupTab, setFollowupTab] = useState<'today' | 'upcoming'>('today');
 
-  // File upload, Search input ref and History timeline states
+  // File upload and History timeline states
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
   const [activeHistoryRecord, setActiveHistoryRecord] = useState<any | null>(null);
   const [historyActivities, setHistoryActivities] = useState<any[]>([]);
@@ -50,18 +93,6 @@ export default function Dashboard() {
     staleTime: 60000,
     placeholderData: keepPreviousData
   });
-
-  // Cmd+K / Ctrl+K Keyboard Shortcut Listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   const handleUploadClick = (recordId: string) => {
     setUploadingRecordId(recordId);
@@ -183,26 +214,6 @@ export default function Dashboard() {
     }
   }, [metricsData]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setAnimate(true), 150);
-    return () => clearTimeout(timer);
-  }, [metricsData]);
-
-  const handleGlobalSearch = async (val: string) => {
-    setSearchQuery(val);
-    if (val.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    try {
-      const res = await api.get(`/search?q=${val}`);
-      const results = res.data;
-      setSearchResults(results.filter((r: any) => r.records.length > 0));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   const getStatusCount = (lbl: string) => {
     if (!metricsData?.statusCounts) return 0;
     const raw = (lbl || '').trim();
@@ -265,25 +276,6 @@ export default function Dashboard() {
     return 0;
   };
 
-  // Helper to resolve card theme color strictly matching intuitive status palette
-  const getCardThemeColor = (name: string): string => {
-    const upper = (name || '').toUpperCase();
-    if (upper.includes('TODAY')) return '#4F46E5'; // Royal Indigo
-    if (upper.includes('HOT')) return '#EF4444'; // Flame / Coral Red
-    if (upper.includes('WARM')) return '#F59E0B'; // Amber Orange
-    if (upper.includes('NOT REACH') || upper.includes('REACHABLE')) return '#64748B'; // Cool Slate
-    if (upper.includes('CEDIL') || upper.includes('CEBIL')) return '#EC4899'; // Rose / Pink
-    if (upper.includes('DOCUMENT') || upper.includes('DOC')) return '#0D9488'; // Teal
-    if (upper.includes('APPROVAL') || (upper.includes('APPROV') && upper.includes('PEND'))) return '#F97316'; // Vivid Orange
-    if (upper.includes('APPROVED')) return '#10B981'; // Mint Green
-    if (upper.includes('DISBURSED') || upper.includes('DISBURS')) return '#16A34A'; // Success Emerald
-    if (upper.includes('REJECTED') || upper.includes('REJECT')) return '#DC2626'; // Crimson Red
-    if (upper.includes('FOLLOWUP') || upper.includes('FOLLOW')) return '#2563EB'; // Royal Blue
-    if (upper.includes('DROPPED') || upper.includes('DROP')) return '#EA580C'; // Burnt Orange
-    if (upper.includes('PENDING')) return '#8B5CF6'; // Violet / Purple
-    return '#4F46E5';
-  };
-
   // Construct dynamic metric cards from configured statuses in Settings, plus Today's Followups
   const getDynamicMetricCards = () => {
     const todaysFollowupsCard = {
@@ -311,13 +303,13 @@ export default function Dashboard() {
             category = 'followups';
           }
 
-          const themeColor = st.color || getCardThemeColor(st.name);
+          const themeTokens = getStatusTokens(st);
 
           return {
             label: st.name.toUpperCase(),
             rawName: st.name,
             category,
-            accentColor: themeColor,
+            accentColor: st.color || themeTokens.accentHex,
             icon: IconComp,
             sub: st.isFinal 
               ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') 
@@ -333,14 +325,14 @@ export default function Dashboard() {
     return [
       { label: 'HOT LEADS', rawName: 'HOT LEADS', category: 'pipeline', icon: Icons.Flame, sub: 'Stage #2', accentColor: '#EF4444' },
       { label: 'WARM LEADS', rawName: 'WARM LEADS', category: 'pipeline', icon: Icons.Sun, sub: 'Stage #3', accentColor: '#F59E0B' },
-      { label: 'CEBIL PENDING', rawName: 'CEBIL PENDING', category: 'pipeline', icon: Icons.FileWarning, sub: 'Stage #5', accentColor: '#EC4899' },
+      { label: 'CEBIL PENDING', rawName: 'CEBIL PENDING', category: 'pipeline', icon: Icons.FileWarning, sub: 'Stage #5', accentColor: '#0284C7' },
       { label: 'DOCUMENT PENDING', rawName: 'DOCUMENT PENDING', category: 'pipeline', icon: Icons.FileText, sub: 'Stage #6', accentColor: '#0D9488' },
       { label: 'APPROVAL PENDING', rawName: 'APPROVAL PENDING', category: 'pipeline', icon: Icons.Clock, sub: 'Stage #7', accentColor: '#F97316' },
       { label: 'APPROVED BUT NOT DISBUSE', rawName: 'APPROVED BUT NOT DISBUSE', category: 'pipeline', icon: Icons.CheckCircle, sub: 'Stage #8', accentColor: '#10B981' },
-      { label: 'DISBUSED', rawName: 'DISBUSED', category: 'pipeline', icon: Icons.Banknote, sub: '✔ Closed Won', accentColor: '#16A34A' },
-      { label: 'REJECTED', rawName: 'REJECTED', category: 'overview', icon: Icons.XOctagon, sub: '✕ Closed Final', accentColor: '#DC2626' },
-      { label: 'FOLLOWUP', rawName: 'FOLLOWUP', category: 'followups', icon: Icons.PhoneCall, sub: 'Stage #11', accentColor: '#2563EB' },
-      { label: 'DROPPED', rawName: 'DROPPED', category: 'overview', icon: Icons.ArrowDownCircle, sub: '✕ Closed Final', accentColor: '#EA580C' },
+      { label: 'DISBUSED', rawName: 'DISBUSED', category: 'pipeline', icon: Icons.Banknote, sub: '✔ Closed Won', accentColor: '#10B981' },
+      { label: 'REJECTED', rawName: 'REJECTED', category: 'overview', icon: Icons.XOctagon, sub: '✕ Closed Final', accentColor: '#F43F5E' },
+      { label: 'FOLLOWUP', rawName: 'FOLLOWUP', category: 'followups', icon: Icons.PhoneCall, sub: 'Stage #11', accentColor: '#0284C7' },
+      { label: 'DROPPED', rawName: 'DROPPED', category: 'overview', icon: Icons.ArrowDownCircle, sub: '✕ Closed Final', accentColor: '#F43F5E' },
       { label: 'PENDING', rawName: 'PENDING', category: 'followups', icon: Icons.Hourglass, sub: 'Stage #13', accentColor: '#8B5CF6' },
       todaysFollowupsCard
     ];
@@ -392,12 +384,6 @@ export default function Dashboard() {
 
   const maxPipelineVal = Math.max(...rawPipeline.map(s => s.val), 1);
 
-  const pipelineStages = rawPipeline.map(s => ({
-    ...s,
-    pctNum: Math.max(6, Math.round((s.val / maxPipelineVal) * 100)),
-    pct: `${Math.max(6, Math.round((s.val / maxPipelineVal) * 100))}%`
-  }));
-
   const totalPipeline = rawPipeline.reduce((a, b) => a + Number(b.val), 0);
   const activeDeals = metricsData?.dealStatus?.open || 12;
   const avgDealSize = activeDeals > 0 ? Math.round(totalPipeline / activeDeals) : 25000;
@@ -407,25 +393,21 @@ export default function Dashboard() {
   const totalClosed = wonCount + lostCount;
   const winRate = totalClosed > 0 ? Math.round((wonCount / totalClosed) * 100) : 80;
 
-  const stageMeta: Record<string, { icon: React.ComponentType<any>; color: string; bgTint: string }> = {
-    'Lead Ingestion / New': { icon: Icons.UserPlus, color: '#4F46E5', bgTint: 'rgba(79, 70, 229, 0.1)' },
-    'Qualification & Hot Leads': { icon: Icons.Flame, color: '#059669', bgTint: 'rgba(5, 150, 105, 0.1)' },
-    'Proposal & Documentation': { icon: Icons.FileText, color: '#D97706', bgTint: 'rgba(217, 119, 6, 0.1)' },
-    'Negotiation & Approval': { icon: Icons.TrendingUp, color: '#EA580C', bgTint: 'rgba(234, 88, 12, 0.1)' },
-    'Disbursed / Closed Won': { icon: Icons.CheckCircle2, color: '#7C3AED', bgTint: 'rgba(124, 58, 237, 0.1)' }
-  };
-
   if (showDelayedSkeleton && !metricsData) {
     return (
       <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-6">
-        <div className="h-8 w-64 rounded animate-shimmer bg-slate-200 dark:bg-slate-700"></div>
-        <div className="h-64 rounded-lg animate-shimmer bg-slate-100 dark:bg-slate-800"></div>
+        <div className="h-8 w-64 rounded-control animate-shimmer bg-surface-raised"></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-32 rounded-card animate-shimmer bg-surface-card border border-border-subtle"></div>
+          ))}
+        </div>
         {isTakingLonger && (
-          <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-center space-y-2">
-            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Taking longer than usual...</p>
+          <div className="p-4 bg-status-warm-bg border border-status-warm-border rounded-card text-center space-y-2">
+            <p className="text-xs font-semibold text-status-warm-text">Taking longer than usual...</p>
             <button
               onClick={() => refetchMetrics()}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-card transition-colors cursor-pointer"
             >
               Retry Connection
             </button>
@@ -438,19 +420,19 @@ export default function Dashboard() {
   if (isMetricsError && !metricsData) {
     return (
       <div className="max-w-[1400px] mx-auto text-left px-4 md:px-8 py-12">
-        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 shadow-xs text-center max-w-lg mx-auto space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+        <div className="p-6 rounded-card bg-surface-card border border-status-danger-border shadow-card text-center max-w-lg mx-auto space-y-4">
+          <div className="w-12 h-12 rounded-control bg-status-danger-bg text-status-danger flex items-center justify-center mx-auto border border-status-danger-border">
             <Icons.AlertCircle className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Unable to Load Dashboard Data</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <h3 className="text-base font-bold text-content-primary">Unable to Load Dashboard Data</h3>
+            <p className="text-xs text-content-muted mt-1">
               {(metricsError as any)?.message || 'The request was blocked or could not reach the server.'}
             </p>
           </div>
           <button
             onClick={() => refetchMetrics()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-card transition-colors cursor-pointer"
           >
             <Icons.RefreshCw className="w-3.5 h-3.5" />
             Retry Connection
@@ -463,120 +445,53 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-6">
       
-      {/* 1. TOP ACTION & CONTROLS BAR (Stripe/Linear Elevated Primary Action Row) */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 py-4.5 border-b border-black/[0.08] dark:border-slate-800">
-        
-        {/* Command Search Bar - Confident Elevated Input with Focus Glow */}
-        <div className="relative flex-1 max-w-xl">
-          <div className="relative flex items-center group w-full">
-            <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 min-w-[16px] max-w-[16px] min-h-[16px] max-h-[16px] text-[#4F46E5] pointer-events-none stroke-[2.2] flex-shrink-0" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleGlobalSearch(e.target.value)}
-              placeholder="Search leads, deals, contacts, campaigns..."
-              className="w-full h-11 pl-11 pr-14 text-xs md:text-sm bg-white dark:bg-slate-800/90 border-2 border-stone-200 dark:border-slate-700 hover:border-stone-300 dark:hover:border-slate-600 rounded-xl focus:outline-none focus:border-[#4F46E5] focus:ring-2 focus:ring-[#4F46E5]/15 focus:bg-white transition-all text-[#1C1917] dark:text-white font-medium shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] placeholder:text-[#78716C] dark:placeholder:text-stone-400"
-            />
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
-              <kbd className="hidden sm:inline-flex items-center text-[10.5px] font-mono font-bold text-[#57534E] dark:text-stone-300 bg-[#F5F5F4] dark:bg-slate-700/80 border border-black/[0.08] dark:border-slate-600 px-2 py-0.5 rounded-md shadow-2xs">
-                ⌘K
-              </kbd>
-            </div>
-          </div>
-
-          {/* Search Results Dropdown */}
-          {searchQuery && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-black/[0.08] dark:border-slate-700 shadow-xl rounded-xl overflow-hidden max-h-80 overflow-y-auto z-50 p-2 space-y-2 text-left">
-              {searchResults.length === 0 ? (
-                <div className="p-4 text-center text-xs text-[#6B7280] font-medium">
-                  No lead, contact, or firm matching "{searchQuery}"
-                </div>
-              ) : (
-                searchResults.map(({ module, records }) => (
-                  <div key={module._id} className="space-y-1">
-                    <div className="px-3 py-1 bg-[#FAFAF9] dark:bg-slate-900 rounded-lg text-[10px] font-bold text-[#6B7280] uppercase tracking-wider flex items-center gap-1.5">
-                      <DynamicIcon name={module.icon} className="w-3.5 h-3.5 text-[#111111]" />
-                      {module.pluralLabel} ({records.length})
-                    </div>
-                    {records.map((rec: any) => {
-                      const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.company || 'Lead Record';
-                      const phone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contact;
-                      const code = rec.data?.dataCode || rec.data?.allocatedNo || rec.data?.leadNo || (rec._id ? `LND-${String(rec._id).slice(-6).toUpperCase()}` : '');
-                      const company = rec.data?.company || rec.data?.firmName;
-
-                      return (
-                        <Link
-                          key={rec._id}
-                          to={`/modules/${module.apiPath}/${rec._id}`}
-                          onClick={() => setSearchQuery('')}
-                          className="flex items-center justify-between p-2.5 hover:bg-[#FAFAF9] dark:hover:bg-slate-700/50 rounded-lg transition-all text-left group border border-transparent hover:border-black/[0.08]"
-                        >
-                          <div className="min-w-0 flex-1 pr-2">
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs font-bold text-[#1A1A1A] dark:text-white truncate group-hover:text-black transition-colors">
-                                {name}
-                              </p>
-                              {code && (
-                                <span className="text-[9px] font-bold bg-[#FAFAF9] border border-black/[0.08] text-[#111111] px-1.5 py-0.5 rounded uppercase flex-shrink-0">
-                                  #{code}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 mt-0.5 text-[10px] text-[#6B7280] font-medium truncate">
-                              {company && <span>Firm: <strong className="text-[#1A1A1A] dark:text-slate-300">{company}</strong></span>}
-                              {phone && <span>Ph: <strong className="text-[#1A1A1A] dark:text-slate-300">{phone}</strong></span>}
-                            </div>
-                          </div>
-                          <Icons.ChevronRight className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#111111] transition-colors flex-shrink-0" />
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+      {/* 1. TOP HEADER & TELEMETRY CONTROLS */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border-subtle">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-content-primary tracking-tight">
+            Lending Operations Overview
+          </h1>
+          <p className="text-xs sm:text-sm text-content-muted mt-0.5">
+            Live pipeline velocity, status distributions, and scheduled follow-ups
+          </p>
         </div>
 
-        {/* Right Controls & Quick Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end ml-auto">
-          {/* Total Leads Badge Linking to Leads Process */}
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+          {/* Total Leads Badge */}
           <Link
             to="/modules/leads"
-            className="group h-9 px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-lg flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 shadow-2xs hover:shadow-xs transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
-            title="View All Leads in Leads Process"
+            className="group h-9 px-3.5 bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary rounded-control flex items-center justify-center gap-2 border border-border-subtle shadow-card transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
+            title="View All Leads"
           >
-            <Icons.Layers className="w-3.5 h-3.5 text-[#7C3AED]" />
+            <Icons.Layers className="w-3.5 h-3.5 text-brand-500" />
             <span className="hidden sm:inline">All Leads:</span>
-            <span className="px-1.5 py-0.5 rounded-full text-[10.5px] font-black bg-purple-100 dark:bg-purple-950/60 text-[#7C3AED] dark:text-purple-300">
-              {(metricsData?.totalLeads ?? 0).toLocaleString()}
+            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-brand-500/10 text-brand-600 dark:text-brand-400 tabular-nums">
+              {(metricsData?.totalLeads ?? 0).toLocaleString('en-IN')}
             </span>
           </Link>
 
-          {/* Add Lead CTA Button - Sleek, Compact & Crisp */}
+          {/* Quick Add Lead CTA */}
           <Link 
             to="/modules/leads/new" 
-            className="group h-9 px-3.5 bg-gradient-to-b from-[#222222] to-[#0A0A0A] hover:from-[#2E2E2E] hover:to-[#141414] text-white rounded-lg flex items-center justify-center gap-2 shadow-[0_1px_3px_rgba(0,0,0,0.12)] hover:shadow-[0_2px_6px_rgba(0,0,0,0.18)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-150 cursor-pointer border border-white/15 select-none"
+            className="group h-9 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-brand-contrast rounded-control flex items-center justify-center gap-2 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
           >
-            <div className="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center border border-white/20 text-white shadow-2xs group-hover:bg-white/25 transition-colors flex-shrink-0">
-              <Icons.UserPlus className="w-3 h-3 stroke-[2.4]" />
-            </div>
-            <span className="text-xs font-semibold tracking-tight whitespace-nowrap">Add Lead</span>
-            <Icons.ArrowRight className="w-3 h-3 text-white/50 group-hover:text-white group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            <Icons.Plus className="w-4 h-4 stroke-[2.2]" />
+            <span className="whitespace-nowrap">Add Lead</span>
           </Link>
         </div>
       </div>
 
-      {/* 2. OVERVIEW STATUS KPI CARDS (13 Cards with locked-in white bg + top accent bar + 40% border + floating colored icon) */}
+      {/* 2. OVERVIEW STATUS KPI CARDS (Responsive 4-Col Grid, Flat White Cards, 3px Accent Bar, Animated Numbers) */}
       <div className="space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 sm:gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {getDynamicMetricCards().map((metric, idx) => {
             const Icon = metric.icon;
             const count = getStatusCount(metric.rawName || metric.label);
-            const filterStatus = metric.rawName || metric.label;
             const isZero = count === 0;
-            const themeColor = metric.accentColor || getCardThemeColor(metric.rawName || metric.label);
+            const tokens = getStatusTokens({
+              name: metric.rawName || metric.label,
+              color: metric.accentColor
+            });
 
             return (
               <Link
@@ -586,65 +501,63 @@ export default function Dashboard() {
                     : `/modules/leads?status=${encodeURIComponent(metric.rawName || metric.label)}`
                 }
                 key={idx} 
-                className="group flex flex-col justify-between bg-white dark:bg-slate-900 rounded-2xl transition-all duration-200 cursor-pointer relative overflow-hidden text-left shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 border"
-                style={{
-                  borderColor: `${themeColor}45`,
-                  borderTopWidth: '4px',
-                  borderTopColor: themeColor,
-                }}
+                className="group flex flex-col justify-between bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-500/30 transition-all duration-150 relative overflow-hidden text-left p-4 sm:p-5"
               >
-                {/* 1. Visibly Tinted Upper Section (From top down through number) */}
+                {/* 3px Top Accent Bar */}
                 <div 
-                  className="p-3.5 sm:p-4 pb-3 transition-colors relative"
-                  style={{
-                    background: `linear-gradient(180deg, ${themeColor}26 0%, ${themeColor}1a 65%, ${themeColor}14 100%)`,
-                    borderBottom: `1px solid ${themeColor}30`
-                  }}
-                >
-                  {/* Top Label & Floating Colored Icon */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span 
-                      className="text-[10.5px] sm:text-[11px] font-black uppercase tracking-wider leading-none truncate"
-                      style={{ color: themeColor }}
-                    >
-                      {metric.label}
-                    </span>
-                    <div 
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 flex-shrink-0 shadow-2xs border bg-white dark:bg-slate-800"
-                      style={{ 
-                        borderColor: `${themeColor}40`,
-                        color: themeColor 
-                      }}
-                    >
-                      <Icon className="w-3.5 h-3.5 stroke-[2.4]" />
-                    </div>
-                  </div>
+                  className="absolute top-0 left-0 right-0 h-[3px]"
+                  style={{ backgroundColor: tokens.accentHex }}
+                />
 
-                  {/* Stat Number (Till Number) */}
-                  <div className="mt-2.5 mb-0.5">
-                    <h3 className={`text-2xl sm:text-[28px] font-[900] tracking-tight leading-none ${
-                      isZero ? 'text-slate-400 dark:text-slate-500' : 'text-[#0F172A] dark:text-white'
-                    }`}>
-                      {count}
-                    </h3>
+                {/* Card Header: Label (max 2 lines + tooltip) & Tinted Rounded Square Icon */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <span 
+                    className="text-xs font-semibold uppercase tracking-wider text-content-secondary line-clamp-2 leading-snug"
+                    title={metric.label}
+                  >
+                    {metric.label}
+                  </span>
+                  <div 
+                    className={`w-8 h-8 rounded-control flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-105 ${tokens.iconBgClass}`}
+                  >
+                    <Icon className="w-4 h-4 stroke-[2.2]" />
                   </div>
                 </div>
 
-                {/* 2. Subtext Label with Status Dot (Clean Base Below Number) */}
-                <div className="px-3.5 sm:px-4 py-2.5 bg-white dark:bg-slate-900 flex items-center gap-1.5 mt-auto">
-                  <span 
-                    className="w-2 h-2 rounded-full flex-shrink-0" 
-                    style={{ backgroundColor: themeColor }} 
-                  />
-                  <span className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 truncate">
-                    {metric.sub}
-                  </span>
+                {/* Card Body: Metric Number & Zero-State Hint */}
+                <div className="mb-4">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl sm:text-3xl font-bold tracking-tight text-content-primary tabular-nums">
+                      <AnimatedNumber value={count} />
+                    </span>
+                    {isZero && (
+                      <span className="text-xs font-medium text-content-muted">
+                        No leads
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Footer: Status Dot + Subtext + Arrow slide on hover */}
+                <div className="pt-3 border-t border-border-subtle flex items-center justify-between mt-auto">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span 
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${tokens.dotClass}`} 
+                      style={{ backgroundColor: tokens.accentHex }} 
+                    />
+                    <span className="text-xs font-medium text-content-secondary truncate">
+                      {metric.sub}
+                    </span>
+                  </div>
+                  <Icons.ArrowRight className="w-3.5 h-3.5 text-content-muted transition-transform duration-150 group-hover:translate-x-1 group-hover:text-brand-500 flex-shrink-0" />
                 </div>
               </Link>
             );
           })}
         </div>
-        {/* 3. MIDDLE ROW: Full-Width Campaign Status (Matching Reference Image 2) */}
+      </div>
+
+      {/* 3. CAMPAIGN STATUS & EXECUTION TELEMETRY */}
       {(() => {
         const campaignsList: any[] = myCampaignsData?.campaigns || [];
         const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : 21;
@@ -656,188 +569,164 @@ export default function Dashboard() {
         const totalLeadsAllocated = campaignsList.reduce((acc: number, c: any) => acc + (c.totalAssigned || 0), 0) || 110735;
         const remainingLeads = Math.max(0, totalLeadsAllocated - totalLeadsDialed) || 66149;
         const dialedPercentage = totalLeadsAllocated > 0 ? Math.round((totalLeadsDialed / totalLeadsAllocated) * 100) : 40;
-        const activeCampaignName = campaignsList[0]?.campaignName || "NFB-DB-15-10-26 & SWATHI-PL-HOT L...";
+        const activeCampaignName = campaignsList[0]?.campaignName || "Active Telephony Drive";
 
         return (
           <div id="campaign-section" className="w-full">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xs transition-all duration-300">
+            <div className="bg-surface-card border border-border-subtle rounded-card p-5 sm:p-6 shadow-card transition-all duration-150">
               
               {/* Header Bar */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-[#FFF8EB] dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-amber-500 shadow-xs flex-shrink-0">
-                    <Icons.Megaphone className="w-6 h-6 stroke-[2]" />
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-control bg-status-warm-bg border border-status-warm-border flex items-center justify-center text-status-warm shadow-xs flex-shrink-0">
+                    <Icons.Megaphone className="w-5 h-5 stroke-[2]" />
                   </div>
-                  <div className="text-left">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Campaign Status</h3>
-                      <span className="text-xs font-bold px-3 py-0.5 rounded-full bg-[#FFF8EB] text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/50">
-                        {totalCampaigns} Campaign Drives
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base sm:text-lg font-bold text-content-primary tracking-tight">Campaign Status</h3>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-status-warm-bg text-status-warm-text border border-status-warm-border tabular-nums">
+                        {totalCampaigns} Drives
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 font-medium mt-0.5">My campaign execution overview</p>
+                    <p className="text-xs text-content-muted mt-0.5">Execution overview across assigned dialing queues</p>
                   </div>
                 </div>
 
                 <Link 
                   to="/my-campaign" 
-                  className="text-xs font-bold text-slate-800 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 bg-white dark:bg-slate-800 px-5 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 hover:border-slate-300 uppercase tracking-wider flex items-center gap-2 shadow-xs transition-all"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-content-secondary hover:text-content-primary bg-surface-card hover:bg-surface-raised px-3.5 py-2 rounded-control border border-border-subtle shadow-card transition-colors"
                 >
-                  <span>VIEW CAMPAIGNS</span>
-                  <Icons.ArrowRight className="w-4 h-4" />
+                  <span>View All Campaigns</span>
+                  <Icons.ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
 
-              {/* 4 Horizontal Status Boxes in 1 Row (Matching Reference Image 2) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+              {/* 4 Clean Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
                 {/* 1. TOTAL CAMPAIGNS */}
                 <div 
                   onClick={() => navigate('/my-campaign')}
-                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-indigo-200 dark:border-indigo-800/80 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                  className="p-4 sm:p-5 bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:border-brand-500/30 transition-all cursor-pointer group text-left"
                 >
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center shadow-3xs">
-                      <Icons.Megaphone className="w-5 h-5 stroke-[2]" />
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-semibold text-content-muted uppercase tracking-wider">Total Campaigns</span>
+                    <div className="w-8 h-8 rounded-control bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center">
+                      <Icons.Megaphone className="w-4 h-4 stroke-[2]" />
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">TOTAL CAMPAIGNS</span>
                   </div>
-                  <div>
-                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {totalCampaigns}
-                    </h4>
-                    <p className="text-xs font-semibold text-slate-400 mt-1">All active drives</p>
-                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-bold text-content-primary tracking-tight tabular-nums">
+                    <AnimatedNumber value={totalCampaigns} />
+                  </h4>
+                  <p className="text-xs text-content-muted mt-1">All active telephony drives</p>
                 </div>
 
                 {/* 2. COMPLETED CAMPAIGN */}
                 <div 
                   onClick={() => navigate('/my-campaign')}
-                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-emerald-400 dark:border-emerald-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                  className="p-4 sm:p-5 bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:border-status-success/30 transition-all cursor-pointer group text-left"
                 >
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 flex items-center justify-center shadow-3xs">
-                      <Icons.CheckCircle2 className="w-5 h-5 stroke-[2]" />
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-semibold text-content-muted uppercase tracking-wider">Completed</span>
+                    <div className="w-8 h-8 rounded-control bg-status-success-bg text-status-success flex items-center justify-center border border-status-success-border">
+                      <Icons.CheckCircle2 className="w-4 h-4 stroke-[2]" />
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">COMPLETED CAMPAIGN</span>
                   </div>
-                  <div>
-                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {completedCampaigns}
-                    </h4>
-                    <p className="text-xs font-semibold text-slate-400 mt-1">100% Dialed & Closed</p>
-                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-bold text-content-primary tracking-tight tabular-nums">
+                    <AnimatedNumber value={completedCampaigns} />
+                  </h4>
+                  <p className="text-xs text-content-muted mt-1">100% Dialed & Closed</p>
                 </div>
 
                 {/* 3. INPROGRESS */}
                 <div 
                   onClick={() => navigate('/my-campaign')}
-                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-blue-400 dark:border-blue-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                  className="p-4 sm:p-5 bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:border-status-info/30 transition-all cursor-pointer group text-left"
                 >
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-500 flex items-center justify-center shadow-3xs">
-                      <Icons.PhoneCall className="w-5 h-5 stroke-[2]" />
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-semibold text-content-muted uppercase tracking-wider">In Progress</span>
+                    <div className="w-8 h-8 rounded-control bg-status-info-bg text-status-info flex items-center justify-center border border-status-info-border">
+                      <Icons.PhoneCall className="w-4 h-4 stroke-[2]" />
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">INPROGRESS</span>
                   </div>
-                  <div>
-                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {inProgressCampaigns}
-                    </h4>
-                    <p className="text-xs font-semibold text-slate-400 mt-1">Active calling</p>
-                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-bold text-content-primary tracking-tight tabular-nums">
+                    <AnimatedNumber value={inProgressCampaigns} />
+                  </h4>
+                  <p className="text-xs text-content-muted mt-1">Currently active calling</p>
                 </div>
 
                 {/* 4. YET TO START */}
                 <div 
                   onClick={() => navigate('/my-campaign')}
-                  className="p-5 bg-white dark:bg-slate-900 rounded-2xl text-left border-2 border-amber-400 dark:border-amber-600 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                  className="p-4 sm:p-5 bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:border-status-warm/30 transition-all cursor-pointer group text-left"
                 >
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-500 flex items-center justify-center shadow-3xs">
-                      <Icons.Clock className="w-5 h-5 stroke-[2]" />
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-semibold text-content-muted uppercase tracking-wider">Yet To Start</span>
+                    <div className="w-8 h-8 rounded-control bg-status-warm-bg text-status-warm flex items-center justify-center border border-status-warm-border">
+                      <Icons.Clock className="w-4 h-4 stroke-[2]" />
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">YET TO START</span>
                   </div>
-                  <div>
-                    <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {yetToStartCampaigns}
-                    </h4>
-                    <p className="text-xs font-semibold text-slate-400 mt-1">Queued drives</p>
-                  </div>
+                  <h4 className="text-2xl sm:text-3xl font-bold text-content-primary tracking-tight tabular-nums">
+                    <AnimatedNumber value={yetToStartCampaigns} />
+                  </h4>
+                  <p className="text-xs text-content-muted mt-1">Queued drives</p>
                 </div>
               </div>
 
-              {/* Full-Width OVERALL CAMPAIGN EXECUTION Banner (Matching Reference Image 2) */}
-              <div className="p-6 bg-[#0B0F19] border border-[#1E2433] rounded-2xl shadow-xl relative overflow-hidden text-left group">
-                {/* Top Accent Gradient Line */}
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-purple-500 via-cyan-400 to-emerald-400 opacity-90" />
-                
-                {/* Subtle ambient glow */}
-                <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-indigo-600/10 rounded-full blur-2xl pointer-events-none" />
+              {/* Execution Progress Banner */}
+              <div className="p-5 sm:p-6 bg-slate-900 border border-slate-800 rounded-card shadow-card relative overflow-hidden text-left text-white">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-brand-500 via-indigo-500 to-emerald-400 opacity-90" />
 
-                {/* Header: Title + Live Status Badge */}
-                <div className="flex items-center justify-between text-xs mb-4 relative z-10">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-white/[0.08] border border-white/10 flex items-center justify-center text-indigo-300 shadow-inner">
-                      <Icons.Activity className="w-4 h-4 text-indigo-300" />
-                    </div>
-                    <span className="font-black uppercase tracking-wider text-xs sm:text-sm text-white">
-                      OVERALL CAMPAIGN EXECUTION
+                <div className="flex items-center justify-between text-xs mb-3 relative z-10">
+                  <div className="flex items-center gap-2">
+                    <Icons.Activity className="w-4 h-4 text-brand-400" />
+                    <span className="font-semibold uppercase tracking-wider text-xs text-white">
+                      Overall Campaign Execution
                     </span>
                   </div>
 
-                  <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-extrabold text-xs px-3 py-1 rounded-full flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.25)]">
+                  <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs px-2.5 py-0.5 rounded-full flex items-center gap-1.5 tabular-nums">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
-                    <span className="tracking-wider">{dialedPercentage}% DIALED</span>
+                    <span>{dialedPercentage}% DIALED</span>
                   </div>
                 </div>
 
-                {/* Middle: Number Counts & Remaining */}
-                <div className="flex items-baseline justify-between text-xs sm:text-sm mb-2.5 px-0.5 relative z-10">
+                <div className="flex items-baseline justify-between text-xs sm:text-sm mb-2 px-0.5 relative z-10">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-base sm:text-lg font-black text-white tracking-tight">
+                    <span className="text-base sm:text-lg font-bold text-white tracking-tight tabular-nums">
                       {totalLeadsDialed.toLocaleString('en-IN')}
                     </span>
-                    <span className="text-xs sm:text-sm text-slate-400 font-medium">
+                    <span className="text-xs text-slate-400">
                       of {totalLeadsAllocated.toLocaleString('en-IN')} Leads Dialed
                     </span>
                   </div>
-                  <span className="text-xs sm:text-sm font-bold text-slate-300 tracking-tight">
+                  <span className="text-xs font-semibold text-slate-300 tabular-nums">
                     {remainingLeads.toLocaleString('en-IN')} Remaining
                   </span>
                 </div>
 
-                {/* Glowing Gradient Progress Track with Dot */}
-                <div 
-                  className="w-full h-3 bg-[#151B28] rounded-full overflow-hidden mb-4 relative p-[1.5px] border border-white/[0.08]"
-                  style={{ boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.7)' }}
-                >
+                <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden mb-3 relative">
                   <div 
-                    className="h-full rounded-full transition-all duration-1000 ease-out relative" 
+                    className="h-full rounded-full transition-all duration-700 ease-out relative" 
                     style={{ 
                       width: `${Math.max(dialedPercentage, 4)}%`,
-                      background: 'linear-gradient(90deg, #4F46E5 0%, #06B6D4 50%, #10B981 100%)',
-                      boxShadow: '0 0 14px rgba(6, 182, 212, 0.45)'
+                      background: 'linear-gradient(90deg, #3B82F6 0%, #06B6D4 50%, #10B981 100%)'
                     }} 
-                  >
-                    <span className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white shadow-[0_0_8px_#ffffff]" />
-                  </div>
+                  />
                 </div>
 
-                {/* Bottom Detail Chips */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs relative z-10">
-                  <div className="flex items-center gap-2 bg-white/[0.05] border border-white/[0.08] px-3.5 py-1.5 rounded-xl max-w-full sm:max-w-md truncate">
-                    <Icons.PhoneCall className="w-3.5 h-3.5 text-indigo-300 flex-shrink-0" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs relative z-10">
+                  <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-control max-w-full sm:max-w-md truncate">
+                    <Icons.PhoneCall className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                     <span className="text-slate-300 font-medium text-xs truncate">
                       {activeCampaignName}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-emerald-500/[0.1] border border-emerald-500/25 px-3.5 py-1.5 rounded-xl self-start sm:self-auto">
+                  <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-control self-start sm:self-auto">
                     <Icons.Target className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400 font-extrabold text-xs tracking-tight">
+                    <span className="text-emerald-400 font-semibold text-xs">
                       Target: 100%
                     </span>
                   </div>
@@ -850,60 +739,62 @@ export default function Dashboard() {
         );
       })()}
 
-      </div>
-
       {/* 4. TODAY'S & UPCOMING FOLLOWUP LEADS DETAILS */}
-      <div className="bg-[#F8F5F1] dark:bg-slate-900 border border-[#EAE4DA] dark:border-slate-800 rounded-2xl p-4 sm:p-6 md:p-8 overflow-hidden text-left shadow-xs">
-        <div className="px-1 pb-5 border-b border-[#EAE4DA] dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div className="bg-surface-card border border-border-subtle rounded-card p-5 sm:p-6 shadow-card overflow-hidden text-left">
+        <div className="pb-4 border-b border-border-subtle flex flex-wrap items-center justify-between gap-4 mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-[#EAE4DA] dark:border-slate-700 flex items-center justify-center shadow-2xs">
-              <Icons.CalendarClock className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
+            <div className="w-9 h-9 rounded-control bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-600 dark:text-brand-400 shadow-xs">
+              <Icons.CalendarClock className="w-4.5 h-4.5" />
             </div>
             <div>
-              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+              <h2 className="text-base font-bold text-content-primary">
                 Followup Leads Details
               </h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
+              <p className="text-xs text-content-muted mt-0.5">
                 {followupTab === 'today' ? "Scheduled for action today" : "Upcoming scheduled followups"}
               </p>
             </div>
           </div>
 
-          {/* Tab buttons: Today's vs Upcoming */}
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-slate-800 border border-[#EAE4DA] dark:border-slate-700 p-1.5 rounded-xl shadow-2xs">
+          {/* Segmented Pill Tabs */}
+          <div className="flex items-center bg-surface-raised border border-border-subtle p-1 rounded-control shadow-card">
             <button
               onClick={() => setFollowupTab('today')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-control text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 followupTab === 'today'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  ? 'bg-surface-card text-brand-600 dark:text-brand-400 shadow-card'
+                  : 'text-content-secondary hover:text-content-primary'
               }`}
             >
               <Icons.Calendar className="w-3.5 h-3.5" />
               <span>Today's Followups</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${followupTab === 'today' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] tabular-nums font-mono ${
+                followupTab === 'today' ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400 font-bold' : 'bg-surface-card text-content-muted'
+              }`}>
                 {metricsData?.todayFollowupsCount || 0}
               </span>
             </button>
 
             <button
               onClick={() => setFollowupTab('upcoming')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-control text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 followupTab === 'upcoming'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  ? 'bg-surface-card text-brand-600 dark:text-brand-400 shadow-card'
+                  : 'text-content-secondary hover:text-content-primary'
               }`}
             >
               <Icons.Clock className="w-3.5 h-3.5" />
               <span>Upcoming Followups</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${followupTab === 'upcoming' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] tabular-nums font-mono ${
+                followupTab === 'upcoming' ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400 font-bold' : 'bg-surface-card text-content-muted'
+              }`}>
                 {metricsData?.upcomingFollowupsCount || 0}
               </span>
             </button>
           </div>
         </div>
         
-        <div className="space-y-6">
+        <div className="space-y-4">
           {(() => {
             const activeList = followupTab === 'today'
               ? (metricsData?.todayFollowupsList || [])
@@ -911,14 +802,14 @@ export default function Dashboard() {
 
             if (!activeList || activeList.length === 0) {
               return (
-                <div className="py-12 bg-white dark:bg-slate-800/80 border border-[#EAE4DA] dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs">
-                  <div className="w-14 h-14 rounded-full bg-[#F8F5F1] dark:bg-slate-700/60 border border-[#EAE4DA] dark:border-slate-600 flex items-center justify-center mb-3 shadow-inner">
-                    <Icons.CheckCircle2 className="w-7 h-7 text-slate-400 dark:text-slate-300" />
+                <div className="py-12 bg-surface-raised border border-border-subtle rounded-card flex flex-col items-center justify-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-surface-card border border-border-subtle flex items-center justify-center mb-3 text-content-muted">
+                    <Icons.CheckCircle2 className="w-6 h-6" />
                   </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-semibold text-content-primary">
                     {followupTab === 'today' ? "No follow-ups scheduled today." : "No upcoming follow-ups scheduled."}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">Enjoy your day.</p>
+                  <p className="text-xs text-content-muted mt-0.5">All scheduled outreach items are up to date.</p>
                 </div>
               );
             }
@@ -928,8 +819,7 @@ export default function Dashboard() {
               const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || rec.data?.leadName || 'N/A';
               const leadLocation = rec.data?.location || [rec.data?.city, rec.data?.state].filter(Boolean).join(', ') || rec.data?.city || rec.data?.presentAddress || rec.data?.address || 'N/A';
               const amountVal = rec.data?.budget ?? rec.data?.loanAmount ?? rec.data?.amount;
-              const currencySymbol = '₹';
-              const formattedAmount = amountVal != null && amountVal !== '' ? `${currencySymbol}${Number(amountVal).toLocaleString('en-IN')}` : 'N/A';
+              const formattedAmount = amountVal != null && amountVal !== '' ? `₹${Number(amountVal).toLocaleString('en-IN')}` : 'N/A';
               const createdByName = rec.createdBy?.firstName 
                 ? `${rec.createdBy.firstName} ${rec.createdBy.lastName || ''}`.trim()
                 : (rec.createdBy?.name || rec.createdBy?.email?.split('@')[0] || (typeof rec.createdBy === 'string' && rec.createdBy.length < 25 && !rec.createdBy.match(/^[0-9a-fA-F]{24}$/) ? rec.createdBy : '') || rec.data?.source || rec.data?.createdBy || 'Ink CRM');
@@ -941,136 +831,134 @@ export default function Dashboard() {
                     ? resolveUserDisplayName(rec.data.assignedBy) 
                     : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'System Router'));
               const psmName = rec.data?.psmName || resolveUserDisplayName(rec.data?.psm || rec.data?.assignedTo || 'Unassigned');
-              const statusThemeColor = getCardThemeColor(rec.data?.status || 'HOT');
+              const statusTokens = getStatusTokens(rec.data?.status || 'HOT');
 
               return (
-                <div key={rec._id} className="border border-[#EAE4DA] dark:border-slate-800 rounded-2xl p-6 bg-white dark:bg-slate-900 relative mb-6 last:mb-0 text-left shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                <div 
+                  key={rec._id} 
+                  className="border border-border-subtle rounded-card p-5 bg-surface-card hover:shadow-card-hover relative mb-4 last:mb-0 text-left shadow-card transition-all duration-150"
+                >
                   {/* Status-colored Top Accent Bar */}
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl" style={{ backgroundColor: statusThemeColor }} />
+                  <div 
+                    className="absolute top-0 left-0 right-0 h-[3px] rounded-t-card" 
+                    style={{ backgroundColor: statusTokens.accentHex }} 
+                  />
                   
-                  {/* True 4-Column CSS Grid - All 20 cells direct children for flawless row-to-row alignment */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-6 text-sm mt-1">
+                  {/* 4-Column CSS Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 text-xs mt-1">
                     {/* --- Row 1 --- */}
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Sl No.: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{idx + 1}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Sl No.: </span>
+                      <span className="text-content-primary font-semibold tabular-nums">{idx + 1}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Lead Name: </span>
-                      <span className="text-[#1C1917] dark:text-stone-100 font-semibold">{leadName}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Lead Name: </span>
+                      <span className="text-content-primary font-semibold">{leadName}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Created On: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{formatDate(rec.createdAt)}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Created On: </span>
+                      <span className="text-content-primary font-semibold tabular-nums">{formatDate(rec.createdAt)}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Firm/Company: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{rec.data?.company || 'N/A'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Firm/Company: </span>
+                      <span className="text-content-primary font-semibold">{rec.data?.company || 'N/A'}</span>
                     </div>
 
                     {/* --- Row 2 --- */}
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Lead No.: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 font-mono">LND-{leadNo}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Lead No.: </span>
+                      <span className="text-content-primary font-mono font-semibold">LND-{leadNo}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Location: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{leadLocation}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Location: </span>
+                      <span className="text-content-primary font-semibold">{leadLocation}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Created By: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 font-medium">{createdByName}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Created By: </span>
+                      <span className="text-content-primary font-semibold">{createdByName}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Modified On: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{formatDate(rec.updatedAt)}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Modified On: </span>
+                      <span className="text-content-primary font-semibold tabular-nums">{formatDate(rec.updatedAt)}</span>
                     </div>
 
                     {/* --- Row 3 --- */}
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Product: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 uppercase">{rec.data?.loanType || 'N/A'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Product: </span>
+                      <span className="text-content-primary font-semibold uppercase">{rec.data?.loanType || 'N/A'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Mobile No.: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 font-mono">{rec.data?.phone || 'N/A'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Mobile No.: </span>
+                      <span className="text-content-primary font-mono font-semibold tabular-nums">{rec.data?.phone || 'N/A'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug flex items-center flex-wrap gap-1">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Followup Date: </span>
-                      <span className="inline-flex items-center text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-800/40 px-2 py-0.5 rounded text-[11px] leading-tight">
+                    <div className="leading-snug flex items-center flex-wrap gap-1">
+                      <span className="text-content-secondary font-medium">Followup Date: </span>
+                      <span className="inline-flex items-center text-brand-600 dark:text-brand-400 font-semibold bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-control text-[11px] tabular-nums">
                         {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
                       </span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Assigned By: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 font-medium">{assignedByName}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Assigned By: </span>
+                      <span className="text-content-primary font-semibold">{assignedByName}</span>
                     </div>
 
                     {/* --- Row 4 --- */}
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Status: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 uppercase font-semibold">{rec.data?.status || 'NEW'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Status: </span>
+                      <span className="text-content-primary font-semibold uppercase">{rec.data?.status || 'NEW'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Amount: </span>
-                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">{formattedAmount}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Amount: </span>
+                      <span className="text-status-success font-bold tabular-nums">{formattedAmount}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Pending at: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 uppercase">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Pending at: </span>
+                      <span className="text-content-primary font-semibold uppercase">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Assigned To: </span>
-                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">{assignedToName}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Assigned To: </span>
+                      <span className="text-brand-600 dark:text-brand-400 font-semibold">{assignedToName}</span>
                     </div>
 
                     {/* --- Row 5 --- */}
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Bank Partner: </span>
-                      <span className="text-[#44403C] dark:text-stone-300 uppercase">{rec.data?.businessPartner || rec.data?.bankPartner || 'IDFC FIRST BANK'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Bank Partner: </span>
+                      <span className="text-content-primary font-semibold uppercase">{rec.data?.businessPartner || rec.data?.bankPartner || 'IDFC FIRST BANK'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Case Details: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{rec.data?.caseDetails || '001 case detailes'}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Case Details: </span>
+                      <span className="text-content-primary font-semibold">{rec.data?.caseDetails || 'N/A'}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">PSM: </span>
-                      <span className="text-[#44403C] dark:text-stone-300">{psmName}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">PSM: </span>
+                      <span className="text-content-primary font-semibold">{psmName}</span>
                     </div>
 
-                    <div className="text-[13px] leading-snug">
-                      <span className="font-semibold text-[#1C1917] dark:text-stone-100">Remarks: </span>
-                      <span className="text-slate-500 dark:text-slate-400 italic text-xs">{rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || '001remarks')}</span>
+                    <div className="leading-snug">
+                      <span className="text-content-secondary font-medium">Remarks: </span>
+                      <span className="text-content-muted italic text-[11px]">{rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || 'N/A')}</span>
                     </div>
                   </div>
 
-                  {/* Bottom Action / Button Row */}
-                  <div className="mt-7 pt-5 border-t border-[#EAE4DA] dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  {/* Actions Row */}
+                  <div className="mt-5 pt-4 border-t border-border-subtle flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <span 
-                        className="text-[10.5px] font-[800] uppercase tracking-wider px-3 py-1.5 rounded-lg border shadow-3xs flex items-center gap-1.5"
-                        style={{
-                          backgroundColor: `${statusThemeColor}12`,
-                          borderColor: `${statusThemeColor}30`,
-                          color: statusThemeColor
-                        }}
-                      >
-                        <Icons.Flame className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>{rec.data?.status ? `${rec.data.status} LEAD` : 'LEAD INFO'}</span>
+                      <span className={`text-xs font-semibold uppercase px-2.5 py-1 rounded-control ${statusTokens.badgeClass}`}>
+                        {rec.data?.status ? `${rec.data.status} LEAD` : 'LEAD INFO'}
                       </span>
                     </div>
 
@@ -1088,10 +976,10 @@ export default function Dashboard() {
                             showToast('No phone number available for this lead.', 'warning');
                           }
                         }}
-                        className="h-8 px-3.5 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-150 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40 text-[10.5px] font-bold uppercase tracking-wider rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                        className="h-8 px-3 rounded-control text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Icons.MessageCircle className="w-3.5 h-3.5" />
-                        <span>WA Chat</span>
+                        <span>WhatsApp</span>
                       </button>
                       
                       <button 
@@ -1106,7 +994,7 @@ export default function Dashboard() {
                             showToast('No phone number available for this lead.', 'warning');
                           }
                         }}
-                        className="h-8 px-3.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-150 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/30 dark:hover:bg-indigo-900/40 text-[10.5px] font-bold uppercase tracking-wider rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                        className="h-8 px-3 rounded-control text-xs font-semibold bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 border border-brand-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Icons.Phone className="w-3.5 h-3.5" />
                         <span>Call</span>
@@ -1114,15 +1002,15 @@ export default function Dashboard() {
                       
                       <button 
                         onClick={() => handleUploadClick(rec._id)}
-                        className="h-8 px-3.5 bg-amber-50 hover:bg-amber-100 active:bg-amber-150 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30 dark:hover:bg-amber-900/40 text-[10.5px] font-bold uppercase tracking-wider rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Icons.Upload className="w-3.5 h-3.5" />
-                        <span>Upload File</span>
+                        <span>Upload</span>
                       </button>
                       
                       <Link 
                         to={`/modules/leads/${rec._id}`} 
-                        className="h-8 px-3.5 bg-cyan-50 hover:bg-cyan-100 active:bg-cyan-150 text-cyan-700 border border-cyan-200 dark:bg-cyan-950/20 dark:text-cyan-400 dark:border-cyan-900/30 dark:hover:bg-cyan-900/40 text-[10.5px] font-bold uppercase tracking-wider rounded-lg transition-all duration-150 flex items-center gap-1.5 shadow-3xs"
+                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors"
                       >
                         <Icons.SquarePen className="w-3.5 h-3.5" />
                         <span>Edit</span>
@@ -1130,7 +1018,7 @@ export default function Dashboard() {
 
                       <button 
                         onClick={() => openHistory(rec)}
-                        className="h-8 px-3.5 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-700 border border-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-700/60 dark:hover:bg-slate-700/80 text-[10.5px] font-bold uppercase tracking-wider rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Icons.History className="w-3.5 h-3.5" />
                         <span>History</span>
@@ -1144,7 +1032,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 5. 3D CONICAL SALES FUNNEL & PIPELINE ADVANCEMENT */}
+      {/* 5. 3D CONICAL SALES FUNNEL & PIPELINE METRICS */}
       <div className="space-y-4">
         <SalesFunnel3D
           stages={rawPipeline.map(s => ({
@@ -1157,57 +1045,45 @@ export default function Dashboard() {
           maxVal={maxPipelineVal}
         />
 
-        {/* Pipeline Summary Horizontal KPI Bar */}
-        <div className="w-full grid grid-cols-2 sm:grid-cols-4 bg-white dark:bg-slate-900 border border-black/[0.06] dark:border-slate-800 rounded-2xl p-4 sm:p-5 items-center gap-4 shadow-sm text-left">
-          <div className="flex items-center gap-3 pl-1">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'rgba(79, 70, 229, 0.1)', color: '#4F46E5' }}
-            >
-              <Icons.Briefcase className="w-4.5 h-4.5 stroke-[2.2]" style={{ color: '#4F46E5' }} />
+        {/* Pipeline Summary 4-Col KPI Bar */}
+        <div className="w-full grid grid-cols-2 sm:grid-cols-4 bg-surface-card border border-border-subtle rounded-card p-4 sm:p-5 items-center gap-4 shadow-card text-left">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-control bg-brand-500/10 border border-brand-500/20 text-brand-600 dark:text-brand-400 flex items-center justify-center flex-shrink-0">
+              <Icons.Briefcase className="w-4.5 h-4.5 stroke-[2.2]" />
             </div>
             <div className="text-left min-w-0">
-              <p className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider truncate">Total Pipeline</p>
-              <p className="text-base font-black text-[#1A1A1A] dark:text-white tracking-tight mt-0.5 truncate">₹{totalPipeline.toLocaleString('en-IN')}</p>
+              <p className="text-xs font-semibold text-content-muted uppercase tracking-wider truncate">Total Pipeline</p>
+              <p className="text-base font-bold text-content-primary tracking-tight mt-0.5 truncate tabular-nums">₹{totalPipeline.toLocaleString('en-IN')}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pl-1 sm:border-l border-black/[0.06] dark:border-slate-800">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'rgba(5, 150, 105, 0.1)', color: '#059669' }}
-            >
-              <Icons.Percent className="w-4.5 h-4.5 stroke-[2.2]" style={{ color: '#059669' }} />
+          <div className="flex items-center gap-3 sm:border-l border-border-subtle sm:pl-4">
+            <div className="w-9 h-9 rounded-control bg-status-success-bg border border-status-success-border text-status-success flex items-center justify-center flex-shrink-0">
+              <Icons.Percent className="w-4.5 h-4.5 stroke-[2.2]" />
             </div>
             <div className="text-left min-w-0">
-              <p className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider truncate">Win Rate</p>
-              <p className="text-base font-black text-[#1A1A1A] dark:text-white tracking-tight mt-0.5 truncate">{winRate}%</p>
+              <p className="text-xs font-semibold text-content-muted uppercase tracking-wider truncate">Win Rate</p>
+              <p className="text-base font-bold text-content-primary tracking-tight mt-0.5 truncate tabular-nums">{winRate}%</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-3 pl-1 sm:border-l border-black/[0.06] dark:border-slate-800">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'rgba(37, 99, 235, 0.1)', color: '#2563EB' }}
-            >
-              <Icons.Calendar className="w-4.5 h-4.5 stroke-[2.2]" style={{ color: '#2563EB' }} />
+          <div className="flex items-center gap-3 sm:border-l border-border-subtle sm:pl-4">
+            <div className="w-9 h-9 rounded-control bg-status-info-bg border border-status-info-border text-status-info flex items-center justify-center flex-shrink-0">
+              <Icons.Calendar className="w-4.5 h-4.5 stroke-[2.2]" />
             </div>
             <div className="text-left min-w-0">
-              <p className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider truncate">Avg. Cycle</p>
-              <p className="text-base font-black text-[#1A1A1A] dark:text-white tracking-tight mt-0.5 truncate">28 Days</p>
+              <p className="text-xs font-semibold text-content-muted uppercase tracking-wider truncate">Avg. Cycle</p>
+              <p className="text-base font-bold text-content-primary tracking-tight mt-0.5 truncate tabular-nums">28 Days</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pl-1 sm:border-l border-black/[0.06] dark:border-slate-800">
-            <div 
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'rgba(217, 119, 6, 0.1)', color: '#D97706' }}
-            >
-              <Icons.IndianRupee className="w-4.5 h-4.5 stroke-[2.2]" style={{ color: '#D97706' }} />
+          <div className="flex items-center gap-3 sm:border-l border-border-subtle sm:pl-4">
+            <div className="w-9 h-9 rounded-control bg-status-warm-bg border border-status-warm-border text-status-warm flex items-center justify-center flex-shrink-0">
+              <Icons.IndianRupee className="w-4.5 h-4.5 stroke-[2.2]" />
             </div>
             <div className="text-left min-w-0">
-              <p className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider truncate">Avg. Deal</p>
-              <p className="text-base font-black text-[#1A1A1A] dark:text-white tracking-tight mt-0.5 truncate">₹{avgDealSize.toLocaleString('en-IN')}</p>
+              <p className="text-xs font-semibold text-content-muted uppercase tracking-wider truncate">Avg. Deal</p>
+              <p className="text-base font-bold text-content-primary tracking-tight mt-0.5 truncate tabular-nums">₹{avgDealSize.toLocaleString('en-IN')}</p>
             </div>
           </div>
         </div>
@@ -1223,21 +1099,21 @@ export default function Dashboard() {
 
       {/* Record History & Timeline Modal */}
       {activeHistoryRecord && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 text-left">
-          <div className="bg-white dark:bg-slate-900 border border-[#EAE4DA] dark:border-slate-800 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 text-left">
+          <div className="bg-surface-overlay border border-border-strong rounded-card max-w-lg w-full max-h-[85vh] flex flex-col shadow-overlay overflow-hidden">
             {/* Modal Header */}
-            <div className="p-5 border-b border-[#EAE4DA] dark:border-slate-800 flex justify-between items-center bg-[#FAFAF9] dark:bg-slate-850">
+            <div className="p-4 border-b border-border-subtle flex justify-between items-center bg-surface-raised">
               <div>
-                <h3 className="font-bold text-[#111111] dark:text-white text-xs uppercase tracking-wider">
+                <h3 className="font-bold text-content-primary text-xs uppercase tracking-wider">
                   Lead Audit History
                 </h3>
-                <p className="text-[10px] text-[#6B7280] dark:text-slate-400 font-bold mt-0.5 uppercase tracking-wider">
+                <p className="text-xs text-content-muted mt-0.5">
                   {activeHistoryRecord.data?.firstName} {activeHistoryRecord.data?.lastName}
                 </p>
               </div>
               <button 
                 onClick={() => setActiveHistoryRecord(null)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center bg-white dark:bg-slate-800 hover:bg-[#FAFAF9] dark:hover:bg-slate-700 border border-[#EAE4DA] dark:border-slate-700 text-[#6B7280] dark:text-slate-300 transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-control flex items-center justify-center bg-surface-card hover:bg-surface-raised border border-border-subtle text-content-secondary transition-colors cursor-pointer"
               >
                 <Icons.X className="w-3.5 h-3.5" />
               </button>
@@ -1247,31 +1123,31 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
               {loadingHistory ? (
                 <div className="flex justify-center items-center py-10">
-                  <Icons.Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+                  <Icons.Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
                 </div>
               ) : (
                 <>
                   {/* Documents Section */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                      <Icons.File className="w-3.5 h-3.5 text-[#111111] dark:text-slate-300" /> Attached Documents ({historyDocuments.length})
+                    <h4 className="text-xs font-semibold text-content-muted uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                      <Icons.File className="w-3.5 h-3.5 text-content-secondary" /> Attached Documents ({historyDocuments.length})
                     </h4>
                     {historyDocuments.length > 0 ? (
                       <div className="space-y-2">
                         {historyDocuments.map((doc: any) => (
-                          <div key={doc._id} className="flex justify-between items-center p-3 bg-[#FAFAF9] dark:bg-slate-800/80 border border-[#EAE4DA] dark:border-slate-700 rounded-xl">
+                          <div key={doc._id} className="flex justify-between items-center p-3 bg-surface-raised border border-border-subtle rounded-control">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <Icons.FileText className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                              <Icons.FileText className="w-4 h-4 text-brand-500 flex-shrink-0" />
                               <div className="min-w-0">
-                                <p className="text-xs font-semibold text-[#1A1A1A] dark:text-white truncate">{doc.name}</p>
-                                <p className="text-[10px] text-[#6B7280] dark:text-slate-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                                <p className="text-xs font-semibold text-content-primary truncate">{doc.name}</p>
+                                <p className="text-[10px] text-content-muted tabular-nums">{(doc.size / 1024).toFixed(1)} KB</p>
                               </div>
                             </div>
                             <a 
                               href={`${FILE_BASE_URL}${doc.filePath}`} 
                               target="_blank" 
                               rel="noreferrer"
-                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                              className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
                             >
                               <Icons.Download className="w-3.5 h-3.5" /> Download
                             </a>
@@ -1279,29 +1155,29 @@ export default function Dashboard() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-[#6B7280] dark:text-slate-400 italic">No files attached to this record.</p>
+                      <p className="text-xs text-content-muted italic">No files attached to this record.</p>
                     )}
                   </div>
 
                   {/* Timeline Section */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                      <Icons.Clock className="w-3.5 h-3.5 text-[#111111] dark:text-slate-300" /> System Activities
+                    <h4 className="text-xs font-semibold text-content-muted uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                      <Icons.Clock className="w-3.5 h-3.5 text-content-secondary" /> System Activities
                     </h4>
                     {historyActivities.length > 0 ? (
-                      <div className="relative border-l border-[#EAE4DA] dark:border-slate-800 ml-2 pl-4 space-y-4">
+                      <div className="relative border-l border-border-subtle ml-2 pl-4 space-y-4">
                         {historyActivities.map((act: any) => (
                           <div key={act._id} className="relative">
-                            <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-600 ring-4 ring-white dark:ring-slate-900" />
+                            <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-brand-500 ring-4 ring-surface-card" />
                             <div className="text-xs">
-                              <p className="font-semibold text-[#1A1A1A] dark:text-white">{act.action}</p>
+                              <p className="font-semibold text-content-primary">{act.action}</p>
                               {act.details && Object.keys(act.details).length > 0 && (
-                                <p className="text-[11px] text-[#6B7280] dark:text-slate-400 mt-0.5">
+                                <p className="text-[11px] text-content-secondary mt-0.5">
                                   {act.details.status && `Status: ${act.details.status}`}
                                   {act.details.assignedTo && ` Assigned To: ${act.details.assignedTo}`}
                                 </p>
                               )}
-                              <p className="text-[10px] text-[#8C8C8C] dark:text-slate-400 mt-1">
+                              <p className="text-[10px] text-content-muted mt-1 tabular-nums">
                                 {act.performedBy ? `${act.performedBy.firstName} ${act.performedBy.lastName}` : 'System'} • {new Date(act.createdAt).toLocaleString()}
                               </p>
                             </div>
@@ -1309,7 +1185,7 @@ export default function Dashboard() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-[#6B7280] dark:text-slate-400 italic">No activity log found for this record.</p>
+                      <p className="text-xs text-content-muted italic">No activity log found for this record.</p>
                     )}
                   </div>
                 </>
@@ -1317,10 +1193,10 @@ export default function Dashboard() {
             </div>
             
             {/* Modal Footer */}
-            <div className="p-4 bg-[#FAFAF9] dark:bg-slate-850 border-t border-[#EAE4DA] dark:border-slate-800 flex justify-end">
+            <div className="p-4 bg-surface-raised border-t border-border-subtle flex justify-end">
               <button 
                 onClick={() => setActiveHistoryRecord(null)}
-                className="flex items-center justify-center px-4 h-9 text-xs font-bold uppercase tracking-wider bg-[#111111] dark:bg-indigo-600 hover:bg-[#262626] dark:hover:bg-indigo-500 text-white rounded-xl transition-all cursor-pointer"
+                className="flex items-center justify-center px-4 h-8 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-brand-contrast rounded-control transition-colors cursor-pointer"
               >
                 Close
               </button>

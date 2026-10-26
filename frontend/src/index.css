@@ -1,35 +1,154 @@
+@import '@fontsource-variable/plus-jakarta-sans';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700;800&display=swap');
-
   :root {
-    /* Enterprise Linear / Stripe / Mercury Design System Palette */
-    --color-bg-app: #FAFAF9; /* Warm off-white / warm-gray */
-    --color-bg-card: #FFFFFF; /* Crisp pure white */
-    
-    --color-border-subtle: #EAE4DA; /* 1px dark-neutral subtle border */
-    --color-border-strong: #D1D5DB; /* 1px hover/active border */
-    
-    --text-primary: #1A1A1A; /* Near-black primary text */
-    --text-secondary: #525252; /* Dark secondary gray text */
-    --text-muted: #6B7280; /* Neutral muted labels */
-    
-    --color-primary-cta: #111111; /* Strong dark accent CTA */
-    
-    /* Functional Status Accents (Desaturated, minimal) */
-    --color-status-success: #10B981; /* Emerald */
-    --color-status-warning: #D97706; /* Amber */
-    --color-status-error: #DC2626; /* Crimson */
-    --color-status-info: #2563EB; /* Blue */
+    /* ==========================================================================
+       Brand Scale RGB Channels (Default: Deep Navy / Sky Blue CRM Palette)
+       Stored as space-separated RGB channels: "R G B"
+       ========================================================================== */
+    --brand-50:  240 249 255;
+    --brand-100: 224 242 254;
+    --brand-200: 186 230 253;
+    --brand-300: 125 211 252;
+    --brand-400: 56 189 248;
+    --brand-500: 2 132 199;
+    --brand-600: 3 105 161;
+    --brand-700: 3 84 130;
+    --brand-800: 7 59 76;
+    --brand-900: 12 36 60;
+    --brand-950: 8 23 40;
+    --brand-dark: 11 19 43;          /* Solid 64px Topbar Navy */
+    --brand-contrast: 255 255 255;   /* High-contrast text on brand-500 */
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
+    /* Legacy compatibility mappings */
+    --color-primary: 2 132 199;
+    --sidebar-bg: #FFFFFF;
+    --header-bg: #0B132B;
 
-    --font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* ==========================================================================
+       Neutral Surface & Text Scale (Warm Slate)
+       ========================================================================== */
+    --bg-page: 248 250 252;          /* #F8FAFC: Calm off-white app canvas */
+    --bg-surface: 255 255 255;       /* #FFFFFF: Flat clean white cards */
+    --bg-surface-raised: 255 255 255;
+    --bg-surface-overlay: 15 23 42;
+
+    --border-subtle: 226 232 240;    /* #E2E8F0: 1px subtle card/table border */
+    --border-muted: 203 213 225;     /* #CBD5E1: Input borders */
+    --border-strong: 148 163 184;    /* #94A3B8: Focus/active borders */
+
+    --text-primary: 15 23 42;        /* #0F172A: Main text & display numbers */
+    --text-secondary: 71 85 105;     /* #475569: Subheadings & body copy */
+    --text-muted: 100 116 139;       /* #64748B: Card labels & placeholders (AA) */
+    --text-disabled: 148 163 184;    /* #94A3B8: Disabled actions only */
+
+    /* ==========================================================================
+       Semantic Status RGB Tokens
+       ========================================================================== */
+    --status-hot: 239 68 68;
+    --status-hot-bg: 254 242 242;
+    --status-hot-border: 254 202 202;
+    --status-hot-text: 185 28 28;
+
+    --status-warm: 245 158 11;
+    --status-warm-bg: 255 251 235;
+    --status-warm-border: 253 230 138;
+    --status-warm-text: 180 83 9;
+
+    --status-info: 2 132 199;
+    --status-info-bg: 240 249 255;
+    --status-info-border: 186 230 253;
+    --status-info-text: 3 105 161;
+
+    --status-success: 16 185 129;
+    --status-success-bg: 236 253 245;
+    --status-success-border: 167 243 208;
+    --status-success-text: 4 120 87;
+
+    --status-pending: 139 92 246;
+    --status-pending-bg: 245 243 255;
+    --status-pending-border: 221 214 254;
+    --status-pending-text: 109 40 217;
+
+    --status-danger: 244 63 94;
+    --status-danger-bg: 255 241 242;
+    --status-danger-border: 254 205 211;
+    --status-danger-text: 190 18 60;
+
+    --status-neutral: 100 116 139;
+    --status-neutral-bg: 241 245 249;
+    --status-neutral-border: 226 232 240;
+    --status-neutral-text: 71 85 105;
+
+    /* ==========================================================================
+       Namespaced Geometry & Shadows
+       ========================================================================== */
+    --radius-control: 8px;
+    --radius-card: 12px;
+    --radius-overlay: 16px;
+
+    --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+    --shadow-card-hover: 0 6px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+    --shadow-raised: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    --shadow-overlay: 0 20px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1);
+  }
+
+  /* ==========================================================================
+     Real Dark Mode Architecture
+     ========================================================================== */
+  html.dark {
+    --brand-dark: 7 11 20;
+
+    --bg-page: 9 13 22;               /* #090D16: True deep slate canvas */
+    --bg-surface: 15 23 42;           /* #0F172A: Elevated flat card surface */
+    --bg-surface-raised: 30 41 59;     /* #1E293B: Modals and dropdowns */
+    --bg-surface-overlay: 0 0 0;
+
+    --border-subtle: 255 255 255;     /* Alpha applied in Tailwind */
+    --border-muted: 255 255 255;
+    --border-strong: 255 255 255;
+
+    --text-primary: 248 250 252;      /* #F8FAFC: Crisp high-contrast text */
+    --text-secondary: 203 213 225;    /* #CBD5E1: Readability body text */
+    --text-muted: 148 163 184;        /* #94A3B8: Card labels & muted tokens */
+    --text-disabled: 100 116 139;     /* #64748B: Disabled controls */
+
+    --status-hot-bg: 239 68 68;
+    --status-hot-border: 239 68 68;
+    --status-hot-text: 252 165 165;
+
+    --status-warm-bg: 245 158 11;
+    --status-warm-border: 245 158 11;
+    --status-warm-text: 252 211 77;
+
+    --status-info-bg: 2 132 199;
+    --status-info-border: 2 132 199;
+    --status-info-text: 125 211 252;
+
+    --status-success-bg: 16 185 129;
+    --status-success-border: 16 185 129;
+    --status-success-text: 110 231 183;
+
+    --status-pending-bg: 139 92 246;
+    --status-pending-border: 139 92 246;
+    --status-pending-text: 196 181 253;
+
+    --status-danger-bg: 244 63 94;
+    --status-danger-border: 244 63 94;
+    --status-danger-text: 253 164 175;
+
+    --status-neutral-bg: 100 116 139;
+    --status-neutral-border: 100 116 139;
+    --status-neutral-text: 203 213 225;
+
+    --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+    --shadow-card-hover: 0 6px 16px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+    --shadow-raised: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    --shadow-overlay: 0 20px 25px -5px rgba(0, 0, 0, 0.8), 0 8px 10px -6px rgba(0, 0, 0, 0.7);
   }
 
   html,
@@ -47,16 +166,30 @@
   }
 
   body {
-    font-family: var(--font-family);
-    background-color: #FAFAF9;
+    font-family: 'Plus Jakarta Sans Variable', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: rgb(var(--bg-page));
+    color: rgb(var(--text-primary));
     font-size: 14px;
-    color: #1A1A1A;
-    @apply text-[#1A1A1A] antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   html.dark body {
-    background-color: #0B0F19 !important;
-    color: #F8FAFC !important;
+    background-color: rgb(var(--bg-page)) !important;
+    color: rgb(var(--text-primary)) !important;
+  }
+
+  /* Accessible placeholders with AA contrast */
+  input::placeholder,
+  textarea::placeholder,
+  select::placeholder {
+    color: rgb(var(--text-muted));
+    opacity: 1;
+  }
+
+  /* Tabular numbers for financial metrics */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Prevent iOS Safari auto-zoom on form inputs */
@@ -78,143 +211,61 @@
   overscroll-behavior-y: contain;
 }
 
-/* Crisp, Smooth & Highly Responsive Custom Scrollbar */
+/* Custom Thin Scrollbar */
 .custom-scrollbar {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
   scroll-behavior: smooth;
 }
 .custom-scrollbar::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.35);
   border-radius: 9999px;
-  border: 1px solid transparent;
-  background-clip: content-box;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.75);
-}
-.dark .custom-scrollbar {
-  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
-}
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35);
-}
-.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.65);
+  background: rgba(148, 163, 184, 0.6);
 }
 
-/* Global Browser Scrollbar Style */
-::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
-  border-radius: 9999px;
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.75);
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.45);
-}
-
-/* Lightweight Clean Shimmer for loading states */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
+
 .animate-shimmer {
-  background: linear-gradient(90deg, #fafaf9 25%, #eae4da 50%, #fafaf9 75%);
-  background-size: 200% 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.animate-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0.5) 60%,
+    rgba(255, 255, 255, 0)
+  );
   animation: shimmer 1.5s infinite;
 }
-.dark .animate-shimmer {
-  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
 
-/* Enterprise Design System Utilities (Stripe / Linear / Mercury style) */
-.card-premium {
-  box-shadow: 0 1px 2px rgba(16,16,16,0.04), 0 1px 1px rgba(16,16,16,0.03);
-  @apply bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl p-4 sm:p-6 transition-all duration-150;
-}
-.card-premium:hover {
-  border-color: rgba(20,20,20,0.16);
-  box-shadow: 0 4px 14px rgba(16,16,16,0.06);
-}
-.dark .card-premium:hover {
-  border-color: rgba(255,255,255,0.15);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
-}
-
-.card-ambient {
-  box-shadow: 0 1px 2px rgba(16,16,16,0.04), 0 1px 1px rgba(16,16,16,0.03);
-  @apply bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800;
-}
-.card-ambient:hover {
-  border-color: rgba(20,20,20,0.16);
-  box-shadow: 0 4px 14px rgba(16,16,16,0.06);
-}
-
-.input-premium {
-  @apply bg-white dark:bg-slate-800 border border-[#EAE4DA] dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#1A1A1A] dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-150;
-}
-
-.label-premium {
-  @apply text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider block mb-1.5;
-}
-
-.btn-primary-premium {
-  @apply h-[40px] px-5 text-xs font-bold uppercase tracking-wider bg-[#111111] hover:bg-[#262626] active:bg-black text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl transition-all duration-150 shadow-none disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer;
-}
-
-.btn-secondary-premium {
-  @apply h-[40px] px-4 text-xs font-bold uppercase tracking-wider bg-white dark:bg-slate-800 hover:bg-[#FAFAF9] dark:hover:bg-slate-700 active:bg-[#F0EBE1] text-[#1A1A1A] dark:text-slate-200 rounded-xl border border-[#D1D5DB] dark:border-slate-700 transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer shadow-none;
-}
-
-.btn-edit-premium {
-  @apply p-2 bg-white dark:bg-slate-800 hover:bg-[#FAFAF9] dark:hover:bg-slate-700 text-[#1A1A1A] dark:text-slate-200 border border-[#D1D5DB] dark:border-slate-700 rounded-xl transition-all duration-150 disabled:opacity-50;
-}
-
-.btn-delete-premium {
-  @apply p-2 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 rounded-xl transition-all duration-150 disabled:opacity-50;
-}
-
-.status-active-premium {
-  @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80;
-}
-
-.status-inactive-premium {
-  @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700;
-}
-
-.table-header-premium {
-  @apply border-b border-[#EAE4DA] dark:border-slate-800 text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider h-10 bg-[#FAFAF9] dark:bg-slate-800/90;
-}
-
-.checkbox-premium {
-  @apply rounded border-[#D1D5DB] dark:border-slate-700 text-[#111111] dark:text-indigo-600 focus:ring-0 w-4 h-4 cursor-pointer;
-}
-
-:root {
-  --sidebar-bg: #FFFFFF;
-  --sidebar-border: #EAE4DA;
+.dark .animate-shimmer::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.04) 20%,
+    rgba(255, 255, 255, 0.08) 60%,
+    rgba(255, 255, 255, 0)
+  );
 }

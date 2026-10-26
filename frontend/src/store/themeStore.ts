@@ -1,5 +1,11 @@
 import { create } from 'zustand';
 import api from '../services/api';
+import { applyBrandScaleToDOM } from '../utils/themeGenerator';
+
+// Apply brand scale immediately on script load to eliminate any styling flash
+if (typeof document !== 'undefined') {
+  applyBrandScaleToDOM();
+}
 
 export interface ThemeSettings {
   primaryColor: string; // RGB triplet e.g. "79 70 229"
@@ -87,14 +93,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 
   applyTheme: (settings) => {
+    const s = settings || {};
     const root = document.documentElement;
-    const sidebarBg = settings.sidebarBg || '#FFFFFF';
+    const sidebarBg = s.sidebarBg || '#FFFFFF';
     
+    // Apply full brand scale & WCAG contrast tokens dynamically
+    applyBrandScaleToDOM(s.primaryColor);
+
     // Apply CSS Variables
-    root.style.setProperty('--color-primary', settings.primaryColor || '79 70 229');
+    root.style.setProperty('--color-primary', s.primaryColor || '2 132 199');
     root.style.setProperty('--sidebar-bg', sidebarBg);
-    root.style.setProperty('--header-bg', settings.headerBg || '#ffffff');
-    root.style.setProperty('--font-family', `'Plus Jakarta Sans', '${settings.fontFamily || 'Inter'}', -apple-system, BlinkMacSystemFont, sans-serif`);
+    root.style.setProperty('--header-bg', s.headerBg || '#0B132B');
+    root.style.setProperty('--font-family', `'Plus Jakarta Sans', '${s.fontFamily || 'Inter'}', -apple-system, BlinkMacSystemFont, sans-serif`);
 
     // Detect brightness of sidebarBg
     const hex = sidebarBg.replace('#', '');
@@ -130,7 +140,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     }
 
     // Apply dark/light class based on user override or branding defaults
-    const isDark = localStorage.getItem('theme') === 'dark' || (localStorage.getItem('theme') === null && settings.mode === 'dark');
+    const isDark = localStorage.getItem('theme') === 'dark' || (localStorage.getItem('theme') === null && s.mode === 'dark');
     if (isDark) {
       root.classList.add('dark');
     } else {
