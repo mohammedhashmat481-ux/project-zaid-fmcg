@@ -18,6 +18,7 @@ const notificationHelper_1 = require("../utils/notificationHelper");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const hierarchy_1 = require("../utils/hierarchy");
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 // Apply security middlewares
 router.use(authMiddleware_1.authenticate);
@@ -282,6 +283,7 @@ router.post('/leads/bulk-import', async (req, res) => {
             resourceId: String(leadModule._id),
             newValue: { count: inserted.length, campaignName }
         });
+        cache_1.CacheInvalidators.invalidateDashboard(orgId);
         res.status(201).json({
             success: true,
             count: inserted.length,
@@ -374,6 +376,7 @@ router.post('/leads/bulk-delete', async (req, res) => {
             resourceId: String(leadModule._id),
             oldValue: { deletedCount: result.deletedCount, filters, leadIdsCount: leadIds?.length }
         });
+        cache_1.CacheInvalidators.invalidateDashboard(orgId);
         res.status(200).json({
             success: true,
             count: result.deletedCount,
@@ -832,8 +835,19 @@ exports.PIPELINE_LEAD_STATUS_REGEX = '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|CE[BD
 router.get('/:apiPath', async (req, res) => {
     try {
         const { apiPath } = req.params;
-        const defaultLimit = apiPath.toLowerCase() === 'leads' ? '10' : '50';
+        const isMasterModule = ['bankmasters', 'bankingpartners', 'departments', 'products'].includes(apiPath.toLowerCase());
+        const defaultLimit = apiPath.toLowerCase() === 'leads' ? '10' : (isMasterModule ? '100' : '50');
         const { search, page = '1', limit = defaultLimit, sort } = req.query;
+        const isDefaultList = !search && page === '1';
+        const masterCacheKey = isMasterModule && isDefaultList ? cache_1.CacheKeys.masterRecords(req.organizationId, apiPath.toLowerCase()) : null;
+        if (masterCacheKey) {
+            const cached = cache_1.serverCache.get(masterCacheKey);
+            if (cached) {
+                res.setHeader('X-Cache', 'HIT');
+                res.status(200).json(cached);
+                return;
+            }
+        }
         const moduleDef = await ModuleDefinition_1.default.findOne({
             organizationId: req.organizationId,
             apiPath: apiPath.toLowerCase()
@@ -993,8 +1007,8 @@ router.get('/:apiPath', async (req, res) => {
         // Apply Dynamic Reporting Manager Hierarchy filtering
         await hierarchy_1.HierarchyService.modifyRecordQuery(query, req.user, req.organizationId);
         // Pagination
-        const pageNum = parseInt(page, 10);
-        const limitNum = parseInt(limit, 10);
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || (isMasterModule ? 100 : 10)), 100);
         const skipNum = (pageNum - 1) * limitNum;
         // Sorting
         let sortOption = { createdAt: -1 };
@@ -1046,7 +1060,7 @@ router.get('/:apiPath', async (req, res) => {
                 }
             });
         }
-        res.status(200).json({
+        const responsePayload = {
             records,
             pagination: {
                 total,
@@ -1055,7 +1069,12 @@ router.get('/:apiPath', async (req, res) => {
                 limit: limitNum,
                 totalPages: Math.max(1, Math.ceil(total / limitNum))
             }
-        });
+        };
+        if (masterCacheKey) {
+            cache_1.serverCache.set(masterCacheKey, responsePayload, 600); // 10 minutes cache
+            res.setHeader('X-Cache', 'MISS');
+        }
+        res.status(200).json(responsePayload);
     }
     catch (error) {
         console.error('List Records Error:', error);
@@ -1155,6 +1174,8 @@ router.post('/:apiPath', async (req, res) => {
         }
         // Execute Workflows
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'create', newRecord);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(201).json(newRecord);
     }
     catch (error) {
@@ -1357,6 +1378,8 @@ router.put('/:apiPath/:id', async (req, res) => {
         }
         // Execute Workflows
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'update', record, changedFields);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(200).json(record);
     }
     catch (error) {
@@ -1407,6 +1430,8 @@ router.delete('/:apiPath/:id', async (req, res) => {
         });
         // Execute delete workflow triggers
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'delete', record);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(200).json({ message: 'Record deleted successfully.' });
     }
     catch (error) {
@@ -1465,6 +1490,7 @@ router.post('/transfer/leads', async (req, res) => {
                 link: '/modules/leads'
             });
         }
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json({ message: 'Leads transferred successfully.', modifiedCount: result.modifiedCount });
     }
     catch (error) {

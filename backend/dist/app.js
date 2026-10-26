@@ -13,6 +13,8 @@ const postgres_1 = require("./config/postgres");
 const tenantMiddleware_1 = require("./middleware/tenantMiddleware");
 const logger_1 = require("./utils/logger");
 const uploadPaths_1 = require("./utils/uploadPaths");
+const slowRequestLogger_1 = require("./middleware/slowRequestLogger");
+const cache_1 = require("./utils/cache");
 // Import routers
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
 const tenantRoutes_1 = __importDefault(require("./routes/tenantRoutes"));
@@ -27,8 +29,15 @@ const statusRoutes_1 = __importDefault(require("./routes/statusRoutes"));
 const notificationRoutes_1 = __importDefault(require("./routes/notificationRoutes"));
 const searchRoutes_1 = __importDefault(require("./routes/searchRoutes"));
 const app = (0, express_1.default)();
-// 1. Request Response Compression
-app.use((0, compression_1.default)());
+// Enable HTTP ETag for conditional 304 caching
+app.set('etag', 'strong');
+// 1. High-Performance Gzip/Deflate Compression
+app.use((0, compression_1.default)({
+    threshold: 1024,
+    level: 6
+}));
+// 2. Slow Request Performance Profiler (>300ms)
+app.use(slowRequestLogger_1.slowRequestLogger);
 // 2. Helmet Security Headers Setup (Configured to allow API connect-src across www and apex domains)
 app.use((0, helmet_1.default)({
     crossOriginResourcePolicy: false,
@@ -150,8 +159,28 @@ for (const dir of candidateUploadDirs) {
     }
 }
 // 6. Health, Ready, and Version check endpoints (placed before tenant resolver)
-app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+    let dbStatus = 'connected';
+    try {
+        await (0, postgres_1.queryPg)('SELECT 1');
+    }
+    catch (e) {
+        dbStatus = `disconnected: ${e.message}`;
+    }
+    const mem = process.memoryUsage();
+    res.status(200).json({
+        status: 'UP',
+        uptimeSeconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        database: dbStatus,
+        memory: {
+            rssMb: Math.round(mem.rss / 1024 / 1024),
+            heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+            heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024)
+        },
+        cache: cache_1.serverCache.stats(),
+        performance: (0, slowRequestLogger_1.getRequestMetrics)()
+    });
 });
 app.get('/ready', async (req, res) => {
     try {

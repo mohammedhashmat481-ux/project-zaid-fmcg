@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import Status from '../models/Status';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
+import { serverCache, CacheKeys, CacheInvalidators } from '../utils/cache';
 
 const router = Router();
 
@@ -55,6 +56,14 @@ async function reorderAfterDelete(organizationId: any) {
 // 1. Get all statuses
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const cacheKey = CacheKeys.statuses(req.organizationId!);
+    const cached = serverCache.get(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json(cached);
+      return;
+    }
+
     let statuses = await Status.find({ organizationId: req.organizationId }).sort({ order: 1 });
     
     // Auto-seed default standard statuses if none exist yet for this organization
@@ -90,6 +99,8 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       statuses = await Status.find({ organizationId: req.organizationId }).sort({ order: 1 });
     }
 
+    serverCache.set(cacheKey, statuses, 600); // 10 minutes cache
+    res.setHeader('X-Cache', 'MISS');
     res.status(200).json(statuses);
   } catch (error) {
     res.status(500).json({ error: 'Failed to retrieve statuses.' });
@@ -130,6 +141,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     await adjustStatusOrders(req.organizationId, null, calculatedOrder, newStatusFields);
 
     const status = await Status.create(newStatusFields);
+    CacheInvalidators.invalidateStatuses(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(201).json(status);
   } catch (error: any) {
     if (error.code === 11000) {
@@ -167,6 +180,8 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 
     await status.save();
+    CacheInvalidators.invalidateStatuses(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json(status);
   } catch (error: any) {
     if (error.code === 11000) {
@@ -186,6 +201,8 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
     await reorderAfterDelete(req.organizationId);
+    CacheInvalidators.invalidateStatuses(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json({ message: 'Status deleted successfully.' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete status.' });

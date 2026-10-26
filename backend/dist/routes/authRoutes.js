@@ -17,6 +17,7 @@ const geoUtils_1 = require("../utils/geoUtils");
 const seeder_1 = require("../utils/seeder");
 const hierarchy_1 = require("../utils/hierarchy");
 const geocoding_1 = require("../utils/geocoding");
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_access_token_key_12345';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super_secret_jwt_refresh_token_key_54321';
@@ -999,14 +1000,28 @@ router.post('/face/disable', authMiddleware_1.authenticate, async (req, res) => 
 // 8. List Tenant Users
 router.get('/users', authMiddleware_1.authenticate, async (req, res) => {
     try {
+        const isDropdown = req.query.purpose === 'dropdown';
+        const cacheKey = isDropdown ? cache_1.CacheKeys.userDropdown(req.organizationId) : null;
+        if (cacheKey) {
+            const cached = cache_1.serverCache.get(cacheKey);
+            if (cached) {
+                res.setHeader('X-Cache', 'HIT');
+                res.status(200).json(cached);
+                return;
+            }
+        }
         const query = { organizationId: req.organizationId };
-        if (req.query.purpose !== 'dropdown') {
+        if (!isDropdown) {
             await hierarchy_1.HierarchyService.modifyUserQuery(query, req.user, req.organizationId);
         }
         const users = await User_1.default.find(query)
             .populate('roleId', 'name')
             .populate('reportingManager', 'firstName lastName email')
             .select('-passwordHash -refreshTokens');
+        if (cacheKey) {
+            cache_1.serverCache.set(cacheKey, users, 300); // 5 minutes cache
+            res.setHeader('X-Cache', 'MISS');
+        }
         res.status(200).json(users);
     }
     catch (e) {
@@ -1089,6 +1104,8 @@ router.post('/users', authMiddleware_1.authenticate, async (req, res) => {
             approvalStatus: 'approved',
             department: department || ''
         });
+        cache_1.CacheInvalidators.invalidateUsers(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(201).json(newUser);
     }
     catch (e) {
@@ -1196,6 +1213,8 @@ router.put('/users/:id', authMiddleware_1.authenticate, async (req, res) => {
         if (department !== undefined)
             user.department = department;
         await user.save();
+        cache_1.CacheInvalidators.invalidateUsers(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json(user);
     }
     catch (e) {
@@ -1271,6 +1290,8 @@ router.delete('/users/:id', authMiddleware_1.authenticate, async (req, res) => {
             return;
         }
         await User_1.default.deleteOne({ _id: user._id });
+        cache_1.CacheInvalidators.invalidateUsers(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json({ message: 'User deleted successfully.' });
     }
     catch (e) {

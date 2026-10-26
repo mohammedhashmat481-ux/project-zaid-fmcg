@@ -8,6 +8,8 @@ import { queryPg } from './config/postgres';
 import { resolveTenant } from './middleware/tenantMiddleware';
 import { logger } from './utils/logger';
 import { getUploadDir } from './utils/uploadPaths';
+import { slowRequestLogger, getRequestMetrics } from './middleware/slowRequestLogger';
+import { serverCache } from './utils/cache';
 
 // Import routers
 import authRoutes from './routes/authRoutes';
@@ -25,8 +27,17 @@ import searchRoutes from './routes/searchRoutes';
 
 const app = express();
 
-// 1. Request Response Compression
-app.use(compression());
+// Enable HTTP ETag for conditional 304 caching
+app.set('etag', 'strong');
+
+// 1. High-Performance Gzip/Deflate Compression
+app.use(compression({
+  threshold: 1024,
+  level: 6
+}));
+
+// 2. Slow Request Performance Profiler (>300ms)
+app.use(slowRequestLogger);
 
 // 2. Helmet Security Headers Setup (Configured to allow API connect-src across www and apex domains)
 app.use(helmet({
@@ -159,8 +170,28 @@ for (const dir of candidateUploadDirs) {
 }
 
 // 6. Health, Ready, and Version check endpoints (placed before tenant resolver)
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  let dbStatus = 'connected';
+  try {
+    await queryPg('SELECT 1');
+  } catch (e: any) {
+    dbStatus = `disconnected: ${e.message}`;
+  }
+
+  const mem = process.memoryUsage();
+  res.status(200).json({
+    status: 'UP',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    database: dbStatus,
+    memory: {
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024)
+    },
+    cache: serverCache.stats(),
+    performance: getRequestMetrics()
+  });
 });
 
 app.get('/ready', async (req, res) => {

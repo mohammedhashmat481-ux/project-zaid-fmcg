@@ -25,27 +25,45 @@ const getPgDriver = () => {
 };
 exports.getPgDriver = getPgDriver;
 const queryPg = async (sql, params = []) => {
+    const start = Date.now();
+    let rows;
     if (pool) {
         const res = await pool.query(sql, params);
-        return res.rows;
+        rows = res.rows;
     }
-    if (pgliteInstance) {
+    else if (pgliteInstance) {
         const res = await pgliteInstance.query(sql, params);
-        return res.rows;
+        rows = res.rows;
     }
-    throw new Error('PostgreSQL database not initialized.');
+    else {
+        throw new Error('PostgreSQL database not initialized.');
+    }
+    const duration = Date.now() - start;
+    if (duration > 150) {
+        const preview = sql.replace(/\s+/g, ' ').slice(0, 120);
+        console.warn(`[SLOW DB QUERY >150ms] ${duration}ms: ${preview}...`);
+    }
+    return rows;
 };
 exports.queryPg = queryPg;
 const execPg = async (sql) => {
+    const start = Date.now();
+    let res;
     if (pool) {
-        const res = await pool.query(sql);
-        return res;
+        res = await pool.query(sql);
     }
-    if (pgliteInstance) {
-        const res = await pgliteInstance.exec(sql);
-        return res;
+    else if (pgliteInstance) {
+        res = await pgliteInstance.exec(sql);
     }
-    throw new Error('PostgreSQL database not initialized.');
+    else {
+        throw new Error('PostgreSQL database not initialized.');
+    }
+    const duration = Date.now() - start;
+    if (duration > 150) {
+        const preview = sql.replace(/\s+/g, ' ').slice(0, 120);
+        console.warn(`[SLOW DB EXEC >150ms] ${duration}ms: ${preview}...`);
+    }
+    return res;
 };
 exports.execPg = execPg;
 const connectPostgres = async () => {
@@ -54,9 +72,11 @@ const connectPostgres = async () => {
         console.log('[PostgreSQL] Connecting via Pool to DATABASE_URL...');
         pool = new pg_1.Pool({
             connectionString: dbUrl,
-            max: 20,
+            max: 25,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 5000
+            connectionTimeoutMillis: 5000,
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 10000
         });
         try {
             const client = await pool.connect();
@@ -178,6 +198,8 @@ const initPostgresSchema = async () => {
 
     CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_org_active ON users(organization_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_users_org_dept ON users(organization_id, department);
 
     CREATE TABLE IF NOT EXISTS module_definitions (
       id VARCHAR(64) PRIMARY KEY,
@@ -209,12 +231,19 @@ const initPostgresSchema = async () => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_cr_org_mod ON custom_records(organization_id, module_id);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_created ON custom_records(organization_id, module_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_created ON custom_records(organization_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_cr_created_at ON custom_records(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_cr_email ON custom_records((data->>'email'));
     CREATE INDEX IF NOT EXISTS idx_cr_phone ON custom_records((data->>'phone'));
     CREATE INDEX IF NOT EXISTS idx_cr_status ON custom_records((data->>'status'));
     CREATE INDEX IF NOT EXISTS idx_cr_source ON custom_records((data->>'source'));
     CREATE INDEX IF NOT EXISTS idx_cr_assigned ON custom_records((data->>'assignedTo'));
+    CREATE INDEX IF NOT EXISTS idx_cr_followup ON custom_records((data->>'followUpDate'));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_followup ON custom_records(organization_id, (data->>'followUpDate'));
+    CREATE INDEX IF NOT EXISTS idx_cr_campaign ON custom_records((data->>'campaign'));
+    CREATE INDEX IF NOT EXISTS idx_cr_campaign_name ON custom_records((data->>'campaignName'));
+    CREATE INDEX IF NOT EXISTS idx_cr_data_gin ON custom_records USING gin (data);
 
     CREATE TABLE IF NOT EXISTS activities (
       id VARCHAR(64) PRIMARY KEY,
@@ -227,6 +256,8 @@ const initPostgresSchema = async () => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_activities_org_rec ON activities(organization_id, record_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activities_org_user ON activities(organization_id, user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activities_created ON activities(created_at DESC);
 
     CREATE TABLE IF NOT EXISTS audit_logs (
       id VARCHAR(64) PRIMARY KEY,
@@ -245,6 +276,7 @@ const initPostgresSchema = async () => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_org_user ON audit_logs(organization_id, user_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS documents (
       id VARCHAR(64) PRIMARY KEY,
@@ -293,6 +325,7 @@ const initPostgresSchema = async () => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_statuses_org_order ON statuses(organization_id, order_num);
+    CREATE INDEX IF NOT EXISTS idx_statuses_org_vis ON statuses(organization_id, dashboard_visibility, order_num);
 
     CREATE TABLE IF NOT EXISTS workflows (
       id VARCHAR(64) PRIMARY KEY,

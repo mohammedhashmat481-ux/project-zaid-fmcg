@@ -8,6 +8,7 @@ const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition")
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 // Apply auth & tenant isolation to all module definitions routes
 router.use(authMiddleware_1.authenticate);
@@ -15,7 +16,16 @@ router.use(tenantMiddleware_1.requireTenant);
 // 1. Get all module definitions active for the tenant
 router.get('/', async (req, res) => {
     try {
+        const cacheKey = cache_1.CacheKeys.modules(req.organizationId);
+        const cached = cache_1.serverCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cached);
+            return;
+        }
         const modules = await ModuleDefinition_1.default.find({ organizationId: req.organizationId });
+        cache_1.serverCache.set(cacheKey, modules, 600); // 10 minutes cache
+        res.setHeader('X-Cache', 'MISS');
         res.status(200).json(modules);
     }
     catch (error) {
@@ -50,6 +60,7 @@ router.post('/', async (req, res) => {
             fields: fields || [],
             relationships: relationships || []
         });
+        cache_1.CacheInvalidators.invalidateModules(req.organizationId);
         res.status(201).json(newModule);
     }
     catch (error) {
@@ -81,6 +92,7 @@ router.put('/:id', async (req, res) => {
         if (relationships)
             moduleDef.relationships = relationships;
         await moduleDef.save();
+        cache_1.CacheInvalidators.invalidateModules(req.organizationId);
         res.status(200).json(moduleDef);
     }
     catch (error) {
@@ -109,6 +121,8 @@ router.delete('/:id', async (req, res) => {
         });
         // Delete the module definition
         await ModuleDefinition_1.default.findByIdAndDelete(moduleDef._id);
+        cache_1.CacheInvalidators.invalidateModules(req.organizationId);
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId);
         res.status(200).json({ message: 'Module definition and all associated records deleted successfully.' });
     }
     catch (error) {

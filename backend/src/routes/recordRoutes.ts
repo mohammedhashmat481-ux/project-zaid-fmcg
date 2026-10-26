@@ -11,6 +11,7 @@ import { createNotification } from '../utils/notificationHelper';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { HierarchyService } from '../utils/hierarchy';
+import { serverCache, CacheKeys, CacheInvalidators } from '../utils/cache';
 
 const router = Router();
 
@@ -319,6 +320,8 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
       newValue: { count: inserted.length, campaignName }
     });
 
+    CacheInvalidators.invalidateDashboard(orgId!);
+
     res.status(201).json({
       success: true,
       count: inserted.length,
@@ -413,6 +416,8 @@ router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<v
       resourceId: String(leadModule._id),
       oldValue: { deletedCount: result.deletedCount, filters, leadIdsCount: leadIds?.length }
     });
+
+    CacheInvalidators.invalidateDashboard(orgId!);
 
     res.status(200).json({
       success: true,
@@ -932,8 +937,21 @@ export const PIPELINE_LEAD_STATUS_REGEX = '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|
 router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
   try {
     const { apiPath } = req.params;
-    const defaultLimit = apiPath.toLowerCase() === 'leads' ? '10' : '50';
+    const isMasterModule = ['bankmasters', 'bankingpartners', 'departments', 'products'].includes(apiPath.toLowerCase());
+    const defaultLimit = apiPath.toLowerCase() === 'leads' ? '10' : (isMasterModule ? '100' : '50');
     const { search, page = '1', limit = defaultLimit, sort } = req.query;
+
+    const isDefaultList = !search && page === '1';
+    const masterCacheKey = isMasterModule && isDefaultList ? CacheKeys.masterRecords(req.organizationId!, apiPath.toLowerCase()) : null;
+
+    if (masterCacheKey) {
+      const cached = serverCache.get(masterCacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.status(200).json(cached);
+        return;
+      }
+    }
 
     const moduleDef = await ModuleDefinition.findOne({
       organizationId: req.organizationId,
@@ -1105,8 +1123,8 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
     await HierarchyService.modifyRecordQuery(query, req.user as any, req.organizationId!);
 
     // Pagination
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(Math.max(1, parseInt(limit as string, 10) || (isMasterModule ? 100 : 10)), 100);
     const skipNum = (pageNum - 1) * limitNum;
 
     // Sorting
@@ -1164,7 +1182,7 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       });
     }
 
-    res.status(200).json({
+    const responsePayload = {
       records,
       pagination: {
         total,
@@ -1173,7 +1191,14 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
         limit: limitNum,
         totalPages: Math.max(1, Math.ceil(total / limitNum))
       }
-    });
+    };
+
+    if (masterCacheKey) {
+      serverCache.set(masterCacheKey, responsePayload, 600); // 10 minutes cache
+      res.setHeader('X-Cache', 'MISS');
+    }
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     console.error('List Records Error:', error);
     res.status(500).json({ error: 'Failed to retrieve records.' });
@@ -1285,6 +1310,9 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
 
     // Execute Workflows
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'create', newRecord);
+
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
 
     res.status(201).json(newRecord);
   } catch (error) {
@@ -1517,6 +1545,9 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     // Execute Workflows
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'update', record, changedFields);
 
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
+
     res.status(200).json(record);
   } catch (error) {
     console.error('Update Record Error:', error);
@@ -1576,6 +1607,9 @@ router.delete('/:apiPath/:id', async (req: Request, res: Response): Promise<void
 
     // Execute delete workflow triggers
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'delete', record);
+
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
 
     res.status(200).json({ message: 'Record deleted successfully.' });
   } catch (error) {
@@ -1644,6 +1678,8 @@ router.post('/transfer/leads', async (req: Request, res: Response): Promise<void
         link: '/modules/leads'
       });
     }
+
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
 
     res.status(200).json({ message: 'Leads transferred successfully.', modifiedCount: result.modifiedCount });
   } catch (error: any) {

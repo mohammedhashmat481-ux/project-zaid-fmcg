@@ -12,6 +12,7 @@ import { haversineDistance } from '../utils/geoUtils';
 import { seedNewTenantData } from '../utils/seeder';
 import { HierarchyService } from '../utils/hierarchy';
 import { reverseGeocode } from '../utils/geocoding';
+import { serverCache, CacheKeys, CacheInvalidators } from '../utils/cache';
 
 const router = Router();
 
@@ -1114,8 +1115,20 @@ router.post('/face/disable', authenticate, async (req: Request, res: Response): 
 // 8. List Tenant Users
 router.get('/users', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const isDropdown = req.query.purpose === 'dropdown';
+    const cacheKey = isDropdown ? CacheKeys.userDropdown(req.organizationId!) : null;
+
+    if (cacheKey) {
+      const cached = serverCache.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.status(200).json(cached);
+        return;
+      }
+    }
+
     const query: Record<string, any> = { organizationId: req.organizationId };
-    if (req.query.purpose !== 'dropdown') {
+    if (!isDropdown) {
       await HierarchyService.modifyUserQuery(query, req.user as any, req.organizationId!);
     }
  
@@ -1123,6 +1136,12 @@ router.get('/users', authenticate, async (req: Request, res: Response): Promise<
       .populate('roleId', 'name')
       .populate('reportingManager', 'firstName lastName email')
       .select('-passwordHash -refreshTokens');
+
+    if (cacheKey) {
+      serverCache.set(cacheKey, users, 300); // 5 minutes cache
+      res.setHeader('X-Cache', 'MISS');
+    }
+
     res.status(200).json(users);
   } catch (e) {
     res.status(500).json({ error: 'Failed to retrieve users.' });
@@ -1210,6 +1229,8 @@ router.post('/users', authenticate, async (req: Request, res: Response): Promise
       department: department || ''
     });
     
+    CacheInvalidators.invalidateUsers(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(201).json(newUser);
   } catch (e) {
     res.status(500).json({ error: 'Failed to create user.' });
@@ -1309,6 +1330,8 @@ router.put('/users/:id', authenticate, async (req: Request, res: Response): Prom
     if (department !== undefined) user.department = department;
     
     await user.save();
+    CacheInvalidators.invalidateUsers(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json(user);
   } catch (e) {
     res.status(500).json({ error: 'Failed to update user.' });
@@ -1391,6 +1414,8 @@ router.delete('/users/:id', authenticate, async (req: Request, res: Response): P
     }
 
     await User.deleteOne({ _id: user._id });
+    CacheInvalidators.invalidateUsers(req.organizationId!);
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json({ message: 'User deleted successfully.' });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete user.' });

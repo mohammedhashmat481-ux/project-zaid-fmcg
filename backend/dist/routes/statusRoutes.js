@@ -7,6 +7,7 @@ const express_1 = require("express");
 const Status_1 = __importDefault(require("../models/Status"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
 router.use(tenantMiddleware_1.requireTenant);
@@ -56,6 +57,13 @@ async function reorderAfterDelete(organizationId) {
 // 1. Get all statuses
 router.get('/', async (req, res) => {
     try {
+        const cacheKey = cache_1.CacheKeys.statuses(req.organizationId);
+        const cached = cache_1.serverCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cached);
+            return;
+        }
         let statuses = await Status_1.default.find({ organizationId: req.organizationId }).sort({ order: 1 });
         // Auto-seed default standard statuses if none exist yet for this organization
         if (statuses.length === 0) {
@@ -88,6 +96,8 @@ router.get('/', async (req, res) => {
             }
             statuses = await Status_1.default.find({ organizationId: req.organizationId }).sort({ order: 1 });
         }
+        cache_1.serverCache.set(cacheKey, statuses, 600); // 10 minutes cache
+        res.setHeader('X-Cache', 'MISS');
         res.status(200).json(statuses);
     }
     catch (error) {
@@ -123,6 +133,8 @@ router.post('/', async (req, res) => {
         // Shift other statuses to accommodate the new status
         await adjustStatusOrders(req.organizationId, null, calculatedOrder, newStatusFields);
         const status = await Status_1.default.create(newStatusFields);
+        cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(201).json(status);
     }
     catch (error) {
@@ -164,6 +176,8 @@ router.put('/:id', async (req, res) => {
             status.order = tempWrapper.order;
         }
         await status.save();
+        cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json(status);
     }
     catch (error) {
@@ -184,6 +198,8 @@ router.delete('/:id', async (req, res) => {
             return;
         }
         await reorderAfterDelete(req.organizationId);
+        cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json({ message: 'Status deleted successfully.' });
     }
     catch (error) {

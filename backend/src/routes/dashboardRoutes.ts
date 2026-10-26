@@ -7,6 +7,7 @@ import User from '../models/User';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { HierarchyService } from '../utils/hierarchy';
+import { serverCache, CacheKeys, CacheInvalidators } from '../utils/cache';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.put('/layout', async (req: Request, res: Response): Promise<void> => {
       });
     }
 
+    CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json(layout);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update dashboard widgets.' });
@@ -68,6 +70,15 @@ router.put('/layout', async (req: Request, res: Response): Promise<void> => {
 router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
+    const userScopeKey = req.user?.id ? `${req.user.id}:${req.user.roleId || 'role'}` : 'anon';
+    const cacheKey = CacheKeys.dashboardMetrics(orgId!, userScopeKey);
+    const cachedData = serverCache.get(cacheKey);
+
+    if (cachedData) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json(cachedData);
+      return;
+    }
     
     // Find Lead and Deal Module Definitions
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
@@ -241,7 +252,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
         });
       }
 
-      res.status(200).json({
+      const resultData = {
         statusCounts,
         pipelineData,
         dealStatus,
@@ -252,11 +263,15 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
         isUpcoming,
         totalLeads: totalLeadsRes,
         recentActivities: recentActivitiesRes
-      });
+      };
+
+      serverCache.set(cacheKey, resultData, 45); // 45 seconds cache TTL
+      res.setHeader('X-Cache', 'MISS');
+      res.status(200).json(resultData);
       return;
     }
 
-    res.status(200).json({
+    const fallbackData = {
       statusCounts,
       pipelineData,
       dealStatus,
@@ -267,7 +282,10 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
       isUpcoming: false,
       totalLeads: 0,
       recentActivities: []
-    });
+    };
+    serverCache.set(cacheKey, fallbackData, 45);
+    res.setHeader('X-Cache', 'MISS');
+    res.status(200).json(fallbackData);
   } catch (error) {
     console.error('Metrics Error:', error);
     res.status(500).json({ error: 'Failed to retrieve dashboard KPI metrics.' });

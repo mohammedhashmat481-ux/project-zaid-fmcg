@@ -11,6 +11,7 @@ const Activity_1 = __importDefault(require("../models/Activity"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const hierarchy_1 = require("../utils/hierarchy");
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
 router.use(tenantMiddleware_1.requireTenant);
@@ -55,6 +56,7 @@ router.put('/layout', async (req, res) => {
                 widgets
             });
         }
+        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json(layout);
     }
     catch (error) {
@@ -65,6 +67,14 @@ router.put('/layout', async (req, res) => {
 router.get('/metrics', async (req, res) => {
     try {
         const orgId = req.organizationId;
+        const userScopeKey = req.user?.id ? `${req.user.id}:${req.user.roleId || 'role'}` : 'anon';
+        const cacheKey = cache_1.CacheKeys.dashboardMetrics(orgId, userScopeKey);
+        const cachedData = cache_1.serverCache.get(cacheKey);
+        if (cachedData) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cachedData);
+            return;
+        }
         // Find Lead and Deal Module Definitions
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         const dealModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'deals' });
@@ -218,7 +228,7 @@ router.get('/metrics', async (req, res) => {
                     }
                 });
             }
-            res.status(200).json({
+            const resultData = {
                 statusCounts,
                 pipelineData,
                 dealStatus,
@@ -229,10 +239,13 @@ router.get('/metrics', async (req, res) => {
                 isUpcoming,
                 totalLeads: totalLeadsRes,
                 recentActivities: recentActivitiesRes
-            });
+            };
+            cache_1.serverCache.set(cacheKey, resultData, 45); // 45 seconds cache TTL
+            res.setHeader('X-Cache', 'MISS');
+            res.status(200).json(resultData);
             return;
         }
-        res.status(200).json({
+        const fallbackData = {
             statusCounts,
             pipelineData,
             dealStatus,
@@ -243,7 +256,10 @@ router.get('/metrics', async (req, res) => {
             isUpcoming: false,
             totalLeads: 0,
             recentActivities: []
-        });
+        };
+        cache_1.serverCache.set(cacheKey, fallbackData, 45);
+        res.setHeader('X-Cache', 'MISS');
+        res.status(200).json(fallbackData);
     }
     catch (error) {
         console.error('Metrics Error:', error);
