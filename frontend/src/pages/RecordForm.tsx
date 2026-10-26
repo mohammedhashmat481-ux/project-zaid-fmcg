@@ -277,13 +277,11 @@ export default function RecordForm() {
         : 'Super Admin';
 
       if (apiPath === 'leads') {
-        defaults['source'] = loggedInCreatorName;
+        defaults['source'] = 'Ink CRM';
         if (!defaults['status']) {
           defaults['status'] = dynamicStatuses.includes('HOT LEAD') ? 'HOT LEAD' : (dynamicStatuses.includes('HOT LEADS') ? 'HOT LEADS' : 'HOT LEAD');
         }
-        if (!defaults['loanType']) {
-          defaults['loanType'] = allLoanTypes[0] || 'SALARIED PERSONAL LOAN';
-        }
+        defaults['loanType'] = '';
       }
       
       // Merge values passed from campaign calling card
@@ -296,7 +294,9 @@ export default function RecordForm() {
       // FIXED: When creating a new lead, SOURCE is ALWAYS fixed to the creator's name!
       // Even if passedData contains a campaign name, the creator's name is locked in as the SOURCE!
       if (apiPath === 'leads') {
-        finalDefaults['source'] = loggedInCreatorName;
+        if (!finalDefaults['source']) {
+          finalDefaults['source'] = 'Ink CRM';
+        }
       }
       
       reset(finalDefaults);
@@ -483,13 +483,7 @@ export default function RecordForm() {
         : 'Super Admin';
 
       if (apiPath === 'leads') {
-        if (!id) {
-          // When creating a lead, SOURCE is always the logged-in creator
-          data.source = loggedInCreatorName;
-        } else {
-          // When editing/reassigning a lead, keep the original creator's name permanently
-          data.source = watchedValues.source || data.source || loggedInCreatorName;
-        }
+        data.source = formData.source || data.source || 'Ink CRM';
       }
 
       // Auto-sync fullName, customerName, location, and currency
@@ -1375,9 +1369,9 @@ export default function RecordForm() {
   );
 
   const renderLeadsForm = () => {
-    const inputClass = "w-full h-11 px-4 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-slate-900 dark:text-white placeholder-slate-400";
-    const textareaClass = "w-full px-4 py-3 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-slate-900 dark:text-white placeholder-slate-400 resize-y";
-    const labelClass = "text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block mb-1.5";
+    const inputClass = "w-full h-10.5 px-3.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 transition-all text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal";
+    const textareaClass = "w-full px-3.5 py-2.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 transition-all text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal resize-y";
+    const labelClass = "text-xs font-bold text-slate-800 dark:text-slate-200 block mb-1.5 text-left";
     const statusOptions = dynamicStatuses.length > 0 ? dynamicStatuses : ['HOT LEAD', 'WARM LEADS', 'COLD LEADS'];
     const loanTypeOptions = allLoanTypes.length > 0 ? allLoanTypes : ['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP'];
 
@@ -1432,34 +1426,79 @@ export default function RecordForm() {
 
     return (
       <div className="space-y-6 max-w-7xl mx-auto pb-28 text-left">
-        {/* Breadcrumb & Title */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider">
-            <Link to={`/modules/${activeModule?.apiPath || 'leads'}`} className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-              {activeModule?.pluralLabel || 'Leads'}
+        {/* Top Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <Icons.Layers className="w-3.5 h-3.5 text-indigo-500" />
+          <Link to="/modules/leads" className="hover:text-indigo-600 transition-colors">
+            LEADS
+          </Link>
+          <Icons.ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+          <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+            {id ? `EDIT LEAD: ${recordName}` : 'CREATE LEAD'}
+          </span>
+        </div>
+
+        {/* Title Bar with Action Buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 flex-shrink-0">
+              <Icons.UserPlus className="w-6 h-6 stroke-[2.2]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+                  {id ? 'EDIT LEAD' : 'CREATE NEW LEAD'}
+                </h1>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#fffbeb] text-[#b45309] border border-[#fef3c7]">
+                  <Icons.Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                  {watchedValues.status || 'HOT LEAD'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                Fill in customer details, financial parameters, and loan options to generate a lead.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 ml-auto sm:ml-0">
+            <Link
+              to="/modules/leads"
+              className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
+              Cancel
             </Link>
-            <Icons.ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-900 dark:text-white font-bold">
-              {id ? `Edit: ${recordName}` : `Create ${activeModule?.singularLabel || 'Lead'}`}
-            </span>
+            <button
+              type="button"
+              onClick={handleSubmit(onSubmitForm)}
+              disabled={saving}
+              className="h-10 px-5 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-xl text-xs font-bold shadow-md shadow-sky-500/20 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {saving ? (
+                <Icons.Loader className="w-4 h-4 animate-spin" />
+              ) : (
+                <Icons.CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+              )}
+              Save Lead
+            </button>
           </div>
         </div>
 
         <form onSubmit={handleSubmit(onSubmitForm)} autoComplete="off" className="space-y-6">
           
           {/* ================= CARD 1: LOAN DETAILS ================= */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-all">
-            {/* Top gradient bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500" />
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden transition-all">
+            {/* Top border bar */}
+            <div className="h-1 w-full bg-[#1e293b] dark:bg-slate-700" />
 
             {/* Header */}
-            <div className="px-6 sm:px-8 py-5 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-100/80 dark:border-blue-900/40 shadow-xs">
+            <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-100/80 dark:border-blue-900/40 shadow-2xs">
                   <Icons.CircleDollarSign className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-800 dark:text-white tracking-wider uppercase">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white tracking-wider uppercase">
                     LOAN DETAILS
                   </h3>
                   <p className="text-xs text-slate-400 font-medium mt-0.5">
@@ -1467,23 +1506,22 @@ export default function RecordForm() {
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full uppercase tracking-wider">
                 13 FIELDS
               </span>
             </div>
 
-            {/* Card 1 Fields */}
-            <div className="p-6 sm:p-8 space-y-5">
-              
-              {/* Row 1 (4 cols): DATA CODE, CURRENT STATUS *, CASE DETAILS, LEAD CATEGORY */}
+            {/* Card 1 Fields: 4 Columns Grid */}
+            <div className="p-6 space-y-5">
+              {/* Row 1: Data Code, Current Status *, Loan Type *, Loan Amount * */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 1. DATA CODE */}
+                {/* 1. Data Code */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>DATA CODE</label>
+                  <label className={labelClass}>Data Code</label>
                   <input
                     type="text"
                     {...register('dataCode')}
-                    placeholder="Auto-Generated on save (or enter custom)"
+                    placeholder="Auto-Generated on save (or enter code)"
                     className={inputClass}
                   />
                   {errors.dataCode && (
@@ -1491,13 +1529,13 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 2. CURRENT STATUS * */}
+                {/* 2. Current Status * */}
                 <div className="space-y-1.5 text-left">
                   <label className={labelClass}>
-                    CURRENT STATUS<span className="text-rose-500 ml-0.5">*</span>
+                    Current Status <span className="text-red-500">*</span>
                   </label>
                   <select {...register('status')} className={inputClass}>
-                    <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
+                    <option value="" className="bg-white text-slate-500">-Select One-</option>
                     {statusOptions.map((st) => (
                       <option key={st} value={st} className="bg-white text-slate-900 font-bold">
                         {st}
@@ -1509,41 +1547,10 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 3. CASE DETAILS */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>CASE DETAILS</label>
-                  <input
-                    type="text"
-                    {...register('caseDetails')}
-                    placeholder="Case Details"
-                    className={inputClass}
-                  />
-                  {errors.caseDetails && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.caseDetails?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 4. LEAD CATEGORY */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>LEAD CATEGORY</label>
-                  <input
-                    type="text"
-                    {...register('leadCategory')}
-                    placeholder="Lead Category"
-                    className={inputClass}
-                  />
-                  {errors.leadCategory && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.leadCategory?.message as string)}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Row 2 (4 cols): LOAN TYPE * */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 5. LOAN TYPE * */}
+                {/* 3. Loan Type * */}
                 <div className="space-y-1.5 text-left">
                   <label className={labelClass}>
-                    LOAN TYPE<span className="text-rose-500 ml-0.5">*</span>
+                    Loan Type <span className="text-red-500">*</span>
                   </label>
                   <select {...register('loanType')} className={inputClass}>
                     <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
@@ -1557,39 +1564,18 @@ export default function RecordForm() {
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.loanType?.message as string)}</p>
                   )}
                 </div>
-                {/* Empty cols for exact layout match */}
-                <div className="hidden lg:block"></div>
-                <div className="hidden lg:block"></div>
-                <div className="hidden lg:block"></div>
-              </div>
 
-              {/* Row 3 (full width): REMARKS */}
-              <div className="space-y-1.5 text-left">
-                <label className={labelClass}>REMARKS</label>
-                <textarea
-                  rows={2}
-                  {...register('notes')}
-                  placeholder="Remarks"
-                  className={textareaClass}
-                />
-                {errors.notes && (
-                  <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.notes?.message as string)}</p>
-                )}
-              </div>
-
-              {/* Row 4 (4 cols): LOAN AMOUNT *, ASSIGN TO AGENT *, SOURCE, BUSINESS PARTNERS * */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 7. LOAN AMOUNT * */}
+                {/* 4. Loan Amount * */}
                 <div className="space-y-1.5 text-left">
                   <label className={labelClass}>
-                    LOAN AMOUNT<span className="text-rose-500 ml-0.5">*</span>
+                    Loan Amount <span className="text-red-500">*</span>
                   </label>
                   <div className="relative flex items-center">
                     <input
                       type="number"
                       step="any"
                       {...register('budget')}
-                      placeholder="Enter loan amount"
+                      placeholder="Enter loan amount amount"
                       className={`${inputClass} pr-9`}
                     />
                     <span className="absolute right-3.5 text-sm font-bold text-slate-400 select-none pointer-events-none">
@@ -1600,52 +1586,14 @@ export default function RecordForm() {
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.budget?.message as string)}</p>
                   )}
                 </div>
+              </div>
 
-                {/* 8. ASSIGN TO AGENT * */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>
-                    ASSIGN TO AGENT<span className="text-rose-500 ml-0.5">*</span>
-                  </label>
-                  <select {...register('assignedTo')} className={inputClass}>
-                    <option value="" className="bg-white text-slate-500 font-semibold">-Select Agent-</option>
-                    {filteredUsers.map((userOpt) => (
-                      <option key={userOpt} value={userOpt} className="bg-white text-slate-900 font-bold">
-                        {userOpt}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.assignedTo && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.assignedTo?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 9. SOURCE (Locked to Lead Creator's Name) */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center justify-between">
-                    <label className={labelClass}>SOURCE</label>
-                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded uppercase tracking-wider border border-indigo-200/60 dark:border-indigo-800">
-                      Lead Creator
-                    </span>
-                  </div>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      {...register('source')}
-                      value={watchedValues.source || (user ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0]) : 'Super Admin')}
-                      readOnly
-                      className={`${inputClass} bg-slate-50 dark:bg-slate-800/80 font-bold text-slate-800 dark:text-slate-100 cursor-not-allowed pr-9`}
-                    />
-                    <Icons.Lock className="w-4 h-4 text-slate-400 absolute right-3 pointer-events-none" />
-                  </div>
-                  {errors.source && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.source?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 10. BUSINESS PARTNERS * (Multi-Select Searchable Dropdown) */}
+              {/* Row 2: Business Partners *, Lead Category, Case Details, Source */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 5. Business Partners * */}
                 <div className="space-y-1.5 text-left relative">
                   <label className={labelClass}>
-                    BUSINESS PARTNERS<span className="text-rose-500 ml-0.5">*</span>
+                    Business Partners <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <button
@@ -1653,7 +1601,7 @@ export default function RecordForm() {
                       onClick={() => setBpDropdownOpen(!bpDropdownOpen)}
                       className={`${inputClass} flex items-center justify-between text-left cursor-pointer`}
                     >
-                      <span className={selectedBpList.length === 0 ? "text-slate-400 font-medium" : "text-slate-900 dark:text-white font-semibold truncate pr-4"}>
+                      <span className={selectedBpList.length === 0 ? "text-slate-400 font-normal" : "text-slate-900 dark:text-white font-semibold truncate pr-4"}>
                         {selectedBpList.length === 0 ? '-Select Business Partners-' : selectedBpList.join(', ')}
                       </span>
                       <Icons.ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -1673,7 +1621,7 @@ export default function RecordForm() {
                               value={bpSearchQuery}
                               onChange={(e) => setBpSearchQuery(e.target.value)}
                               placeholder={`Search out of ${bpOptions.length} banks...`}
-                              className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                               autoFocus
                             />
                             {bpSearchQuery && (
@@ -1700,14 +1648,14 @@ export default function RecordForm() {
                                   const combined = Array.from(new Set([...selectedBpList, ...filtered]));
                                   setValue('businessPartner', combined.join(', '), { shouldValidate: true });
                                 }}
-                                className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800"
+                                className="text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
                               >
                                 Select All
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setValue('businessPartner', '', { shouldValidate: true })}
-                                className="text-rose-500 hover:text-rose-700"
+                                className="text-rose-500 hover:underline cursor-pointer"
                               >
                                 Clear All
                               </button>
@@ -1716,47 +1664,37 @@ export default function RecordForm() {
 
                           {/* Scrollable list */}
                           <div className="space-y-1 overflow-y-auto pr-1 flex-1 max-h-48">
-                            {(() => {
-                              const filteredOpts = bpOptions.filter(b => b.toLowerCase().includes(bpSearchQuery.toLowerCase()));
-                              if (filteredOpts.length === 0) {
-                                return (
-                                  <div className="py-4 text-center text-slate-400 text-xs font-medium">
-                                    No banks matching "{bpSearchQuery}"
-                                  </div>
-                                );
-                              }
-                              return filteredOpts.map((opt) => {
-                                const isChecked = selectedBpList.includes(opt);
-                                return (
-                                  <button
-                                    key={opt}
-                                    type="button"
-                                    onClick={() => toggleBank(opt)}
-                                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl text-left transition-all ${
+                            {bpOptions.filter(b => b.toLowerCase().includes(bpSearchQuery.toLowerCase())).map((opt) => {
+                              const isChecked = selectedBpList.includes(opt);
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => toggleBank(opt)}
+                                  className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl text-left transition-all ${
+                                    isChecked
+                                      ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold'
+                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
                                       isChecked
-                                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold'
-                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2.5">
-                                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                                        isChecked
-                                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
-                                          : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-                                      }`}>
-                                        {isChecked && <Icons.Check className="w-3 h-3 stroke-[3]" />}
-                                      </div>
-                                      <span>{opt}</span>
+                                        ? 'bg-[#0284c7] border-[#0284c7] text-white shadow-2xs'
+                                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                    }`}>
+                                      {isChecked && <Icons.Check className="w-3 h-3 stroke-[3]" />}
                                     </div>
-                                    {isChecked && (
-                                      <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 dark:bg-indigo-900/60 dark:text-indigo-300 px-1.5 py-0.5 rounded">
-                                        Selected
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              });
-                            })()}
+                                    <span>{opt}</span>
+                                  </div>
+                                  {isChecked && (
+                                    <span className="text-[10px] font-bold text-sky-700 bg-sky-100 dark:bg-sky-900/60 dark:text-sky-300 px-1.5 py-0.5 rounded">
+                                      Selected
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       </>
@@ -1766,14 +1704,91 @@ export default function RecordForm() {
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.businessPartner?.message as string)}</p>
                   )}
                 </div>
+
+                {/* 6. Lead Category */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Lead Category</label>
+                  <input
+                    type="text"
+                    {...register('leadCategory')}
+                    placeholder="Lead Category"
+                    className={inputClass}
+                  />
+                  {errors.leadCategory && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.leadCategory?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 7. Case Details */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Case Details</label>
+                  <input
+                    type="text"
+                    {...register('caseDetails')}
+                    placeholder="Case Details"
+                    className={inputClass}
+                  />
+                  {errors.caseDetails && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.caseDetails?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 8. Source */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Source</label>
+                  <input
+                    type="text"
+                    {...register('source')}
+                    defaultValue="Ink CRM"
+                    placeholder="Source"
+                    className={inputClass}
+                  />
+                  {errors.source && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.source?.message as string)}</p>
+                  )}
+                </div>
               </div>
 
-              {/* Row 5 (4 cols): PSM *, ASSIGN TO TEAM, FOLLOW-UP DATE */}
+              {/* Row 3: Assign To Team, Assign To Agent *, PSM *, Follow-up Date */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 9. Assign To Team */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Assign To Team</label>
+                  <select {...register('assignToTeam')} className={inputClass}>
+                    <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
+                    {allTeams.map((team) => (
+                      <option key={team} value={team} className="bg-white text-slate-900 font-bold">
+                        {team}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.assignToTeam && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.assignToTeam?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 10. Assign To Agent * */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>
+                    Assign To Agent <span className="text-red-500">*</span>
+                  </label>
+                  <select {...register('assignedTo')} className={inputClass}>
+                    <option value="" className="bg-white text-slate-500 font-semibold">-Select Agent-</option>
+                    {filteredUsers.map((userOpt) => (
+                      <option key={userOpt} value={userOpt} className="bg-white text-slate-900 font-bold">
+                        {userOpt}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.assignedTo && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.assignedTo?.message as string)}</p>
+                  )}
+                </div>
+
                 {/* 11. PSM * */}
                 <div className="space-y-1.5 text-left">
                   <label className={labelClass}>
-                    PSM<span className="text-rose-500 ml-0.5">*</span>
+                    PSM <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1789,25 +1804,9 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 12. ASSIGN TO TEAM */}
+                {/* 12. Follow-up Date */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>ASSIGN TO TEAM</label>
-                  <select {...register('assignToTeam')} className={inputClass}>
-                    <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
-                    {allTeams.map((team) => (
-                      <option key={team} value={team} className="bg-white text-slate-900 font-bold">
-                        {team}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.assignToTeam && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.assignToTeam?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 13. FOLLOW-UP DATE */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>FOLLOW-UP DATE</label>
+                  <label className={labelClass}>Follow-up Date</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -1833,7 +1832,7 @@ export default function RecordForm() {
                         const el = document.getElementById('date-picker-leads') as HTMLInputElement | null;
                         if (el) { try { el.showPicker(); } catch { el.click(); } }
                       }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors cursor-pointer"
                     >
                       <Icons.Calendar className="w-4 h-4" />
                     </button>
@@ -1842,27 +1841,37 @@ export default function RecordForm() {
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.followUpDate?.message as string)}</p>
                   )}
                 </div>
-
-                {/* Empty 4th col for exact alignment */}
-                <div className="hidden lg:block"></div>
               </div>
 
+              {/* Row 4: Remarks (full width) */}
+              <div className="space-y-1.5 text-left">
+                <label className={labelClass}>Remarks</label>
+                <textarea
+                  rows={3}
+                  {...register('notes')}
+                  placeholder="Remarks"
+                  className={textareaClass}
+                />
+                {errors.notes && (
+                  <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.notes?.message as string)}</p>
+                )}
+              </div>
             </div>
           </div>
 
           {/* ================= CARD 2: PERSONAL DETAILS ================= */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-all">
-            {/* Top gradient bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden transition-all">
+            {/* Top border bar */}
+            <div className="h-1 w-full bg-[#1e293b] dark:bg-slate-700" />
 
             {/* Header */}
-            <div className="px-6 sm:px-8 py-5 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-100/80 dark:border-emerald-900/40 shadow-xs">
+            <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-100/80 dark:border-emerald-900/40 shadow-2xs">
                   <Icons.UserCheck className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-800 dark:text-white tracking-wider uppercase">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white tracking-wider uppercase">
                     PERSONAL DETAILS
                   </h3>
                   <p className="text-xs text-slate-400 font-medium mt-0.5">
@@ -1870,20 +1879,19 @@ export default function RecordForm() {
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full uppercase tracking-wider">
                 11 FIELDS
               </span>
             </div>
 
-            {/* Card 2 Fields */}
-            <div className="p-6 sm:p-8 space-y-5">
-              
-              {/* Row 1 (4 cols): FIRST NAME *, LAST NAME, COMPANY NAME, MOBILE */}
+            {/* Card 2 Fields: 4 Columns Grid */}
+            <div className="p-6 space-y-5">
+              {/* Row 1: First Name *, Last Name, Mobile, E-Mail */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 1. FIRST NAME * */}
+                {/* 1. First Name * */}
                 <div className="space-y-1.5 text-left">
                   <label className={labelClass}>
-                    FIRST NAME<span className="text-rose-500 ml-0.5">*</span>
+                    First Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1896,9 +1904,9 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 2. LAST NAME */}
+                {/* 2. Last Name */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>LAST NAME</label>
+                  <label className={labelClass}>Last Name</label>
                   <input
                     type="text"
                     {...register('lastName')}
@@ -1910,9 +1918,40 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 3. COMPANY NAME */}
+                {/* 3. Mobile */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>COMPANY NAME</label>
+                  <label className={labelClass}>Mobile</label>
+                  <input
+                    type="text"
+                    {...register('phone')}
+                    placeholder="Mobile"
+                    className={inputClass}
+                  />
+                  {errors.phone && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.phone?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 4. E-Mail */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>E-Mail</label>
+                  <input
+                    type="email"
+                    {...register('email')}
+                    placeholder="E-Mail"
+                    className={inputClass}
+                  />
+                  {errors.email && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.email?.message as string)}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: Company Name, Salary, City, State */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 5. Company Name */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Company Name</label>
                   <input
                     type="text"
                     {...register('company')}
@@ -1924,120 +1963,9 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 4. MOBILE */}
+                {/* 6. Salary */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>MOBILE</label>
-                  <input
-                    type="text"
-                    {...register('phone')}
-                    placeholder="Mobile"
-                    className={inputClass}
-                  />
-                  {errors.phone && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.phone?.message as string)}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Row 2 (4 cols): E-MAIL, CITY */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 5. E-MAIL */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>E-MAIL</label>
-                  <input
-                    type="email"
-                    {...register('email')}
-                    placeholder="E-Mail"
-                    className={inputClass}
-                  />
-                  {errors.email && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.email?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 6. CITY */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>CITY</label>
-                  <input
-                    type="text"
-                    {...register('city')}
-                    placeholder="City"
-                    className={inputClass}
-                  />
-                  {errors.city && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.city?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* Empty cols for exact visual match */}
-                <div className="hidden lg:block"></div>
-                <div className="hidden lg:block"></div>
-              </div>
-
-              {/* Row 3 (full width): PRESENT ADDRESS */}
-              <div className="space-y-1.5 text-left">
-                <label className={labelClass}>PRESENT ADDRESS</label>
-                <textarea
-                  rows={2}
-                  {...register('presentAddress')}
-                  placeholder="Present Address"
-                  className={textareaClass}
-                />
-                {errors.presentAddress && (
-                  <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.presentAddress?.message as string)}</p>
-                )}
-              </div>
-
-              {/* Row 4 (4 cols): PINCODE, STATE, COUNTRY, SALARY */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* 8. PINCODE */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>PINCODE</label>
-                  <input
-                    type="text"
-                    {...register('pinCode')}
-                    placeholder="PinCode"
-                    className={inputClass}
-                  />
-                  {errors.pinCode && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.pinCode?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 9. STATE */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>STATE</label>
-                  <select {...register('state')} className={inputClass}>
-                    <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
-                    {INDIAN_STATES.map((st) => (
-                      <option key={st} value={st} className="bg-white text-slate-900 font-bold">
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.state && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.state?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 10. COUNTRY */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>COUNTRY</label>
-                  <select {...register('country')} className={inputClass}>
-                    {['INDIA', 'UNITED STATES', 'UNITED KINGDOM', 'UAE', 'SINGAPORE', 'CANADA', 'AUSTRALIA'].map((c) => (
-                      <option key={c} value={c} className="bg-white text-slate-900 font-bold">
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.country && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.country?.message as string)}</p>
-                  )}
-                </div>
-
-                {/* 11. SALARY */}
-                <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>SALARY</label>
+                  <label className={labelClass}>Salary</label>
                   <div className="relative flex items-center">
                     <input
                       type="number"
@@ -2054,42 +1982,117 @@ export default function RecordForm() {
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.salary?.message as string)}</p>
                   )}
                 </div>
+
+                {/* 7. City */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>City</label>
+                  <input
+                    type="text"
+                    {...register('city')}
+                    placeholder="City"
+                    className={inputClass}
+                  />
+                  {errors.city && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.city?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 8. State */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>State</label>
+                  <select {...register('state')} className={inputClass}>
+                    <option value="" className="bg-white text-slate-500 font-semibold">-Select One-</option>
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st} className="bg-white text-slate-900 font-bold">
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.state && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.state?.message as string)}</p>
+                  )}
+                </div>
               </div>
 
+              {/* Row 3: PinCode, Country, Present Address (spans 2 cols) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 9. PinCode */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>PinCode</label>
+                  <input
+                    type="text"
+                    {...register('pinCode')}
+                    placeholder="PinCode"
+                    className={inputClass}
+                  />
+                  {errors.pinCode && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.pinCode?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 10. Country */}
+                <div className="space-y-1.5 text-left">
+                  <label className={labelClass}>Country</label>
+                  <select {...register('country')} className={inputClass}>
+                    {['INDIA', 'UNITED STATES', 'UNITED KINGDOM', 'UAE', 'SINGAPORE', 'CANADA', 'AUSTRALIA'].map((c) => (
+                      <option key={c} value={c} className="bg-white text-slate-900 font-bold">
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.country && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.country?.message as string)}</p>
+                  )}
+                </div>
+
+                {/* 11. Present Address (spans 2 columns) */}
+                <div className="space-y-1.5 text-left col-span-1 sm:col-span-2 lg:col-span-2">
+                  <label className={labelClass}>Present Address</label>
+                  <textarea
+                    rows={1}
+                    {...register('presentAddress')}
+                    placeholder="Present Address"
+                    className={textareaClass}
+                  />
+                  {errors.presentAddress && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.presentAddress?.message as string)}</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* ================= FLOATING STICKY ACTION BAR ================= */}
-          <div className="sticky bottom-4 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 rounded-2xl px-6 sm:px-8 py-3.5 shadow-xl flex items-center justify-between">
+          {/* Bottom Footer Actions Bar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
               <Icons.Info className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-              <span>Fields marked with <span className="text-rose-500 font-bold">*</span> are required</span>
+              <span>
+                Fields marked with <span className="text-red-500 font-bold">*</span> are required
+              </span>
             </div>
-            
-            <div className="flex items-center gap-3">
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
               <Link
-                to={`/modules/${activeModule?.apiPath || 'leads'}`}
-                className="h-10 px-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 uppercase tracking-wider transition-all cursor-pointer"
+                to="/modules/leads"
+                className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Icons.X className="w-4 h-4 stroke-[2.5]" />
-                CANCEL
+                <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
+                Cancel
               </Link>
-              
               <button
                 type="submit"
                 disabled={saving}
-                className="h-10 px-6 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-extrabold rounded-xl flex items-center gap-2 uppercase tracking-wider shadow-lg shadow-indigo-500/25 transition-all cursor-pointer disabled:opacity-50"
+                className="h-10 px-6 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-xl text-xs font-bold shadow-md shadow-sky-500/20 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
               >
                 {saving ? (
                   <Icons.Loader className="w-4 h-4 animate-spin" />
                 ) : (
                   <Icons.CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                 )}
-                {id ? 'SAVE CHANGES' : 'SAVE & CREATE LEAD'}
+                Save & Create Lead
               </button>
             </div>
           </div>
-
         </form>
 
         {/* Attachments & Audit below card (only in Edit mode) */}
@@ -2097,7 +2100,6 @@ export default function RecordForm() {
       </div>
     );
   };
-
   if (!activeModule || loading) {
     return (
       <div className="space-y-6 max-w-7xl mx-auto">
