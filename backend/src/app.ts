@@ -28,9 +28,29 @@ const app = express();
 // 1. Request Response Compression
 app.use(compression());
 
-// 2. Helmet Security Headers Setup
+// 2. Helmet Security Headers Setup (Configured to allow API connect-src across www and apex domains)
 app.use(helmet({
-  crossOriginResourcePolicy: false // Allows loading local static files
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https://www.novaleadnexa.in",
+        "https://novaleadnexa.in",
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "ws:",
+        "wss:"
+      ],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
+    }
+  }
 }));
 
 // 3. Access Logger Middleware
@@ -44,28 +64,58 @@ app.use((req, res, next) => {
   next();
 });
 
-// 4. CORS Setup
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
-  : ['http://localhost:5173'];
+// 4. Robust CORS Setup supporting www & apex domains, credentials, and OPTIONS preflights
+const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5000',
+  'https://novaleadnexa.in',
+  'https://www.novaleadnexa.in',
+  'http://novaleadnexa.in',
+  'http://www.novaleadnexa.in'
+];
 
-app.use(cors({
+const envAllowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean) 
+  : [];
+
+const allAllowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envAllowedOrigins]));
+
+const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
     if (
-      !origin || 
-      process.env.NODE_ENV !== 'production' ||
-      allowedOrigins.includes(origin) || 
       origin.includes('localhost') || 
       origin.includes('127.0.0.1') ||
-      origin.includes('192.168.')
+      origin.includes('192.168.') ||
+      origin.includes('10.') ||
+      origin.includes('novaleadnexa.in') ||
+      allAllowedOrigins.includes(origin) ||
+      allAllowedOrigins.includes('*')
     ) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+      return callback(null, true);
     }
+    callback(new Error(`Not allowed by CORS: ${origin}`));
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-tenant-id',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));

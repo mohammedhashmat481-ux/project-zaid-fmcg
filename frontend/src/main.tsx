@@ -48,7 +48,7 @@ window.confirm = (message?: string): boolean => {
   return true;
 };
 
-// Create React Query Client
+// Create React Query Client with strict limits and exponential backoff
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -56,16 +56,15 @@ const queryClient = new QueryClient({
       staleTime: 30000,
       gcTime: 1000 * 60 * 10,
       retry: (failureCount, error: any) => {
-        if (
-          error?.response?.status === 400 ||
-          error?.response?.status === 401 ||
-          error?.response?.status === 403 ||
-          error?.response?.status === 404
-        ) {
+        // Never retry on client errors (4xx) or canceled requests
+        const status = error?.response?.status;
+        if ((status && status >= 400 && status < 500) || error?.name === 'CanceledError') {
           return false;
         }
-        return failureCount < 2;
-      }
+        // Strict limit: maximum 1 retry to prevent 100+ error cascading loops
+        return failureCount < 1;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 4000)
     }
   }
 });

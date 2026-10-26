@@ -950,7 +950,7 @@ export default function ModuleView() {
   }, [apiPath, urlStatus, urlFollowup, modules.length]);
 
   // Query records with 10 records per page for lightning fast performance
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['records', apiPath, searchVal, filterField, filterVal, page],
     queryFn: async () => {
       const params: Record<string, any> = {
@@ -1955,6 +1955,23 @@ export default function ModuleView() {
         <div className="space-y-4 py-8">
           <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded animate-shimmer"></div>
           <div className="h-32 bg-slate-100 dark:bg-slate-800 rounded animate-shimmer"></div>
+        </div>
+      ) : isError && !data ? (
+        <div className="py-12 text-center bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-xl p-6 max-w-md mx-auto space-y-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <Icons.AlertCircle className="w-5 h-5" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800 dark:text-white">Failed to load records</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {(error as any)?.message || "The request could not reach the server."}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+          >
+            <Icons.RefreshCw className="w-3 h-3" />
+            Retry
+          </button>
         </div>
       ) : (
         <>

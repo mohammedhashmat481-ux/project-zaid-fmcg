@@ -60,6 +60,7 @@ export default function MyCampaign() {
   const { user } = useAuthStore();
   const [campaigns, setCampaigns] = useState<CampaignStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
   const [activeCampaign, setActiveCampaign] = useState<CampaignStats | null>(null);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
@@ -83,10 +84,12 @@ export default function MyCampaign() {
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
+      setCampaignError(null);
       const res = await api.get('/records/campaigns/my-campaigns');
       setCampaigns(res.data.campaigns || []);
     } catch (err: any) {
       console.error(err);
+      setCampaignError(err?.message || 'Failed to load campaigns.');
       showToast('Failed to load campaigns.', 'error');
     } finally {
       setLoading(false);
@@ -452,6 +455,27 @@ export default function MyCampaign() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (campaignError && campaigns.length === 0) {
+    return (
+      <div className="max-w-[1400px] mx-auto text-left p-6">
+        <div className="py-12 text-center bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-xl p-6 max-w-md mx-auto space-y-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <Icons.AlertCircle className="w-5 h-5" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800 dark:text-white">Failed to load campaigns</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{campaignError}</p>
+          <button
+            onClick={() => fetchCampaigns()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+          >
+            <Icons.RefreshCw className="w-3 h-3" />
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

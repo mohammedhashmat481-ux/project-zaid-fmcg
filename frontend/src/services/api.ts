@@ -1,12 +1,30 @@
 import axios from 'axios';
 
 const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+  const envUrl = import.meta.env.VITE_API_URL;
+
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    if (!isLocal) {
+      // 1. If explicitly relative (e.g. '/api/v1'), return as-is for same-origin proxying
+      if (envUrl && envUrl.startsWith('/')) {
+        return envUrl;
+      }
+      // 2. If envUrl was compiled with novaleadnexa.in (with or without www),
+      // force relative /api/v1 so it matches the current page origin and bypasses CSP/CORS blocking
+      if (envUrl && (envUrl.includes('novaleadnexa.in') || envUrl.includes(hostname))) {
+        return '/api/v1';
+      }
+      // 3. Fallback for remote production deployments: relative /api/v1
+      return '/api/v1';
+    }
   }
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // When accessed from a remote host without explicit VITE_API_URL, use same host with backend port 5000 or relative /api/v1
-    return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
+
+  // Local development fallback
+  if (envUrl) {
+    return envUrl;
   }
   return 'http://localhost:5000/api/v1';
 };
@@ -71,54 +89,71 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Single-flight refresh token mutex to prevent 100+ refresh storms
+let refreshPromise: Promise<string | null> | null = null;
+
+const refreshAuthToken = async (): Promise<string | null> => {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) return null;
+
+      const res = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
+      const newToken = res.data?.token;
+      if (newToken) {
+        localStorage.setItem('token', newToken);
+        return newToken;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+};
+
 // Response Interceptor: Handle Token Expiration (MFA or 401)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
+    // Do not attempt refresh on the refresh endpoint itself
+    if (originalRequest?.url?.includes('/auth/refresh')) {
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
-      try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (refreshToken) {
-          // Attempt refresh
-          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-          const newToken = res.data.token;
+      const newToken = await refreshAuthToken();
 
-          localStorage.setItem('token', newToken);
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-
-          return api(originalRequest);
-        } else {
-          // No refresh token, clear credentials and redirect to login
-          localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user');
-          localStorage.removeItem('tenantId');
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
-          }
-        }
-      } catch (refreshError) {
-        // Refresh token failed, clear state & logout
+      if (newToken) {
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
+      } else {
+        // No refresh token or refresh failed, clear credentials and redirect to login
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
         localStorage.removeItem('tenantId');
-        if (window.location.pathname !== '/login') {
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
       }
     } else if (
-      error.response?.status === 404 && originalRequest.url?.includes('/auth/')
+      error.response?.status === 404 && originalRequest?.url?.includes('/auth/me')
     ) {
-      // User/role/tenant context invalid — log out
+      // User/role/tenant context invalid - log out
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       localStorage.removeItem('tenantId');
-      if (window.location.pathname !== '/login') {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }

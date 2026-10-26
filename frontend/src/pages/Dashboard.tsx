@@ -108,13 +108,20 @@ export default function Dashboard() {
   };
 
   // Fetch live dashboard metrics from database with 60s polling intervals and 60s cache
-  const { data: metricsData, isLoading } = useQuery({
+  const { 
+    data: metricsData, 
+    isLoading, 
+    isError: isMetricsError, 
+    error: metricsError, 
+    refetch: refetchMetrics 
+  } = useQuery({
     queryKey: ['dashboard-metrics'],
     queryFn: async () => {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
     staleTime: 60000,
+    retry: 1,
     refetchInterval: (query) => (query.state.error ? false : 60000),
     refetchOnWindowFocus: false
   });
@@ -407,6 +414,31 @@ export default function Dashboard() {
       <div className="space-y-6">
         <div className="h-8 w-64 rounded animate-shimmer"></div>
         <div className="h-64 rounded-lg animate-shimmer"></div>
+      </div>
+    );
+  }
+
+  if (isMetricsError && !metricsData) {
+    return (
+      <div className="max-w-[1400px] mx-auto text-left px-4 md:px-8 py-12">
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 shadow-xs text-center max-w-lg mx-auto space-y-4">
+          <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+            <Icons.AlertCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Unable to Load Dashboard Data</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {(metricsError as any)?.message || 'The request was blocked or could not reach the server.'}
+            </p>
+          </div>
+          <button
+            onClick={() => refetchMetrics()}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+          >
+            <Icons.RefreshCw className="w-3.5 h-3.5" />
+            Retry Connection
+          </button>
+        </div>
       </div>
     );
   }
