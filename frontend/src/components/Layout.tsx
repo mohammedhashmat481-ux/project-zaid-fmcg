@@ -9,6 +9,7 @@ import { useThemeStore } from '../store/themeStore';
 import { useToastStore } from '../store/toastStore';
 import loginLogo from '../assets/login-logo.png';
 import * as Icons from 'lucide-react';
+import { getStatusTokens } from '../utils/statusTokenMapper';
 import {
   SidebarItem,
   SidebarAccordion,
@@ -169,6 +170,34 @@ export default function Layout({ children }: LayoutProps) {
     enabled: !!user
   });
 
+  // Dynamic configured statuses for Sidebar "Leads Process" submenu
+  const { data: configuredStatuses = [] } = useQuery({
+    queryKey: ['layout-configured-statuses'],
+    queryFn: async () => {
+      const res = await api.get('/statuses').catch(() => ({ data: [] }));
+      return Array.isArray(res.data) ? res.data : [];
+    },
+    staleTime: 10 * 60 * 1000
+  });
+
+  const fallbackLeadStatuses = [
+    { name: 'HOT LEADS', icon: 'Flame', color: '#EF4444' },
+    { name: 'WARM LEADS', icon: 'Sun', color: '#F59E0B' },
+    { name: 'CEBIL PENDING', icon: 'FileWarning', color: '#0284C7' },
+    { name: 'DOCUMENT PENDING', icon: 'FileText', color: '#0D9488' },
+    { name: 'APPROVAL PENDING', icon: 'Clock', color: '#F97316' },
+    { name: 'APPROVED BUT NOT DISBUSE', icon: 'CheckCircle', color: '#10B981' },
+    { name: 'DISBUSED', icon: 'Banknote', color: '#10B981' },
+    { name: 'REJECTED', icon: 'XOctagon', color: '#F43F5E' },
+    { name: 'FOLLOWUP', icon: 'PhoneCall', color: '#0284C7' },
+    { name: 'DROPPED', icon: 'ArrowDownCircle', color: '#F43F5E' },
+    { name: 'PENDING', icon: 'Hourglass', color: '#8B5CF6' }
+  ];
+
+  const leadStatusesToRender = (configuredStatuses && configuredStatuses.length > 0)
+    ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+    : fallbackLeadStatuses;
+
   const handleMarkAsRead = async (id: string, link?: string) => {
     try {
       await api.put(`/notifications/${id}/read`);
@@ -298,24 +327,27 @@ export default function Layout({ children }: LayoutProps) {
                 label="Today's Followup" 
                 icon={Icons.Calendar} 
                 indent 
+                badge={metricsData?.todayFollowupsCount > 0 ? metricsData.todayFollowupsCount : undefined}
                 isCollapsed={collapsed}
               />
-              <SidebarItem 
-                to="/modules/leads?status=HOT%20LEADS" 
-                label="Hot Leads" 
-                icon={Icons.Flame} 
-                colorClass="text-status-hot"
-                indent 
-                isCollapsed={collapsed}
-              />
-              <SidebarItem 
-                to="/modules/leads?status=WARM%20LEADS" 
-                label="Warm Leads" 
-                icon={Icons.Sun} 
-                colorClass="text-status-warm"
-                indent 
-                isCollapsed={collapsed}
-              />
+              {leadStatusesToRender.map((st: any) => {
+                const IconComp = (Icons as any)[st.icon] || Icons.Circle;
+                const statusTokens = getStatusTokens(st);
+                const upperName = (st.name || '').toUpperCase();
+                const count = metricsData?.statusCounts?.[upperName] || metricsData?.statusCounts?.[st.name];
+                return (
+                  <SidebarItem 
+                    key={st._id || st.name}
+                    to={`/modules/leads?status=${encodeURIComponent(st.name)}`}
+                    label={st.name} 
+                    icon={IconComp} 
+                    colorClass={statusTokens.iconTextClass}
+                    indent 
+                    badge={count > 0 ? count : undefined}
+                    isCollapsed={collapsed}
+                  />
+                );
+              })}
             </SidebarAccordion>
           )}
 
@@ -469,15 +501,6 @@ export default function Layout({ children }: LayoutProps) {
           >
             <Icons.Search className="w-5 h-5 stroke-[1.75]" />
           </button>
-
-          {/* Quick Create Lead Button */}
-          <Link
-            to="/modules/leads/new"
-            className="hidden sm:inline-flex items-center gap-1.5 h-8.5 px-3 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-xs transition-all cursor-pointer"
-          >
-            <Icons.Plus className="w-3.5 h-3.5 stroke-[2.2]" />
-            <span>Add Lead</span>
-          </Link>
 
           {/* Notifications Popover Toggle */}
           <div className="relative">
@@ -749,30 +772,32 @@ export default function Layout({ children }: LayoutProps) {
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto custom-scrollbar flex flex-col bg-surface-page">
           
-          {/* Consistent Page Header Bar */}
-          <div className="sticky top-0 z-20 bg-surface-page/95 backdrop-blur-xs border-b border-border-subtle px-4 sm:px-6 md:px-8 py-3.5 flex items-center justify-between gap-4 transition-colors">
-            <div className="flex flex-col text-left min-w-0">
-              <div className="flex items-center gap-2 text-[11px] font-semibold text-content-muted tracking-wider uppercase mb-0.5">
-                <span>{pageMeta.breadcrumb}</span>
+          {/* Consistent Page Header Bar (Hidden on Dashboard to eliminate duplicate header and save vertical space) */}
+          {location.pathname !== '/' && (
+            <div className="sticky top-0 z-20 bg-surface-page/95 backdrop-blur-xs border-b border-border-subtle px-4 sm:px-6 md:px-8 py-3.5 flex items-center justify-between gap-4 transition-colors">
+              <div className="flex flex-col text-left min-w-0">
+                <div className="flex items-center gap-2 text-[11px] font-semibold text-content-muted tracking-wider uppercase mb-0.5">
+                  <span>{pageMeta.breadcrumb}</span>
+                </div>
+                <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-content-primary tracking-tight leading-tight truncate">
+                  {pageMeta.title}
+                </h1>
               </div>
-              <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-content-primary tracking-tight leading-tight truncate">
-                {pageMeta.title}
-              </h1>
-            </div>
 
-            {/* Primary Action Button (Add Lead or Contextual) */}
-            <div className="flex items-center gap-2.5 flex-shrink-0">
-              {location.pathname !== '/modules/leads/new' && (
-                <Link
-                  to="/modules/leads/new"
-                  className="inline-flex items-center gap-2 h-9 px-3.5 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-xs hover:shadow-card transition-all cursor-pointer"
-                >
-                  <Icons.Plus className="w-4 h-4 stroke-[2.2]" />
-                  <span>Create Lead</span>
-                </Link>
-              )}
+              {/* Primary Action Button (Add Lead or Contextual) */}
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                {location.pathname !== '/modules/leads/new' && (
+                  <Link
+                    to="/modules/leads/new"
+                    className="inline-flex items-center gap-2 h-9 px-3.5 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-xs hover:shadow-card transition-all cursor-pointer"
+                  >
+                    <Icons.Plus className="w-4 h-4 stroke-[2.2]" />
+                    <span>Create Lead</span>
+                  </Link>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Page Body Viewport Container */}
           <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-[1600px] w-full mx-auto">

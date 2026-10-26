@@ -445,22 +445,22 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-6">
       
-      {/* 1. TOP HEADER & TELEMETRY CONTROLS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border-subtle">
+      {/* 1. COMPACT TELEMETRY HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border-subtle">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-content-primary tracking-tight">
+          <h1 className="text-lg sm:text-xl font-bold text-content-primary tracking-tight">
             Lending Operations Overview
           </h1>
-          <p className="text-xs sm:text-sm text-content-muted mt-0.5">
+          <p className="text-xs text-content-muted mt-0.5">
             Live pipeline velocity, status distributions, and scheduled follow-ups
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+        <div className="flex items-center gap-2.5">
           {/* Total Leads Badge */}
           <Link
             to="/modules/leads"
-            className="group h-9 px-3.5 bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary rounded-control flex items-center justify-center gap-2 border border-border-subtle shadow-card transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
+            className="group h-8.5 px-3 bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary rounded-control flex items-center gap-2 border border-border-subtle shadow-card transition-colors text-xs font-semibold"
             title="View All Leads"
           >
             <Icons.Layers className="w-3.5 h-3.5 text-brand-500" />
@@ -473,88 +473,84 @@ export default function Dashboard() {
           {/* Quick Add Lead CTA */}
           <Link 
             to="/modules/leads/new" 
-            className="group h-9 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-brand-contrast rounded-control flex items-center justify-center gap-2 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 cursor-pointer select-none text-xs font-semibold"
+            className="group h-8.5 px-3.5 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-brand-contrast rounded-control flex items-center gap-1.5 shadow-card hover:shadow-card-hover transition-all text-xs font-semibold"
           >
-            <Icons.Plus className="w-4 h-4 stroke-[2.2]" />
-            <span className="whitespace-nowrap">Add Lead</span>
+            <Icons.Plus className="w-3.5 h-3.5 stroke-[2.2]" />
+            <span>Add Lead</span>
           </Link>
         </div>
       </div>
 
-      {/* 2. OVERVIEW STATUS KPI CARDS (Responsive 4-Col Grid, Flat White Cards, 3px Accent Bar, Animated Numbers) */}
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {getDynamicMetricCards().map((metric, idx) => {
-            const Icon = metric.icon;
-            const count = getStatusCount(metric.rawName || metric.label);
-            const isZero = count === 0;
-            const tokens = getStatusTokens({
-              name: metric.rawName || metric.label,
-              color: metric.accentColor
-            });
+      {/* 2. OVERVIEW STATUS KPI CARDS (Compact, Flat, High-Density Linear/Stripe Style) */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        {getDynamicMetricCards().map((metric, idx) => {
+          const Icon = metric.icon;
+          const count = getStatusCount(metric.rawName || metric.label);
+          const isZero = count === 0;
+          const tokens = getStatusTokens({
+            name: metric.rawName || metric.label,
+            color: metric.accentColor
+          });
 
-            return (
-              <Link
-                to={
-                  metric.rawName === "TODAY'S FOLLOWUPS"
-                    ? '/modules/leads?followup=today'
-                    : `/modules/leads?status=${encodeURIComponent(metric.rawName || metric.label)}`
-                }
-                key={idx} 
-                className="group flex flex-col justify-between bg-surface-card border border-border-subtle rounded-card shadow-card hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-500/30 transition-all duration-150 relative overflow-hidden text-left p-4 sm:p-5"
-              >
-                {/* 3px Top Accent Bar */}
+          return (
+            <Link
+              to={
+                metric.rawName === "TODAY'S FOLLOWUPS"
+                  ? '/modules/leads?followup=today'
+                  : `/modules/leads?status=${encodeURIComponent(metric.rawName || metric.label)}`
+              }
+              key={idx} 
+              className="group flex flex-col justify-between bg-surface-card border border-border-subtle rounded-control shadow-2xs hover:shadow-card hover:-translate-y-0.5 hover:border-brand-500/40 transition-all duration-150 relative overflow-hidden text-left p-3 select-none"
+            >
+              {/* 2.5px Top Accent Bar */}
+              <div 
+                className="absolute top-0 left-0 right-0 h-[2.5px]"
+                style={{ backgroundColor: tokens.accentHex }}
+              />
+
+              {/* Card Header: Label & Tinted Icon */}
+              <div className="flex items-center justify-between gap-2 mb-1.5 pt-0.5">
+                <span 
+                  className="text-[11px] font-bold uppercase tracking-wider text-content-secondary truncate"
+                  title={metric.label}
+                >
+                  {metric.label}
+                </span>
                 <div 
-                  className="absolute top-0 left-0 right-0 h-[3px]"
-                  style={{ backgroundColor: tokens.accentHex }}
-                />
+                  className={`w-6 h-6 rounded-control flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-105 ${tokens.iconBgClass}`}
+                >
+                  <Icon className="w-3 h-3 stroke-[2.2]" />
+                </div>
+              </div>
 
-                {/* Card Header: Label (max 2 lines + tooltip) & Tinted Rounded Square Icon */}
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <span 
-                    className="text-xs font-semibold uppercase tracking-wider text-content-secondary line-clamp-2 leading-snug"
-                    title={metric.label}
-                  >
-                    {metric.label}
+              {/* Card Metric: Number & Zero State */}
+              <div className="flex items-baseline gap-1.5 mb-2">
+                <span className="text-2xl font-bold tracking-tight text-content-primary tabular-nums leading-none">
+                  <AnimatedNumber value={count} />
+                </span>
+                {isZero && (
+                  <span className="text-[10px] font-medium text-content-muted">
+                    No leads
                   </span>
-                  <div 
-                    className={`w-8 h-8 rounded-control flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-105 ${tokens.iconBgClass}`}
-                  >
-                    <Icon className="w-4 h-4 stroke-[2.2]" />
-                  </div>
-                </div>
+                )}
+              </div>
 
-                {/* Card Body: Metric Number & Zero-State Hint */}
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl sm:text-3xl font-bold tracking-tight text-content-primary tabular-nums">
-                      <AnimatedNumber value={count} />
-                    </span>
-                    {isZero && (
-                      <span className="text-xs font-medium text-content-muted">
-                        No leads
-                      </span>
-                    )}
-                  </div>
+              {/* Card Footer: Status Dot + Subtext + Arrow slide on hover */}
+              <div className="pt-2 border-t border-border-subtle/70 flex items-center justify-between mt-auto">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span 
+                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${tokens.dotClass}`} 
+                    style={{ backgroundColor: tokens.accentHex }} 
+                  />
+                  <span className="text-[10.5px] font-medium text-content-muted truncate">
+                    {metric.sub}
+                  </span>
                 </div>
-
-                {/* Card Footer: Status Dot + Subtext + Arrow slide on hover */}
-                <div className="pt-3 border-t border-border-subtle flex items-center justify-between mt-auto">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span 
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${tokens.dotClass}`} 
-                      style={{ backgroundColor: tokens.accentHex }} 
-                    />
-                    <span className="text-xs font-medium text-content-secondary truncate">
-                      {metric.sub}
-                    </span>
-                  </div>
-                  <Icons.ArrowRight className="w-3.5 h-3.5 text-content-muted transition-transform duration-150 group-hover:translate-x-1 group-hover:text-brand-500 flex-shrink-0" />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                <Icons.ArrowRight className="w-3 h-3 text-content-muted transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-brand-500 flex-shrink-0" />
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {/* 3. CAMPAIGN STATUS & EXECUTION TELEMETRY */}
