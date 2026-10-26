@@ -4,7 +4,8 @@ import api, { FILE_BASE_URL } from '../services/api';
 import { useThemeStore } from '../store/themeStore';
 import { Link, useNavigate } from 'react-router-dom';
 import { DynamicIcon } from '../components/Layout';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { formatDate } from '../utils/dateFormatter';
 import { useToastStore } from '../store/toastStore';
 import SalesFunnel3D from '../components/SalesFunnel3D';
@@ -35,17 +36,19 @@ export default function Dashboard() {
       const res = await api.get('/statuses').catch(() => ({ data: [] }));
       return Array.isArray(res.data) ? res.data : [];
     },
-    staleTime: 120000
+    staleTime: 10 * 60 * 1000, // 10 minutes master data
+    placeholderData: keepPreviousData
   });
 
-  // Fetch campaigns for Campaign Status section
+  // Fetch campaigns for Campaign Status section (capped at 100 for fast payload)
   const { data: campaignRecords } = useQuery({
     queryKey: ['dashboard-campaigns-list'],
     queryFn: async () => {
-      const res = await api.get('/records/campaigns?limit=1000').catch(() => ({ data: { records: [] } }));
+      const res = await api.get('/records/campaigns?limit=100').catch(() => ({ data: { records: [] } }));
       return res.data?.records || res.data || [];
     },
-    staleTime: 60000
+    staleTime: 60000,
+    placeholderData: keepPreviousData
   });
 
   // Cmd+K / Ctrl+K Keyboard Shortcut Listener
@@ -121,10 +124,13 @@ export default function Dashboard() {
       return res.data;
     },
     staleTime: 60000,
+    placeholderData: keepPreviousData,
     retry: 1,
     refetchInterval: (query) => (query.state.error ? false : 60000),
     refetchOnWindowFocus: false
   });
+
+  const { showLoading: showDelayedSkeleton, isTakingLonger } = useDelayedLoading(isLoading && !metricsData, 400);
 
   const { data: usersDropdown } = useQuery({
     queryKey: ['dashboard-users-dropdown'],
@@ -409,11 +415,22 @@ export default function Dashboard() {
     'Disbursed / Closed Won': { icon: Icons.CheckCircle2, color: '#7C3AED', bgTint: 'rgba(124, 58, 237, 0.1)' }
   };
 
-  if (isLoading) {
+  if (showDelayedSkeleton && !metricsData) {
     return (
-      <div className="space-y-6">
-        <div className="h-8 w-64 rounded animate-shimmer"></div>
-        <div className="h-64 rounded-lg animate-shimmer"></div>
+      <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-6">
+        <div className="h-8 w-64 rounded animate-shimmer bg-slate-200 dark:bg-slate-700"></div>
+        <div className="h-64 rounded-lg animate-shimmer bg-slate-100 dark:bg-slate-800"></div>
+        {isTakingLonger && (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-center space-y-2">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Taking longer than usual...</p>
+            <button
+              onClick={() => refetchMetrics()}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
       </div>
     );
   }

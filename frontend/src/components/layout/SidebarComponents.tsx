@@ -6,6 +6,8 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate } from 'react-router-dom';
+import { queryClient } from '../../services/queryClient';
+import api from '../../services/api';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -66,10 +68,43 @@ export const SidebarItem = ({
     location.pathname + location.search === to ||
     (to !== '/' && location.pathname.startsWith(to.split('?')[0]) && (location.search === (to.includes('?') ? '?' + to.split('?')[1] : '') || !to.includes('?')));
 
+  const handlePrefetch = () => {
+    if (!to) return;
+    try {
+      if (to === '/') {
+        queryClient.prefetchQuery({
+          queryKey: ['dashboard-metrics'],
+          queryFn: async () => (await api.get('/dashboard/metrics')).data,
+          staleTime: 60000
+        });
+      } else if (to.startsWith('/modules/')) {
+        const parts = to.split('?')[0].split('/');
+        const modulePath = parts[2];
+        if (modulePath) {
+          queryClient.prefetchQuery({
+            queryKey: ['records', modulePath, '', '', '', 1],
+            queryFn: async () => (await api.get(`/records/${modulePath}?page=1&limit=10`)).data,
+            staleTime: 60000
+          });
+        }
+      } else if (to === '/my-campaign') {
+        queryClient.prefetchQuery({
+          queryKey: ['dashboard-my-campaigns'],
+          queryFn: async () => (await api.get('/records/campaigns/my-campaigns')).data,
+          staleTime: 60000
+        });
+      }
+    } catch (e) {
+      // Ignore prefetch error
+    }
+  };
+
   return (
     <Link
       to={to}
       onClick={onClick}
+      onMouseEnter={handlePrefetch}
+      onFocus={handlePrefetch}
       title={isCollapsed ? label : undefined}
       className="block w-full focus:outline-none rounded-lg"
     >

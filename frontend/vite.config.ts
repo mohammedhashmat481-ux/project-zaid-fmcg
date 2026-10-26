@@ -7,7 +7,42 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: false,
-    chunkSizeWarningLimit: 1600
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('face-api.js')) {
+              return 'vendor-faceapi';
+            }
+            if (id.includes('xlsx')) {
+              return 'vendor-xlsx';
+            }
+            if (id.includes('recharts') || id.includes('d3-')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('@tanstack')) {
+              return 'vendor-query';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (
+              id.includes('react') ||
+              id.includes('react-dom') ||
+              id.includes('react-router-dom') ||
+              id.includes('zustand') ||
+              id.includes('axios') ||
+              id.includes('clsx') ||
+              id.includes('tailwind-merge') ||
+              id.includes('framer-motion')
+            ) {
+              return 'vendor-framework';
+            }
+          }
+        }
+      }
+    }
   },
   server: {
     port: 5173,

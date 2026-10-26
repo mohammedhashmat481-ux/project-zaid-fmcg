@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useDelayedLoading } from '../hooks/useDelayedLoading';
+import { useDebounce } from '../hooks/useDebounce';
 import * as Icons from 'lucide-react';
 import { useModuleStore, ModuleDefinition } from '../store/moduleStore';
 import { useAuthStore } from '../store/authStore';
@@ -34,6 +36,7 @@ export default function ModuleView() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchVal, setSearchVal] = useState('');
+  const debouncedSearchVal = useDebounce(searchVal, 300);
   const [filterField, setFilterField] = useState('');
   const [filterVal, setFilterVal] = useState('');
   const [page, setPage] = useState(1);
@@ -951,12 +954,12 @@ export default function ModuleView() {
 
   // Query records with 10 records per page for lightning fast performance
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['records', apiPath, searchVal, filterField, filterVal, page],
+    queryKey: ['records', apiPath, debouncedSearchVal, filterField, filterVal, page],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,
         limit: 10,
-        search: searchVal
+        search: debouncedSearchVal
       };
       if (filterField && filterVal) {
         if (filterField === 'followup') {
@@ -969,10 +972,13 @@ export default function ModuleView() {
       return res.data;
     },
     enabled: !!apiPath,
-    staleTime: 30000,
+    placeholderData: keepPreviousData,
+    staleTime: 60000,
     refetchInterval: (query) => (query.state.error ? false : 60000),
     refetchOnWindowFocus: false
   });
+
+  const { showLoading: showDelayedSkeleton, isTakingLonger } = useDelayedLoading(isLoading && !data, 400);
 
   const campaignSummaryStats = useMemo(() => {
     const records = data?.records || [];
@@ -1951,10 +1957,21 @@ export default function ModuleView() {
       )}
 
       {/* Render selected Mode Layout */}
-      {isLoading ? (
+      {showDelayedSkeleton && !data ? (
         <div className="space-y-4 py-8">
           <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded animate-shimmer"></div>
           <div className="h-32 bg-slate-100 dark:bg-slate-800 rounded animate-shimmer"></div>
+          {isTakingLonger && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-center space-y-2">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Taking longer than usual...</p>
+              <button
+                onClick={() => refetch()}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                Retry Connection
+              </button>
+            </div>
+          )}
         </div>
       ) : isError && !data ? (
         <div className="py-12 text-center bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-xl p-6 max-w-md mx-auto space-y-3">

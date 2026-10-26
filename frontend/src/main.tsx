@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { queryClient, persister, prefetchMasterData } from './services/queryClient';
 import App from './App';
 import './index.css';
 import { useThemeStore } from './store/themeStore';
@@ -48,27 +49,6 @@ window.confirm = (message?: string): boolean => {
   return true;
 };
 
-// Create React Query Client with strict limits and exponential backoff
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      staleTime: 30000,
-      gcTime: 1000 * 60 * 10,
-      retry: (failureCount, error: any) => {
-        // Never retry on client errors (4xx) or canceled requests
-        const status = error?.response?.status;
-        if ((status && status >= 400 && status < 500) || error?.name === 'CanceledError') {
-          return false;
-        }
-        // Strict limit: maximum 1 retry to prevent 100+ error cascading loops
-        return failureCount < 1;
-      },
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 4000)
-    }
-  }
-});
-
 // Bootstrapper: Load White-Label settings before mounting App
 const bootstrap = async () => {
   const host = window.location.host;
@@ -87,15 +67,39 @@ const bootstrap = async () => {
   await useThemeStore.getState().fetchBranding(subdomain || cachedSubdomain);
   
   // Initialize Auth user session
-  useAuthStore.getState().initialize();
+  await useAuthStore.getState().initialize();
+
+  // If user is already authenticated, prefetch master data in background
+  if (useAuthStore.getState().isAuthenticated) {
+    prefetchMasterData();
+  }
 };
 
 bootstrap().finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: 1000 * 60 * 60 * 24, // 24 hours
+          dehydrateOptions: {
+            shouldDehydrateQuery: (query) => {
+              // Never persist sensitive queries, mutations, or error states
+              const queryKey = query.queryKey[0];
+              if (
+                typeof queryKey === 'string' &&
+                (queryKey.includes('auth') || queryKey.includes('token') || queryKey.includes('password'))
+              ) {
+                return false;
+              }
+              return query.state.status === 'success';
+            }
+          }
+        }}
+      >
         <App />
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </React.StrictMode>
   );
 });

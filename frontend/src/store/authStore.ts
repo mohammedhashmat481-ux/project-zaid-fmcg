@@ -62,6 +62,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user, token, isAuthenticated: true, isInitializing: false });
     // Fetch full role details in background
     get().fetchProfile();
+    // Prefetch master data right after login
+    import('../services/queryClient').then((m) => m.prefetchMasterData()).catch(() => {});
   },
 
   setRole: (role) => {
@@ -102,6 +104,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      localStorage.removeItem('INKCRM_QUERY_OFFLINE_CACHE');
+      import('../services/queryClient').then((m) => m.clearPersistedQueryCache()).catch(() => {});
       set({ user: null, role: null, token: null, isAuthenticated: false });
     }
   },
