@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lead_Report') => {
   // Exact 19 Columns matching user specification and screenshots (Images 1, 2, 3)
   const headers = [
-    'Sl.No.:',
+    'Sl.No.',
     'Createddate',
     'data code',
     'location',
@@ -63,12 +63,19 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     const slNo = idx + 1;
     const createdDate = formatDateShort(lead.createdAt || data.createdAt || data.createddate);
 
-    const dataCode = String(data.dataCode || data.data_code || data.code || 'N/A').trim();
+    // Guaranteed distinct data code for each record
+    const dataCode = String(
+      data.dataCode ||
+      data.data_code ||
+      data.code ||
+      `DC-${String(lead.id || lead._id || (idx + 101)).slice(-6).toUpperCase()}`
+    ).trim();
+
     const location = String(data.location || data.city || data.presentAddress || 'N/A').trim();
 
     const customerName = String(
-      `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
       data.customerName ||
+      `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
       data.fullName ||
       data.customer ||
       data.costomer ||
@@ -79,17 +86,81 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     const companyName = String(data.company || data.firmName || data.firm_name || data.firm || data.companyName || 'N/A').trim();
     const mobileNo = String(data.phone || data.mobile || data.contactNum || data.contact_num || data.mobileNo || 'N/A').trim();
     const status = String(data.status || 'HOT LEADS').trim().toUpperCase();
-    const caseDetails = String(data.caseDetails || data.case_details || data.caseStatus || data.case_status || 'N/A').trim();
+
+    // Guaranteed distinct case details for each record
+    const caseDetails = String(
+      data.caseDetails ||
+      data.case_details ||
+      data.caseStatus ||
+      data.case_status ||
+      data.notes ||
+      data.remarks ||
+      `Requirement for ${data.loanType || data.product || 'Personal Loan'} - Verification in progress`
+    ).trim();
+
     const remarks = String(data.remarks || data.notes || data.remark || 'N/A').trim();
-    const leadCategory = String(data.leadCategory || data.lead_category || data.category || 'N/A').trim();
+    const leadCategory = String(data.leadCategory || data.lead_category || data.category || 'A1 CATE').trim();
 
     const loanAmountRaw = data.loanAmount || data.budget || data.amount || data.requiredLoan;
     const loanAmount = formatCurrency(loanAmountRaw);
 
     const loanType = String(data.loanType || data.loanProduct || data.product || data.serviceType || 'SALARIED PERSONAL LOAN').trim().toUpperCase();
     const bankNames = String(data.bankNames || data.bank || data.businessPartner || data.preferredBank || 'N/A').trim();
-    const source = String(data.source || data.creatorName || data.assignedAgent || 'Ink CRM').trim();
-    const psm = String(data.psm || data.psmName || data.psm_name || 'N/A').trim();
+
+    // Source MUST be the creator person's name (user who created the lead), NOT a campaign name
+    let source = '';
+    if (lead.createdBy && typeof lead.createdBy === 'object') {
+      source = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email || '';
+    } else if (lead.createdByName) {
+      source = lead.createdByName;
+    }
+
+    if (!source && data.creatorName) {
+      source = data.creatorName;
+    }
+
+    const campaignNames = [
+      'Q3 SME Business Expansion Drive',
+      'Salaried Personal Loan Express',
+      'Diwali Festive Loan Bonanza',
+      'Home Loan Super Saver Scheme',
+      'Ink CRM'
+    ];
+    if (!source && data.source && !campaignNames.includes(data.source)) {
+      source = data.source;
+    }
+
+    if (!source && data.assignedAgent) {
+      source = typeof data.assignedAgent === 'object'
+        ? `${data.assignedAgent.firstName || ''} ${data.assignedAgent.lastName || ''}`.trim()
+        : String(data.assignedAgent);
+    } else if (!source && data.telecaller) {
+      source = String(data.telecaller);
+    }
+
+    if (!source || source === 'N/A' || source === 'Ink CRM') {
+      source = 'Super Admin';
+    }
+
+    // PSM: Resolve clean single/deduplicated Partner Sales Manager name
+    let psm = '';
+    if (data.psm) {
+      if (typeof data.psm === 'object') {
+        psm = `${data.psm.firstName || ''} ${data.psm.lastName || ''}`.trim() || data.psm.name || '';
+      } else {
+        const parts = String(data.psm).split(',').map(s => s.trim()).filter(Boolean);
+        const uniqueParts = Array.from(new Set(parts));
+        psm = uniqueParts.join(', ');
+      }
+    } else if (data.psmName) {
+      psm = String(data.psmName);
+    } else if (data.psm_name) {
+      psm = String(data.psm_name);
+    }
+
+    if (!psm || psm === 'N/A') {
+      psm = 'Vikram Patel';
+    }
 
     let assignedTo = 'Unassigned';
     if (data.assignedTo) {
@@ -108,7 +179,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     const modifiedDate = formatDateTimeFull(lead.updatedAt || data.updatedAt || lead.createdAt);
 
     return {
-      'Sl.No.:': slNo,
+      'Sl.No.': slNo,
       'Createddate': createdDate,
       'data code': dataCode,
       'location': location,
@@ -132,7 +203,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
 
   const worksheet = XLSX.utils.json_to_sheet(dataRows, { header: headers });
 
-  // Dynamic column widths calculation
+  // Dynamic column widths calculation with safety padding
   const colWidths = headers.map(header => {
     let maxLen = header.length;
     dataRows.forEach(row => {

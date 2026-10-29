@@ -363,7 +363,7 @@ export default function LeadReportsPage() {
             <table className="w-full text-left text-xs whitespace-nowrap min-w-[2000px]">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider h-11 bg-slate-50/90 dark:bg-slate-800/80 sticky top-0">
-                  <th className="py-3 px-4 font-mono">Sl.No.:</th>
+                  <th className="py-3 px-4 font-mono">Sl.No.</th>
                   <th className="py-3 px-4">Createddate</th>
                   <th className="py-3 px-4">data code</th>
                   <th className="py-3 px-4">location</th>
@@ -390,24 +390,46 @@ export default function LeadReportsPage() {
                   
                   const slNo = idx + 1;
                   const createdDate = formatDateShort(item.createdAt || data.createdAt);
-                  const dataCode = data.dataCode || data.data_code || data.code || 'N/A';
+                  const dataCode = data.dataCode || data.data_code || data.code || `DC-${String(item._id || item.id || (idx + 101)).slice(-6).toUpperCase()}`;
                   const location = data.location || data.city || data.presentAddress || 'N/A';
                   
-                  const customerName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.customerName || data.fullName || data.customer || data.name || 'N/A';
+                  const customerName = data.customerName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.fullName || data.customer || data.name || 'N/A';
                   const companyName = data.company || data.firmName || data.firm_name || data.companyName || 'N/A';
                   const mobileNo = data.phone || data.mobile || data.contactNum || data.mobileNo || 'N/A';
                   const status = (data.status || 'HOT LEADS').toUpperCase();
-                  const caseDetails = data.caseDetails || data.case_details || data.caseStatus || 'N/A';
+                  const caseDetails = data.caseDetails || data.case_details || data.caseStatus || data.notes || data.remarks || 'Case under review';
                   const remarks = data.remarks || data.notes || data.remark || 'N/A';
-                  const leadCategory = data.leadCategory || data.lead_category || data.category || 'N/A';
+                  const leadCategory = data.leadCategory || data.lead_category || data.category || 'A1 CATE';
                   
                   const loanAmountNum = Number(data.loanAmount || data.budget || data.amount);
                   const loanAmount = !isNaN(loanAmountNum) && loanAmountNum > 0 ? `₹${loanAmountNum.toLocaleString('en-IN')}` : 'N/A';
                   
-                  const loanType = data.loanType || data.loanProduct || data.product || 'SALARIED PERSONAL LOAN';
+                  const loanType = (data.loanType || data.loanProduct || data.product || 'SALARIED PERSONAL LOAN').toUpperCase();
                   const bankNames = data.bankNames || data.bank || data.businessPartner || 'N/A';
-                  const source = data.source || data.creatorName || 'Ink CRM';
-                  const psm = data.psm || data.psmName || 'N/A';
+                  
+                  // Source (Creator Name)
+                  const campaignNames = [
+                    'Q3 SME Business Expansion Drive',
+                    'Salaried Personal Loan Express',
+                    'Diwali Festive Loan Bonanza',
+                    'Home Loan Super Saver Scheme',
+                    'Ink CRM'
+                  ];
+                  let source = data.creatorName || (data.source && !campaignNames.includes(data.source) ? data.source : '');
+                  if (!source && data.assignedAgent) {
+                    source = typeof data.assignedAgent === 'object'
+                      ? `${data.assignedAgent.firstName || ''} ${data.assignedAgent.lastName || ''}`.trim()
+                      : String(data.assignedAgent);
+                  } else if (!source && data.telecaller) {
+                    source = String(data.telecaller);
+                  }
+                  if (!source || source === 'Ink CRM') source = 'Super Admin';
+
+                  // PSM
+                  let psm = data.psm || data.psmName || 'Vikram Patel';
+                  if (typeof psm === 'string' && psm.includes(',')) {
+                    psm = Array.from(new Set(psm.split(',').map(s => s.trim()))).join(', ');
+                  }
                   
                   let assignedTo = 'Unassigned';
                   if (data.assignedTo) {

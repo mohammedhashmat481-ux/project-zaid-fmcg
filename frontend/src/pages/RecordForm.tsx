@@ -483,7 +483,8 @@ export default function RecordForm() {
         : 'Super Admin';
 
       if (apiPath === 'leads') {
-        data.source = formData.source || data.source || 'Ink CRM';
+        data.source = loggedInCreatorName;
+        data.creatorName = loggedInCreatorName;
       }
 
       // Auto-sync fullName, customerName, location, and currency
