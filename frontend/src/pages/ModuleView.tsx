@@ -14,6 +14,7 @@ import { useThemeStore } from '../store/themeStore';
 import { formatDate } from '../utils/dateFormatter';
 import { exportCampaignCSV } from '../utils/exportCampaignCSV';
 import { exportLeadReportXLSX } from '../utils/exportLeadReportXLSX';
+import { getStatusTokens } from '../utils/statusTokenMapper';
 
 type ViewMode = 'table' | 'kanban' | 'calendar' | 'timeline';
 
@@ -2082,191 +2083,245 @@ export default function ModuleView() {
                   const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
                   const isRevealed = !!revealedPhones[rec._id];
                   const displayedPhone = maskPhoneNumber(rawPhone, isRevealed);
-                  const theme = getStatusTheme(rec.data?.status);
-                  const initials = getCustomerInitials(leadName);
+                  const statusTokens = getStatusTokens(rec.data?.status || 'HOT');
+                  const rawStatus = (rec.data?.status || 'NEW').toUpperCase();
+                  const statusBadgeText = rawStatus.endsWith('LEAD') || rawStatus.endsWith('LEADS') 
+                    ? rawStatus 
+                    : `${rawStatus} LEAD`;
+
+                  let statusBadgeStyle = 'border border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+                  let StatusBadgeIcon: any = Icons.Sparkles;
+
+                  if (rawStatus.includes('HOT')) {
+                    statusBadgeStyle = 'border border-rose-200 bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400';
+                    StatusBadgeIcon = Icons.Flame;
+                  } else if (rawStatus.includes('CALL NOT CONNECT') || rawStatus.includes('NOT CONNECT')) {
+                    statusBadgeStyle = 'border border-sky-200 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:border-sky-900/60 dark:text-sky-400';
+                    StatusBadgeIcon = Icons.PhoneOff;
+                  } else if (rawStatus.includes('WARM') || rawStatus.includes('DEMO')) {
+                    statusBadgeStyle = 'border border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-400';
+                    StatusBadgeIcon = Icons.Zap;
+                  } else if (rawStatus.includes('DISBURS') || rawStatus.includes('APPROV') || rawStatus.includes('WON')) {
+                    statusBadgeStyle = 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-400';
+                    StatusBadgeIcon = Icons.CheckCircle2;
+                  } else if (rawStatus.includes('REJECT') || rawStatus.includes('DROP') || rawStatus.includes('DEAD')) {
+                    statusBadgeStyle = 'border border-slate-300 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400';
+                    StatusBadgeIcon = Icons.XCircle;
+                  } else {
+                    statusBadgeStyle = 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/60 dark:text-indigo-400';
+                    StatusBadgeIcon = Icons.PhoneCall;
+                  }
+
+                  const remarksText = rec.data?.notes 
+                    ? rec.data.notes.replace(/<[^>]*>/g, '') 
+                    : (rec.data?.remarks || (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'N/A'));
 
                   return (
                     <div 
                       key={rec._id} 
-                      className="group border border-slate-200/90 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-800 relative mb-5 last:mb-0 text-left shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
+                      className="border border-slate-200 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-800 relative mb-4 last:mb-0 text-left shadow-xs hover:shadow-md transition-all duration-150 overflow-hidden"
                     >
-                      {/* Top Accent Gradient Line */}
-                      <div className={`h-1.5 w-full bg-gradient-to-r ${theme.gradient}`} />
+                      {/* Status-colored Top Accent Bar */}
+                      <div 
+                        className="absolute top-0 left-0 right-0 h-[3px]" 
+                        style={{ backgroundColor: statusTokens.accentHex }} 
+                      />
                       
-                      <div className="p-5 sm:p-6 space-y-5">
-                        {/* Header Row: Avatar, Name, Chips & Loan Amount Hero */}
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700/60">
-                          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-extrabold text-base flex items-center justify-center shadow-xs flex-shrink-0">
-                              {initials}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight truncate">
-                                  {leadName}
-                                </h3>
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-700/70 dark:text-slate-300">
-                                  #{(page - 1) * 10 + idx + 1}
-                                </span>
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
-                                  LND-{leadNo}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                <span className="inline-flex items-center gap-1 font-medium">
-                                  <Icons.Building2 className="w-3.5 h-3.5 text-slate-400" />
-                                  {rec.data?.company || 'Individual / Enterprise'}
-                                </span>
-                                <span className="text-slate-300 dark:text-slate-600">•</span>
-                                <span className="inline-flex items-center gap-1 font-medium">
-                                  <Icons.MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                  {leadLocation}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 self-end md:self-center flex-shrink-0">
-                            {/* Status Pill */}
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border shadow-3xs ${theme.badge}`}>
-                              <span className={`w-2 h-2 rounded-full ${theme.dot} animate-pulse`} />
-                              <span>{rec.data?.status ? rec.data.status.toUpperCase() : 'NEW'}</span>
+                      <div className="p-5 sm:p-6 space-y-4">
+                        {/* 4-Column CSS Grid matching Image 1 exactly */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
+                          {/* --- Column 1 --- */}
+                          <div className="space-y-3.5">
+                            {/* Row 1: Sl No. */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-normal">{(page - 1) * 10 + idx + 1}</span>
                             </div>
 
-                            {/* Hero Loan Amount Card */}
-                            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/40 rounded-xl px-4 py-2 text-right min-w-[140px]">
-                              <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                                Loan Amount
+                            {/* Row 2: Lead No. */}
+                            <div className="leading-snug flex items-center gap-1.5">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.: </span>
+                              <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-semibold border border-slate-200/60 dark:border-slate-600/60">
+                                LND-{leadNo}
                               </span>
-                              <span className="block text-base sm:text-lg font-black text-emerald-700 dark:text-emerald-400">
-                                {formattedAmount}
+                            </div>
+
+                            {/* Row 3: Product */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Product: </span>
+                              <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || 'N/A'}>
+                                {rec.data?.loanType || 'N/A'}
                               </span>
-                              <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[150px]">
-                                {rec.data?.loanType || 'Personal Loan'}
+                            </div>
+
+                            {/* Row 4: Status */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Status: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
+                                {rec.data?.status || 'NEW'}
+                              </span>
+                            </div>
+
+                            {/* Row 5: Bank Partner */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px] align-bottom" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
+                                {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
                               </span>
                             </div>
                           </div>
-                        </div>
 
-                        {/* 4 Micro-cards Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                          {/* Panel 1: Contact & Partner */}
-                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                              <Icons.Phone className="w-3 h-3 text-slate-400" />
-                              Contact & Bank
+                          {/* --- Column 2 --- */}
+                          <div className="space-y-3.5">
+                            {/* Row 1: Lead Name */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name: </span>
+                              <Link 
+                                to={`/modules/leads/${rec._id}`}
+                                className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px] align-bottom" 
+                                title={leadName}
+                              >
+                                {leadName}
+                              </Link>
                             </div>
-                            <div>
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Mobile Number</span>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm tracking-wide">
-                                  {displayedPhone}
-                                </span>
+
+                            {/* Row 2: Location */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Location: </span>
+                              <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={leadLocation}>
+                                {leadLocation}
+                              </span>
+                            </div>
+
+                            {/* Row 3: Mobile No. */}
+                            <div className="leading-snug flex items-center gap-1.5">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
+                                {displayedPhone}
                                 {rawPhone && rawPhone !== 'N/A' && (
                                   <button
                                     type="button"
                                     onClick={() => togglePhoneReveal(rec._id)}
                                     title={isRevealed ? "Hide number" : "Show number"}
-                                    className="p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                    className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                                   >
                                     {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
                                   </button>
                                 )}
-                              </div>
+                              </span>
                             </div>
-                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800">
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Bank Partner</span>
-                              <span className="font-semibold text-slate-700 dark:text-slate-300 mt-0.5 block truncate">
-                                {rec.data?.businessPartner || 'Direct / Multi-Bank'}
+
+                            {/* Row 4: Amount */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Amount: </span>
+                              <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                                {formattedAmount}
+                              </span>
+                            </div>
+
+                            {/* Row 5: Case Details */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Case Details: </span>
+                              <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.caseDetails || 'N/A'}>
+                                {rec.data?.caseDetails || 'N/A'}
                               </span>
                             </div>
                           </div>
 
-                          {/* Panel 2: Pipeline Schedule */}
-                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                              <Icons.Calendar className="w-3 h-3 text-indigo-500" />
-                              Pipeline Schedule
+                          {/* --- Column 3 --- */}
+                          <div className="space-y-3.5">
+                            {/* Row 1: Created On */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Created On: </span>
+                              <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
                             </div>
-                            <div>
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Follow-up Date</span>
-                              <span className="font-bold text-indigo-600 dark:text-indigo-400 text-xs mt-0.5 block">
-                                {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'No Follow-up Scheduled'}
+
+                            {/* Row 2: By (Created By) */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">By: </span>
+                              <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={createdByName}>
+                                {createdByName}
                               </span>
                             </div>
-                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800 space-y-1">
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-400">Created:</span>
-                                <span className="text-slate-600 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
-                              </div>
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-400">Modified:</span>
-                                <span className="text-slate-600 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
-                              </div>
+
+                            {/* Row 3: Followup Date */}
+                            <div className="leading-snug flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date: </span>
+                              <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                                {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
+                              </span>
+                            </div>
+
+                            {/* Row 4: Pending at */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Pending at: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px] align-bottom" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
+                                {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                              </span>
+                            </div>
+
+                            {/* Row 5: PSM */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">PSM: </span>
+                              <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={psmName}>
+                                {psmName}
+                              </span>
                             </div>
                           </div>
 
-                          {/* Panel 3: Ownership & Routing */}
-                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                              <Icons.UserCheck className="w-3 h-3 text-cyan-500" />
-                              Assignment & Routing
+                          {/* --- Column 4 --- */}
+                          <div className="space-y-3.5">
+                            {/* Row 1: Firm/Company */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company: </span>
+                              <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.company || rec.data?.firm || 'N/A'}>
+                                {rec.data?.company || rec.data?.firm || 'N/A'}
+                              </span>
                             </div>
-                            <div>
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Assigned To</span>
-                              <span className="font-bold text-indigo-600 dark:text-indigo-300 mt-0.5 block truncate">
+
+                            {/* Row 2: Modified On */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Modified On: </span>
+                              <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
+                            </div>
+
+                            {/* Row 3: Assigned By */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By: </span>
+                              <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={assignedByName}>
+                                {assignedByName}
+                              </span>
+                            </div>
+
+                            {/* Row 4: Assigned To */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To: </span>
+                              <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px] align-bottom" title={assignedToName}>
                                 {assignedToName}
                               </span>
                             </div>
-                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800 space-y-1">
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-400">Created By:</span>
-                                <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-[100px]">{createdByName}</span>
-                              </div>
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-400">PSM:</span>
-                                <span className="text-slate-600 dark:text-slate-300 font-semibold truncate max-w-[100px]">{psmName}</span>
-                              </div>
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-400">Pending at:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-semibold truncate max-w-[100px]">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span>
-                              </div>
-                            </div>
-                          </div>
 
-                          {/* Panel 4: Case Intelligence & Remarks */}
-                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                              <Icons.FileText className="w-3 h-3 text-amber-500" />
-                              Case Intelligence
-                            </div>
-                            <div>
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Case Details</span>
-                              <p className="font-medium text-slate-700 dark:text-slate-300 text-xs mt-0.5 line-clamp-2" title={rec.data?.caseDetails || 'N/A'}>
-                                {rec.data?.caseDetails || 'Standard verification case'}
-                              </p>
-                            </div>
-                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800">
-                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Remarks / Note</span>
-                              <p className="italic text-slate-500 dark:text-slate-400 text-[11px] mt-0.5 line-clamp-2" title={rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || 'N/A')}>
-                                {rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'Lead logged in system')}
-                              </p>
+                            {/* Row 5: Remarks */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Remarks: </span>
+                              <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px] align-bottom" title={remarksText}>
+                                {remarksText}
+                              </span>
                             </div>
                           </div>
                         </div>
 
                         {/* Card Footer: Action Toolbar */}
-                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
+                        <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
-                            {rec.data?.dataCode && (
-                              <span className="text-[11px] font-mono font-medium px-2 py-1 bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 rounded-md">
-                                Code: {rec.data.dataCode}
-                              </span>
-                            )}
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider ${statusBadgeStyle}`}>
+                              <StatusBadgeIcon className="w-3.5 h-3.5" />
+                              <span>{statusBadgeText}</span>
+                            </span>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
-                            {/* WhatsApp Button */}
+                            {/* WA Chat (Green) */}
                             <button 
                               type="button"
                               onClick={() => {
@@ -2281,13 +2336,13 @@ export default function ModuleView() {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                             >
                               <Icons.MessageSquare className="w-3.5 h-3.5" />
                               <span>WA Chat</span>
                             </button>
                             
-                            {/* Call Button */}
+                            {/* Call (Purple/Indigo) */}
                             <button 
                               type="button"
                               onClick={() => {
@@ -2301,38 +2356,38 @@ export default function ModuleView() {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                             >
                               <Icons.PhoneCall className="w-3.5 h-3.5" />
                               <span>Call</span>
                             </button>
                             
-                            {/* Upload File */}
+                            {/* Upload File (White with border) */}
                             <button 
                               type="button"
                               onClick={() => handleUploadClick(rec._id)}
-                              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                             >
-                              <Icons.Paperclip className="w-3.5 h-3.5" />
+                              <Icons.Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                               <span>Upload File</span>
                             </button>
                             
-                            {/* Edit */}
+                            {/* Edit (Blue) */}
                             <Link 
                               to={`/modules/leads/${rec._id}`} 
-                              className="inline-flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs"
+                              className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs"
                             >
                               <Icons.Edit3 className="w-3.5 h-3.5" />
                               <span>Edit</span>
                             </Link>
                             
-                            {/* History */}
+                            {/* History (White with border) */}
                             <button 
                               type="button"
                               onClick={() => openHistory(rec)}
-                              className="inline-flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 active:bg-slate-900 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                             >
-                              <Icons.History className="w-3.5 h-3.5" />
+                              <Icons.History className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                               <span>History</span>
                             </button>
                           </div>

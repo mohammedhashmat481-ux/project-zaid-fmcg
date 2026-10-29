@@ -846,150 +846,225 @@ export default function Dashboard() {
                     : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'System Router'));
               const psmName = rec.data?.psmName || resolveUserDisplayName(rec.data?.psm || rec.data?.assignedTo || 'Unassigned');
               const statusTokens = getStatusTokens(rec.data?.status || 'HOT');
+              const rawStatus = (rec.data?.status || 'NEW').toUpperCase();
+              const statusBadgeText = rawStatus.endsWith('LEAD') || rawStatus.endsWith('LEADS') 
+                ? rawStatus 
+                : `${rawStatus} LEAD`;
+
+              let statusBadgeStyle = 'border border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+              let StatusBadgeIcon: any = Icons.Sparkles;
+
+              if (rawStatus.includes('HOT')) {
+                statusBadgeStyle = 'border border-rose-200 bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400';
+                StatusBadgeIcon = Icons.Flame;
+              } else if (rawStatus.includes('CALL NOT CONNECT') || rawStatus.includes('NOT CONNECT')) {
+                statusBadgeStyle = 'border border-sky-200 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:border-sky-900/60 dark:text-sky-400';
+                StatusBadgeIcon = Icons.PhoneOff;
+              } else if (rawStatus.includes('WARM') || rawStatus.includes('DEMO')) {
+                statusBadgeStyle = 'border border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-400';
+                StatusBadgeIcon = Icons.Zap;
+              } else if (rawStatus.includes('DISBURS') || rawStatus.includes('APPROV') || rawStatus.includes('WON')) {
+                statusBadgeStyle = 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-400';
+                StatusBadgeIcon = Icons.CheckCircle2;
+              } else if (rawStatus.includes('REJECT') || rawStatus.includes('DROP') || rawStatus.includes('DEAD')) {
+                statusBadgeStyle = 'border border-slate-300 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400';
+                StatusBadgeIcon = Icons.XCircle;
+              } else {
+                statusBadgeStyle = 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/60 dark:text-indigo-400';
+                StatusBadgeIcon = Icons.PhoneCall;
+              }
+
+              const remarksText = rec.data?.notes 
+                ? rec.data.notes.replace(/<[^>]*>/g, '') 
+                : (rec.data?.remarks || (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'N/A'));
 
               return (
                 <div 
                   key={rec._id} 
-                  className="border border-border-subtle rounded-card p-5 bg-surface-card hover:shadow-card-hover relative mb-4 last:mb-0 text-left shadow-card transition-all duration-150"
+                  className="border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 sm:p-6 bg-white dark:bg-slate-900 hover:shadow-md relative mb-4 last:mb-0 text-left shadow-xs transition-all duration-150 overflow-hidden"
                 >
                   {/* Status-colored Top Accent Bar */}
                   <div 
-                    className="absolute top-0 left-0 right-0 h-[3px] rounded-t-card" 
+                    className="absolute top-0 left-0 right-0 h-[3px]" 
                     style={{ backgroundColor: statusTokens.accentHex }} 
                   />
                   
-                  {/* 4-Column CSS Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 text-xs mt-1">
-                    {/* --- Row 1 --- */}
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Sl No.: </span>
-                      <span className="text-content-primary font-semibold tabular-nums">{idx + 1}</span>
+                  {/* 4-Column CSS Grid matching Image 1 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
+                    {/* --- Column 1 --- */}
+                    <div className="space-y-3.5">
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.: </span>
+                        <span className="text-slate-700 dark:text-slate-300 font-normal">{idx + 1}</span>
+                      </div>
+
+                      <div className="leading-snug flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.: </span>
+                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-semibold border border-slate-200/60 dark:border-slate-600/60">
+                          LND-{leadNo}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Product: </span>
+                        <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || 'N/A'}>
+                          {rec.data?.loanType || 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Status: </span>
+                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
+                          {rec.data?.status || 'NEW'}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner: </span>
+                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px] align-bottom" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
+                          {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Lead Name: </span>
-                      <span className="text-content-primary font-semibold">{leadName}</span>
+                    {/* --- Column 2 --- */}
+                    <div className="space-y-3.5">
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name: </span>
+                        <Link 
+                          to={`/modules/leads/${rec._id}`}
+                          className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px] align-bottom" 
+                          title={leadName}
+                        >
+                          {leadName}
+                        </Link>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Location: </span>
+                        <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={leadLocation}>
+                          {leadLocation}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.: </span>
+                        <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
+                          {maskPhoneNumber(rec.data?.phone, !!revealedPhones[rec._id])}
+                          {rec.data?.phone && rec.data?.phone !== 'N/A' && (
+                            <button
+                              type="button"
+                              onClick={() => togglePhoneReveal(rec._id)}
+                              title={revealedPhones[rec._id] ? "Hide number" : "Show number"}
+                              className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                            >
+                              {revealedPhones[rec._id] ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Amount: </span>
+                        <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                          {formattedAmount}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Case Details: </span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.caseDetails || 'N/A'}>
+                          {rec.data?.caseDetails || 'N/A'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Created On: </span>
-                      <span className="text-content-primary font-semibold tabular-nums">{formatDate(rec.createdAt)}</span>
+                    {/* --- Column 3 --- */}
+                    <div className="space-y-3.5">
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Created On: </span>
+                        <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">By: </span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={createdByName}>
+                          {createdByName}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date: </span>
+                        <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                          {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Pending at: </span>
+                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px] align-bottom" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
+                          {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                        </span>
+                      </div>
+
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">PSM: </span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={psmName}>
+                          {psmName}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Firm/Company: </span>
-                      <span className="text-content-primary font-semibold">{rec.data?.company || 'N/A'}</span>
-                    </div>
+                    {/* --- Column 4 --- */}
+                    <div className="space-y-3.5">
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company: </span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.company || rec.data?.firm || 'N/A'}>
+                          {rec.data?.company || rec.data?.firm || 'N/A'}
+                        </span>
+                      </div>
 
-                    {/* --- Row 2 --- */}
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Lead No.: </span>
-                      <span className="text-content-primary font-mono font-semibold">LND-{leadNo}</span>
-                    </div>
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Modified On: </span>
+                        <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
+                      </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Location: </span>
-                      <span className="text-content-primary font-semibold">{leadLocation}</span>
-                    </div>
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By: </span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={assignedByName}>
+                          {assignedByName}
+                        </span>
+                      </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Created By: </span>
-                      <span className="text-content-primary font-semibold">{createdByName}</span>
-                    </div>
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To: </span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px] align-bottom" title={assignedToName}>
+                          {assignedToName}
+                        </span>
+                      </div>
 
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Modified On: </span>
-                      <span className="text-content-primary font-semibold tabular-nums">{formatDate(rec.updatedAt)}</span>
-                    </div>
-
-                    {/* --- Row 3 --- */}
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Product: </span>
-                      <span className="text-content-primary font-semibold uppercase">{rec.data?.loanType || 'N/A'}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Mobile No.: </span>
-                      <span className="inline-flex items-center gap-1.5 text-content-primary font-mono font-semibold tabular-nums">
-                        {maskPhoneNumber(rec.data?.phone, !!revealedPhones[rec._id])}
-                        {rec.data?.phone && rec.data?.phone !== 'N/A' && (
-                          <button
-                            type="button"
-                            onClick={() => togglePhoneReveal(rec._id)}
-                            className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                            title={revealedPhones[rec._id] ? "Hide number" : "Show number"}
-                          >
-                            {revealedPhones[rec._id] ? <Icons.EyeOff className="w-3 h-3" /> : <Icons.Eye className="w-3 h-3" />}
-                          </button>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="leading-snug flex items-center flex-wrap gap-1">
-                      <span className="text-content-secondary font-medium">Followup Date: </span>
-                      <span className="inline-flex items-center text-brand-600 dark:text-brand-400 font-semibold bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-control text-[11px] tabular-nums">
-                        {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
-                      </span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Assigned By: </span>
-                      <span className="text-content-primary font-semibold">{assignedByName}</span>
-                    </div>
-
-                    {/* --- Row 4 --- */}
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Status: </span>
-                      <span className="text-content-primary font-semibold uppercase">{rec.data?.status || 'NEW'}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Amount: </span>
-                      <span className="text-status-success font-bold tabular-nums">{formattedAmount}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Pending at: </span>
-                      <span className="text-content-primary font-semibold uppercase">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Assigned To: </span>
-                      <span className="text-brand-600 dark:text-brand-400 font-semibold">{assignedToName}</span>
-                    </div>
-
-                    {/* --- Row 5 --- */}
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Bank Partner: </span>
-                      <span className="text-content-primary font-semibold uppercase">{rec.data?.businessPartner || rec.data?.bankPartner || 'IDFC FIRST BANK'}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Case Details: </span>
-                      <span className="text-content-primary font-semibold">{rec.data?.caseDetails || 'N/A'}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">PSM: </span>
-                      <span className="text-content-primary font-semibold">{psmName}</span>
-                    </div>
-
-                    <div className="leading-snug">
-                      <span className="text-content-secondary font-medium">Remarks: </span>
-                      <span className="text-content-muted italic text-[11px]">{rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || 'N/A')}</span>
+                      <div className="leading-snug">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">Remarks: </span>
+                        <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px] align-bottom" title={remarksText}>
+                          {remarksText}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Actions Row */}
-                  <div className="mt-5 pt-4 border-t border-border-subtle flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold uppercase px-2.5 py-1 rounded-control ${statusTokens.badgeClass}`}>
-                        {rec.data?.status ? `${rec.data.status} LEAD` : 'LEAD INFO'}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider ${statusBadgeStyle}`}>
+                        <StatusBadgeIcon className="w-3.5 h-3.5" />
+                        <span>{statusBadgeText}</span>
                       </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {/* WA Chat (Green) */}
                       <button 
+                        type="button"
                         onClick={() => {
                           const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
                           let cleanPhone = String(rawPhone).replace(/\D/g, '').trim();
@@ -1002,51 +1077,58 @@ export default function Dashboard() {
                             showToast('No phone number available for this lead.', 'warning');
                           }
                         }}
-                        className="h-8 px-3 rounded-control text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                       >
-                        <Icons.MessageCircle className="w-3.5 h-3.5" />
-                        <span>WhatsApp</span>
+                        <Icons.MessageSquare className="w-3.5 h-3.5" />
+                        <span>WA Chat</span>
                       </button>
                       
+                      {/* Call (Purple/Indigo) */}
                       <button 
+                        type="button"
                         onClick={() => {
                           const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
                           const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
                           if (cleanPhone) {
-                            const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
-                            showToast(`Calling ${leadName} (${cleanPhone})...`, 'info');
+                            const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
+                            showToast(`Calling ${name} (${cleanPhone})...`, 'info');
                             window.location.href = `tel:${cleanPhone}`;
                           } else {
                             showToast('No phone number available for this lead.', 'warning');
                           }
                         }}
-                        className="h-8 px-3 rounded-control text-xs font-semibold bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 border border-brand-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                       >
-                        <Icons.Phone className="w-3.5 h-3.5" />
+                        <Icons.PhoneCall className="w-3.5 h-3.5" />
                         <span>Call</span>
                       </button>
                       
+                      {/* Upload File (White with border) */}
                       <button 
+                        type="button"
                         onClick={() => handleUploadClick(rec._id)}
-                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                       >
-                        <Icons.Upload className="w-3.5 h-3.5" />
-                        <span>Upload</span>
+                        <Icons.Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                        <span>Upload File</span>
                       </button>
                       
+                      {/* Edit (Blue) */}
                       <Link 
                         to={`/modules/leads/${rec._id}`} 
-                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors"
+                        className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs"
                       >
-                        <Icons.SquarePen className="w-3.5 h-3.5" />
+                        <Icons.Edit3 className="w-3.5 h-3.5" />
                         <span>Edit</span>
                       </Link>
 
+                      {/* History (White with border) */}
                       <button 
+                        type="button"
                         onClick={() => openHistory(rec)}
-                        className="h-8 px-3 rounded-control text-xs font-semibold bg-surface-card hover:bg-surface-raised text-content-secondary hover:text-content-primary border border-border-subtle flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
                       >
-                        <Icons.History className="w-3.5 h-3.5" />
+                        <Icons.History className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                         <span>History</span>
                       </button>
                     </div>
