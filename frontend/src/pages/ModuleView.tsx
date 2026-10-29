@@ -207,15 +207,37 @@ export default function ModuleView() {
   const loadCampaignAssignmentsData = async () => {
     try {
       setCaLoadingStats(true);
-      const [campaignsRes, rolesRes, statsRes] = await Promise.all([
+      const [campaignsRes, rolesRes, statsRes, usersRes] = await Promise.allSettled([
         api.get('/records/campaigns?limit=100'),
         api.get('/auth/roles'),
-        api.get('/records/campaigns/allocation-stats')
+        api.get('/records/campaigns/allocation-stats'),
+        api.get('/auth/users?purpose=dropdown')
       ]);
-      setCaCampaigns(campaignsRes.data?.records || []);
-      setCaRoles(rolesRes.data || []);
-      setCaAllocatedStats(statsRes.data?.stats || {});
-      setCaDialedStats(statsRes.data?.dialedStats || {});
+
+      if (campaignsRes.status === 'fulfilled') {
+        const records = campaignsRes.value.data?.records || [];
+        setCaCampaigns(records);
+        if (records.length > 0) {
+          const firstCamp = records[0].data?.campaignName || records[0].data?.name || records[0].name || '';
+          setCaSelectedCampaign((prev: string) => prev || firstCamp);
+        }
+      }
+
+      if (rolesRes.status === 'fulfilled') {
+        setCaRoles(rolesRes.value.data || []);
+      }
+
+      if (statsRes.status === 'fulfilled') {
+        setCaAllocatedStats(statsRes.value.data?.stats || {});
+        setCaDialedStats(statsRes.value.data?.dialedStats || {});
+      }
+
+      if (usersRes.status === 'fulfilled') {
+        const allUsers = usersRes.value.data || [];
+        const activeUsers = allUsers.filter((u: any) => u.isActive !== false);
+        setCaAgents(activeUsers);
+        setCaSelectedAgents(activeUsers.map((u: any) => u._id));
+      }
     } catch (err) {
       console.error('Failed to load campaign assignments metadata:', err);
     } finally {
@@ -224,20 +246,21 @@ export default function ModuleView() {
   };
 
   const handleLoadAgents = async () => {
-    if (!caSelectedRole) {
-      showToast('Please select an Agent Type.', 'warning');
-      return;
-    }
     setCaLoadingAgents(true);
     try {
       const res = await api.get('/auth/users?purpose=dropdown');
       const allUsers = res.data || [];
-      const filtered = allUsers.filter((u: any) => {
-        const rId = typeof u.roleId === 'object' ? (u.roleId?._id || u.roleId?.id) : u.roleId;
-        return rId === caSelectedRole && u.isActive !== false;
-      });
+      const activeUsers = allUsers.filter((u: any) => u.isActive !== false);
+      let filtered = activeUsers;
+      if (caSelectedRole && caSelectedRole !== 'ALL') {
+        filtered = activeUsers.filter((u: any) => {
+          const rId = typeof u.roleId === 'object' ? (u.roleId?._id || u.roleId?.id) : u.roleId;
+          return rId === caSelectedRole;
+        });
+      }
       setCaAgents(filtered);
       setCaSelectedAgents(filtered.map((u: any) => u._id));
+      showToast(`Loaded ${filtered.length} agent(s).`, 'info');
     } catch (err) {
       console.error('Failed to load agents:', err);
       showToast('Failed to load agents.', 'error');
@@ -445,17 +468,7 @@ export default function ModuleView() {
 
     return (
       <div className="space-y-6 text-left">
-        {/* Header Title Bar */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-              Assign Campaign
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-              Allocate leads and spread contact files for team members
-            </p>
-          </div>
-        </div>
+
 
         {/* 4 Vibrant Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -588,7 +601,7 @@ export default function ModuleView() {
                 onChange={e => setCaSelectedRole(e.target.value)} 
                 className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all cursor-pointer shadow-inner-sm"
               >
-                <option value="">Select Role</option>
+                <option value="ALL">All Roles (All Team Members)</option>
                 {caRoles.map((r: any) => (
                   <option key={r._id} value={r._id}>{r.name}</option>
                 ))}
@@ -1389,17 +1402,7 @@ export default function ModuleView() {
   const renderCampaignsList = () => {
     return (
       <div className="space-y-6 text-left">
-        {/* Header Title Bar */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-1">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-              Campaigns
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-              Create marketing campaigns, distribute batch files, and monitor team dialing progress.
-            </p>
-          </div>
-        </div>
+
 
         {/* 6 Vibrant Metric Cards matching Image 1 */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">

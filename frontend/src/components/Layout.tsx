@@ -825,19 +825,6 @@ export default function Layout({ children }: LayoutProps) {
                   {pageMeta.title}
                 </h1>
               </div>
-
-              {/* Primary Action Button (Add Lead or Contextual) */}
-              <div className="flex items-center gap-2.5 flex-shrink-0">
-                {location.pathname !== '/modules/leads/new' && (
-                  <Link
-                    to="/modules/leads/new"
-                    className="inline-flex items-center gap-2 h-9 px-3.5 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-xs hover:shadow-card transition-all cursor-pointer"
-                  >
-                    <Icons.Plus className="w-4.5 h-4.5 stroke-[2.5]" />
-                    <span>Create Lead</span>
-                  </Link>
-                )}
-              </div>
             </div>
           )}
 
