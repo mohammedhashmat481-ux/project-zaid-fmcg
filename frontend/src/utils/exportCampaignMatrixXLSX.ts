@@ -14,12 +14,18 @@ export interface CampaignMatrixData {
 }
 
 export interface CampaignSummaryData {
-  campaignsAssigned: number;
-  totalLeadsAssigned: number;
-  leadsCalled: number;
-  yetToCall: number;
   callsMade: number;
-  progressPct: number;
+  hotLeads: number;
+  logins: number;
+  approved: number;
+  disbursed: number;
+  targetAchievement: number;
+  // Legacy fields preserved for backward compatibility
+  campaignsAssigned?: number;
+  totalLeadsAssigned?: number;
+  leadsCalled?: number;
+  yetToCall?: number;
+  progressPct?: number;
 }
 
 /**
@@ -84,7 +90,7 @@ export const exportCampaignMatrixXLSX = (
  * Exports individual KPI dataset when clicking the pill download button on any of the 6 cards in Image 5
  */
 export const exportCampaignKPIDataset = (
-  kpiType: 'campaigns' | 'leads' | 'called' | 'pending' | 'dials' | 'progress',
+  kpiType: 'dials' | 'hot' | 'logins' | 'approved' | 'disbursed' | 'target' | 'campaigns' | 'leads' | 'called' | 'pending' | 'progress',
   summary: CampaignSummaryData,
   matrix: CampaignMatrixData,
   campaignName: string = 'ALL'
@@ -93,20 +99,75 @@ export const exportCampaignKPIDataset = (
   const now = new Date();
   const dateStamp = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
 
+  if (kpiType === 'dials') {
+    exportCampaignMatrixXLSX(matrix, 'Calls Made', 'Daily', campaignName);
+    return;
+  }
+
+  if (kpiType === 'hot') {
+    const headers = ['Sl.No.', 'Telecaller Name', 'Hot Leads Count'];
+    const rows = matrix.rows.map((r, i) => [i + 1, r.callerName, r.total]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Hot Leads');
+    XLSX.writeFile(wb, `Hot_Leads_Report_${dateStamp}.xlsx`);
+    return;
+  }
+
+  if (kpiType === 'logins') {
+    const headers = ['Sl.No.', 'Telecaller Name', 'Logins Count'];
+    const rows = matrix.rows.map((r, i) => [i + 1, r.callerName, r.total]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Logins');
+    XLSX.writeFile(wb, `Logins_Report_${dateStamp}.xlsx`);
+    return;
+  }
+
+  if (kpiType === 'approved') {
+    const headers = ['Sl.No.', 'Telecaller Name', 'Approved Leads'];
+    const rows = matrix.rows.map((r, i) => [i + 1, r.callerName, r.total]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Approved Leads');
+    XLSX.writeFile(wb, `Approved_Leads_Report_${dateStamp}.xlsx`);
+    return;
+  }
+
+  if (kpiType === 'disbursed') {
+    const headers = ['Sl.No.', 'Telecaller Name', 'Disbursed Loans'];
+    const rows = matrix.rows.map((r, i) => [i + 1, r.callerName, r.total]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Disbursed Loans');
+    XLSX.writeFile(wb, `Disbursed_Loans_Report_${dateStamp}.xlsx`);
+    return;
+  }
+
+  if (kpiType === 'target') {
+    const headers = ['Sl.No.', 'Telecaller Name', 'Target Achievement %'];
+    const rows = matrix.rows.map((r, i) => [i + 1, r.callerName, `${r.total}%`]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 24 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Target Achievement');
+    XLSX.writeFile(wb, `Target_Achievement_Report_${dateStamp}.xlsx`);
+    return;
+  }
+
   if (kpiType === 'campaigns') {
     const headers = ['Sl.No.', 'Campaign Metric', 'Value'];
     const rows = [
-      [1, 'Campaigns Assigned', summary.campaignsAssigned],
-      [2, 'Total Leads Assigned', summary.totalLeadsAssigned],
-      [3, 'Leads Called', summary.leadsCalled],
-      [4, 'Yet To Call', summary.yetToCall],
-      [5, 'Calls Made', summary.callsMade],
-      [6, 'Progress %', `${summary.progressPct}%`]
+      [1, 'Calls Made', summary.callsMade],
+      [2, 'Hot Leads', summary.hotLeads],
+      [3, 'Logins', summary.logins],
+      [4, 'Approved', summary.approved],
+      [5, 'Disbursed', summary.disbursed],
+      [6, 'Target Achievement', `${summary.targetAchievement}%`]
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 28 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Campaign Summary');
-    XLSX.writeFile(wb, `Campaigns_Assigned_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Campaign_Summary_Report_${dateStamp}.xlsx`);
     return;
   }
 
@@ -149,12 +210,6 @@ export const exportCampaignKPIDataset = (
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 28 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Pending Leads');
     XLSX.writeFile(wb, `Yet_To_Call_Report_${dateStamp}.xlsx`);
-    return;
-  }
-
-  if (kpiType === 'dials') {
-    // Export full Dials Matrix table matching Image 4
-    exportCampaignMatrixXLSX(matrix, 'Calls Made', 'Daily', campaignName);
     return;
   }
 

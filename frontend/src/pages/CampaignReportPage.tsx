@@ -13,18 +13,18 @@ import {
 type PeriodType = 'daily' | 'monthly' | 'annually';
 
 type MetricKey =
-  | 'campaignsAssigned'
-  | 'totalLeadsAssigned'
-  | 'leadsCalled'
-  | 'yetToCall'
   | 'callsMade'
-  | 'progressPct';
+  | 'hotLeads'
+  | 'logins'
+  | 'approved'
+  | 'disbursed'
+  | 'targetAchievement';
 
 interface KPICardConfig {
   key: MetricKey;
   label: string;
   pillText: string;
-  pillKey: 'campaigns' | 'leads' | 'called' | 'pending' | 'dials' | 'progress';
+  pillKey: 'dials' | 'hot' | 'logins' | 'approved' | 'disbursed' | 'target';
   icon: any;
   metricParam: string;
   accentBg: string;
@@ -36,58 +36,6 @@ interface KPICardConfig {
 
 const KPI_CARDS: KPICardConfig[] = [
   {
-    key: 'campaignsAssigned',
-    label: 'CAMPAIGNS ASSIGNED',
-    pillText: 'Campaigns',
-    pillKey: 'campaigns',
-    icon: Icons.Megaphone,
-    metricParam: 'campaignsAssigned',
-    accentBg: 'bg-blue-50/60 dark:bg-blue-950/20',
-    iconBg: 'bg-blue-100 dark:bg-blue-900/40',
-    iconColor: 'text-blue-600 dark:text-blue-400',
-    pillBg: 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60',
-    pillTextColor: 'text-indigo-700 dark:text-indigo-300'
-  },
-  {
-    key: 'totalLeadsAssigned',
-    label: 'TOTAL LEADS ASSIGNED',
-    pillText: 'Leads',
-    pillKey: 'leads',
-    icon: Icons.Users,
-    metricParam: 'assigned',
-    accentBg: 'bg-cyan-50/60 dark:bg-cyan-950/20',
-    iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
-    iconColor: 'text-cyan-600 dark:text-cyan-400',
-    pillBg: 'bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:hover:bg-cyan-900/60',
-    pillTextColor: 'text-cyan-700 dark:text-cyan-300'
-  },
-  {
-    key: 'leadsCalled',
-    label: 'LEADS CALLED',
-    pillText: 'Called',
-    pillKey: 'called',
-    icon: Icons.Phone,
-    metricParam: 'leadsCalled',
-    accentBg: 'bg-emerald-50/60 dark:bg-emerald-950/20',
-    iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
-    iconColor: 'text-emerald-600 dark:text-emerald-400',
-    pillBg: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60',
-    pillTextColor: 'text-emerald-700 dark:text-emerald-300'
-  },
-  {
-    key: 'yetToCall',
-    label: 'YET TO CALL',
-    pillText: 'Pending',
-    pillKey: 'pending',
-    icon: Icons.Clock,
-    metricParam: 'yetToCall',
-    accentBg: 'bg-amber-50/60 dark:bg-amber-950/20',
-    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
-    iconColor: 'text-amber-600 dark:text-amber-400',
-    pillBg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60',
-    pillTextColor: 'text-amber-700 dark:text-amber-300'
-  },
-  {
     key: 'callsMade',
     label: 'CALLS MADE',
     pillText: 'Dials',
@@ -95,23 +43,75 @@ const KPI_CARDS: KPICardConfig[] = [
     icon: Icons.PhoneCall,
     metricParam: 'callsMade',
     accentBg: 'bg-purple-50/60 dark:bg-purple-950/20',
-    iconBg: 'bg-purple-600 text-white shadow-sm',
-    iconColor: 'text-white',
+    iconBg: 'bg-purple-100 dark:bg-purple-900/40',
+    iconColor: 'text-purple-600 dark:text-purple-400',
     pillBg: 'bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/60 dark:hover:bg-purple-800',
     pillTextColor: 'text-purple-700 dark:text-purple-200'
   },
   {
-    key: 'progressPct',
-    label: 'PROGRESS %',
-    pillText: '%',
-    pillKey: 'progress',
+    key: 'hotLeads',
+    label: 'HOT LEADS',
+    pillText: 'Hot',
+    pillKey: 'hot',
+    icon: Icons.Flame,
+    metricParam: 'hotLeads',
+    accentBg: 'bg-red-50/60 dark:bg-red-950/20',
+    iconBg: 'bg-red-100 dark:bg-red-900/40',
+    iconColor: 'text-red-600 dark:text-red-400',
+    pillBg: 'bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60',
+    pillTextColor: 'text-red-700 dark:text-red-300'
+  },
+  {
+    key: 'logins',
+    label: 'LOGINS',
+    pillText: 'Logins',
+    pillKey: 'logins',
+    icon: Icons.FileCheck,
+    metricParam: 'logins',
+    accentBg: 'bg-blue-50/60 dark:bg-blue-950/20',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    pillBg: 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60',
+    pillTextColor: 'text-blue-700 dark:text-blue-300'
+  },
+  {
+    key: 'approved',
+    label: 'APPROVED',
+    pillText: 'Approved',
+    pillKey: 'approved',
+    icon: Icons.CheckCircle2,
+    metricParam: 'approved',
+    accentBg: 'bg-amber-50/60 dark:bg-amber-950/20',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    pillBg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60',
+    pillTextColor: 'text-amber-700 dark:text-amber-300'
+  },
+  {
+    key: 'disbursed',
+    label: 'DISBURSED',
+    pillText: 'Disbursed',
+    pillKey: 'disbursed',
+    icon: Icons.Banknote,
+    metricParam: 'disbursed',
+    accentBg: 'bg-emerald-50/60 dark:bg-emerald-950/20',
+    iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    pillBg: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60',
+    pillTextColor: 'text-emerald-700 dark:text-emerald-300'
+  },
+  {
+    key: 'targetAchievement',
+    label: 'TARGET ACHIEVEMENT',
+    pillText: 'Target',
+    pillKey: 'target',
     icon: Icons.Award,
-    metricParam: 'progressPct',
-    accentBg: 'bg-pink-50/60 dark:bg-pink-950/20',
-    iconBg: 'bg-pink-100 dark:bg-pink-900/40',
-    iconColor: 'text-pink-600 dark:text-pink-400',
-    pillBg: 'bg-pink-50 hover:bg-pink-100 dark:bg-pink-950/40 dark:hover:bg-pink-900/60',
-    pillTextColor: 'text-pink-700 dark:text-pink-300'
+    metricParam: 'targetAchievement',
+    accentBg: 'bg-rose-50/60 dark:bg-rose-950/20',
+    iconBg: 'bg-rose-100 dark:bg-rose-900/40',
+    iconColor: 'text-rose-600 dark:text-rose-400',
+    pillBg: 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60',
+    pillTextColor: 'text-rose-700 dark:text-rose-300'
   }
 ];
 
@@ -133,12 +133,12 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   const [campaignsList, setCampaignsList] = useState<string[]>([]);
   const [summary, setSummary] = useState<CampaignSummaryData>({
-    campaignsAssigned: 0,
-    totalLeadsAssigned: 0,
-    leadsCalled: 0,
-    yetToCall: 0,
     callsMade: 0,
-    progressPct: 0
+    hotLeads: 0,
+    logins: 0,
+    approved: 0,
+    disbursed: 0,
+    targetAchievement: 0
   });
 
   const [matrixData, setMatrixData] = useState<CampaignMatrixData>({
@@ -240,8 +240,8 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   // Format metric value for display
   const formatCardValue = (val: number, key: MetricKey) => {
-    if (key === 'progressPct') return `${val}%`;
-    return val.toLocaleString('en-IN');
+    if (key === 'targetAchievement') return `${val}%`;
+    return (val ?? 0).toLocaleString('en-IN');
   };
 
   return (

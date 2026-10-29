@@ -831,7 +831,10 @@ export default function Layout({ children }: LayoutProps) {
           )}
 
           {/* Page Body Viewport Container */}
-          <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-[1600px] w-full mx-auto">
+          <div className={cn(
+            "flex-1 max-w-[1600px] w-full mx-auto",
+            location.pathname === '/' ? "px-3 sm:px-6 pt-2 pb-6" : "p-4 sm:p-6 md:p-8"
+          )}>
             {children}
           </div>
         </main>

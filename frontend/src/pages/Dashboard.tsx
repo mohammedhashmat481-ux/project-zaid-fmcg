@@ -443,7 +443,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-6">
+    <div className="space-y-4 max-w-[1400px] mx-auto text-left px-0 py-0.5">
       
       {/* 1. COMPACT TELEMETRY HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border-subtle">
