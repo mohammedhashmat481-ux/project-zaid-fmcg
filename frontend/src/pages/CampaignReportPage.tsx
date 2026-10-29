@@ -127,8 +127,11 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   const [period, setPeriod] = useState<PeriodType>(initialPeriod);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
-  const [selectedMonth, setSelectedMonth] = useState<string>('08'); // August default
-  const [selectedYear, setSelectedYear] = useState<string>('2026');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const m = new Date().getMonth() + 1;
+    return m < 10 ? `0${m}` : `${m}`;
+  });
+  const [selectedYear, setSelectedYear] = useState<string>(() => String(new Date().getFullYear()));
   const [searchCaller, setSearchCaller] = useState<string>('');
 
   const [campaignsList, setCampaignsList] = useState<string[]>([]);
@@ -260,10 +263,10 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
-              {period === 'daily' ? 'Daily Campaign Report' : period === 'monthly' ? 'Monthly Campaign Report' : 'Annual Campaign Report'}
+              {period === 'daily' ? 'Daily Report' : period === 'monthly' ? 'Monthly Report' : 'Annual Report'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              {period === 'daily' ? 'Daily' : period === 'monthly' ? 'Monthly' : 'Annual'} telecaller calling matrix, dial attempts, and outbound contact progress.
+              {period === 'daily' ? 'Daily' : period === 'monthly' ? 'Monthly' : 'Annual'} calling matrix, dial attempts, and outbound contact progress.
             </p>
           </div>
 
@@ -304,7 +307,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Daily Matrix
+              Daily Report
             </button>
             <button
               onClick={() => {
@@ -317,7 +320,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Monthly Matrix
+              Monthly Report
             </button>
             <button
               onClick={() => {
@@ -330,7 +333,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Annual Matrix
+              Annual Report
             </button>
           </div>
 

@@ -19,11 +19,14 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     const orgId = req.organizationId;
     const {
       campaignName = 'ALL',
-      month = '08',
+      month = '10',
       year = '2026',
       period = 'daily',
       metric = 'callsMade'
     } = req.query;
+
+    const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
+    const targetYear = parseInt(String(year || '2026'), 10) || 2026;
 
     // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
     const campaignModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'campaigns' });
@@ -175,7 +178,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     // 4. Generate Columns based on Period
     let columns: string[] = [];
     if (period === 'daily') {
-      columns = Array.from({ length: 31 }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
+      const daysInMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+      columns = Array.from({ length: daysInMonth }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
     } else if (period === 'monthly') {
       columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     } else {
@@ -233,12 +237,19 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
             const monthNum = d.getMonth(); // 0-11
             const yearNum = d.getFullYear(); // e.g. 2026
 
-            if (!leadsByDay[dayNum]) leadsByDay[dayNum] = [];
-            leadsByDay[dayNum].push(l);
+            // For daily, only include if same month & year as selected
+            if (monthNum === targetMonthIndex && yearNum === targetYear) {
+              if (!leadsByDay[dayNum]) leadsByDay[dayNum] = [];
+              leadsByDay[dayNum].push(l);
+            }
 
-            if (!leadsByMonth[monthNum]) leadsByMonth[monthNum] = [];
-            leadsByMonth[monthNum].push(l);
+            // For monthly, only include if same year as selected
+            if (yearNum === targetYear) {
+              if (!leadsByMonth[monthNum]) leadsByMonth[monthNum] = [];
+              leadsByMonth[monthNum].push(l);
+            }
 
+            // For annual, include by year
             if (!leadsByYear[yearNum]) leadsByYear[yearNum] = [];
             leadsByYear[yearNum].push(l);
           }
@@ -331,17 +342,15 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           }
         }
 
-        // If leads don't have explicit dates but caller has assigned/dialed count, show overall count in active column
-        if (val === 0 && relevantLeads.length > 0) {
-          const activeDay = (callerName.length + cIdx) % 31;
-          if (period === 'daily' && activeDay === 18) {
-            val = metric === 'callsMade' ? userDialed.length || Math.min(relevantLeads.length, 3) : Math.min(relevantLeads.length, 3);
-          }
-        }
-
         rowData[col] = val;
-        rowTotal += val;
+        if (metric !== 'targetAchievement' && metric !== 'progressPct') {
+          rowTotal += val;
+        }
       });
+
+      if (metric === 'targetAchievement' || metric === 'progressPct') {
+        rowTotal = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+      }
 
       return {
         callerName,
@@ -355,9 +364,17 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     let grandTotal = 0;
     columns.forEach(col => {
       const sum = rows.reduce((acc, r) => acc + (r.data[col] || 0), 0);
-      totals[col] = sum;
-      grandTotal += sum;
+      if (metric === 'targetAchievement' || metric === 'progressPct') {
+        totals[col] = rows.length > 0 ? Math.round(sum / rows.length) : 0;
+      } else {
+        totals[col] = sum;
+        grandTotal += sum;
+      }
     });
+
+    if (metric === 'targetAchievement' || metric === 'progressPct') {
+      grandTotal = targetAchievementValue;
+    }
 
     res.status(200).json({
       summary: {
@@ -381,9 +398,9 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       },
       campaignsList: registeredCampaignNames
     });
-  } catch (error) {
-    console.error('Failed to generate campaign matrix report:', error);
-    res.status(500).json({ error: 'Failed to retrieve campaign matrix report.' });
+  } catch (error: any) {
+    console.error('Campaign matrix aggregation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to aggregate campaign report data' });
   }
 });
 

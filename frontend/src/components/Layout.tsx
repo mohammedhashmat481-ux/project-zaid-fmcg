@@ -248,9 +248,9 @@ export default function Layout({ children }: LayoutProps) {
     if (path === '/my-campaign') return { title: 'My Campaign', breadcrumb: 'CAMPAIGNS' };
     if (path === '/reports/telecaller-reports') return { title: 'Live Caller Status', breadcrumb: 'REPORTS' };
     if (path === '/reports/lead-reports') return { title: 'Lead Reports', breadcrumb: 'REPORTS' };
-    if (path === '/reports/campaign-daily') return { title: 'Daily Campaign Report', breadcrumb: 'REPORTS' };
-    if (path === '/reports/campaign-monthly') return { title: 'Monthly Campaign Report', breadcrumb: 'REPORTS' };
-    if (path === '/reports/campaign-annual') return { title: 'Annual Campaign Report', breadcrumb: 'REPORTS' };
+    if (path === '/reports/campaign-daily') return { title: 'Daily Report', breadcrumb: 'REPORTS' };
+    if (path === '/reports/campaign-monthly') return { title: 'Monthly Report', breadcrumb: 'REPORTS' };
+    if (path === '/reports/campaign-annual') return { title: 'Annual Report', breadcrumb: 'REPORTS' };
     if (path === '/reports/funnel-daily') return { title: 'Daily Lead Funnel', breadcrumb: 'FUNNEL' };
     if (path === '/reports/funnel-monthly') return { title: 'Monthly Lead Funnel', breadcrumb: 'FUNNEL' };
     if (path === '/reports/funnel-annual') return { title: 'Annual Lead Funnel', breadcrumb: 'FUNNEL' };
@@ -408,9 +408,9 @@ export default function Layout({ children }: LayoutProps) {
             >
               <SidebarItem to="/reports/telecaller-reports" label="Live Caller Status" icon={Icons.Radio} colorClass="text-status-success" indent isCollapsed={collapsed} />
               <SidebarItem to="/reports/lead-reports" label="Lead Reports" icon={Icons.ListFilter} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-daily" label="Daily Campaign Report" icon={Icons.PhoneCall} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-monthly" label="Monthly Campaign Report" icon={Icons.Calendar} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-annual" label="Annual Campaign Report" icon={Icons.CalendarDays} indent isCollapsed={collapsed} />
+              <SidebarItem to="/reports/campaign-daily" label="Daily Report" icon={Icons.PhoneCall} indent isCollapsed={collapsed} />
+              <SidebarItem to="/reports/campaign-monthly" label="Monthly Report" icon={Icons.Calendar} indent isCollapsed={collapsed} />
+              <SidebarItem to="/reports/campaign-annual" label="Annual Report" icon={Icons.CalendarDays} indent isCollapsed={collapsed} />
             </SidebarAccordion>
           )}
 

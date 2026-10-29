@@ -76,7 +76,7 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
   },
   {
     key: 'campaign_daily',
-    label: 'Daily Campaign Report',
+    label: 'Daily Report',
     category: 'Reports & Analytics',
     path: '/reports/campaign-daily',
     icon: 'PhoneCall',
@@ -84,7 +84,7 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
   },
   {
     key: 'campaign_monthly',
-    label: 'Monthly Campaign Report',
+    label: 'Monthly Report',
     category: 'Reports & Analytics',
     path: '/reports/campaign-monthly',
     icon: 'Calendar',
@@ -92,7 +92,7 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
   },
   {
     key: 'campaign_annual',
-    label: 'Annual Campaign Report',
+    label: 'Annual Report',
     category: 'Reports & Analytics',
     path: '/reports/campaign-annual',
     icon: 'CalendarDays',
