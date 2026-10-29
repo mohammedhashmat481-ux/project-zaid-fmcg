@@ -21,6 +21,7 @@ export default function LeadReportsPage() {
   const [selectedYears, setSelectedYears] = useState<string[]>(['2026']);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedLoanTypes, setSelectedLoanTypes] = useState<string[]>([]);
+  const [selectedKpiCard, setSelectedKpiCard] = useState<string>('ALL LEADS');
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>(initialCamp ? [initialCamp] : []);
 
   const months = [
@@ -82,20 +83,45 @@ export default function LeadReportsPage() {
     showToast('Applied multi-select filter conditions.', 'info');
   };
 
-  // Filter leads based on selected criteria
+  // Filter leads based on selected criteria and active KPI card
   const filteredLeads = leads.filter((item) => {
     const data = item.data || {};
     const itemStatus = (data.status || '').toLowerCase().trim();
+    const itemStatusUpper = (data.status || '').toUpperCase().trim();
+
+    // 1. Interactive 17-Card Status Match
+    if (selectedKpiCard && selectedKpiCard !== 'ALL LEADS' && selectedKpiCard !== 'PIPELINE VALUE') {
+      let cardMatch = false;
+      if (selectedKpiCard === 'HOT LEAD') cardMatch = itemStatusUpper.includes('HOT');
+      else if (selectedKpiCard === 'WARM LEAD') cardMatch = itemStatusUpper.includes('WARM');
+      else if (selectedKpiCard === 'COOL LEAD') cardMatch = itemStatusUpper.includes('COOL');
+      else if (selectedKpiCard === 'CALL BACK') cardMatch = itemStatusUpper.includes('CALL BACK') || itemStatusUpper.includes('CALLBACK');
+      else if (selectedKpiCard === 'GIVEN LOGIN') cardMatch = itemStatusUpper.includes('LOGIN');
+      else if (selectedKpiCard === 'CIBIL PENDING') cardMatch = itemStatusUpper.includes('CIBIL') || itemStatusUpper.includes('CEBIL');
+      else if (selectedKpiCard === 'DOCCUMENT PENDING') cardMatch = itemStatusUpper.includes('DOC') || itemStatusUpper.includes('DOCUMENT');
+      else if (selectedKpiCard === 'STATUS PENDING') cardMatch = itemStatusUpper.includes('STATUS PENDING');
+      else if (selectedKpiCard === 'APPROVED') cardMatch = itemStatusUpper.includes('APPROVED') && !itemStatusUpper.includes('NOT DISBUSE');
+      else if (selectedKpiCard === 'DISBURSED') cardMatch = itemStatusUpper.includes('DISBURS') || itemStatusUpper.includes('DISBUSED');
+      else if (selectedKpiCard === 'REJECT') cardMatch = itemStatusUpper.includes('REJECT');
+      else if (selectedKpiCard === 'FOLLOW-UP') cardMatch = itemStatusUpper.includes('FOLLOW');
+      else if (selectedKpiCard === 'DROPPED') cardMatch = itemStatusUpper.includes('DROP');
+      else if (selectedKpiCard === 'PENDING') cardMatch = itemStatusUpper === 'PENDING' || (itemStatusUpper.includes('PENDING') && !itemStatusUpper.includes('CIBIL') && !itemStatusUpper.includes('CEBIL') && !itemStatusUpper.includes('DOC') && !itemStatusUpper.includes('STATUS') && !itemStatusUpper.includes('APPROVAL'));
+      else if (selectedKpiCard === 'DEMO LEADS') cardMatch = itemStatusUpper.includes('DEMO');
+      
+      if (!cardMatch) return false;
+    }
+
+    // 2. Multi-Select Status Dropdown match
     const statusMatch = selectedStatuses.length === 0 || selectedStatuses.some(s => {
       const sLower = s.toLowerCase().trim();
       return itemStatus === sLower || itemStatus.includes(sLower) || sLower.includes(itemStatus);
     });
     
-    // Campaign match
+    // 3. Campaign match
     const leadCamp = (data.campaign || data.campaignName || item.campaignName || '').trim();
     const campaignMatch = selectedCampaigns.length === 0 || selectedCampaigns.some(c => c.toLowerCase() === leadCamp.toLowerCase() || leadCamp.toLowerCase().includes(c.toLowerCase()));
 
-    // Match product/loanType with tolerance for defaults & substrings
+    // 4. Match product/loanType with tolerance for defaults & substrings
     const rawLoan = (data.loanType || data.serviceType || data.product || 'SALARIED PERSONAL LOAN').trim().toLowerCase();
     const loanMatch = selectedLoanTypes.length === 0 || selectedLoanTypes.some(l => {
       const selected = l.trim().toLowerCase();
@@ -104,7 +130,7 @@ export default function LeadReportsPage() {
       return rawLoan.includes(selected) || selected.includes(rawLoan);
     });
 
-    // Date (month & year) match
+    // 5. Date (month & year) match
     let dateMatch = true;
     const rawDate = item.createdAt || data.createdAt || data.date;
     if (rawDate && (selectedMonths.length > 0 || selectedYears.length > 0)) {
@@ -164,93 +190,167 @@ export default function LeadReportsPage() {
 
   const hotRate = filteredLeads.length > 0 ? Math.round((hotAndConvertedCount / filteredLeads.length) * 100) : 0;
 
+  // Compute counts and percentage for all 17 KPI cards from live leads data
+  const totalLeadsCount = leads.length;
+  
+  const getCardCount = (label: string): number => {
+    return leads.filter((item) => {
+      const s = (item.data?.status || item.status || '').toUpperCase().trim();
+      if (label === 'ALL LEADS') return true;
+      if (label === 'HOT LEAD') return s.includes('HOT');
+      if (label === 'WARM LEAD') return s.includes('WARM');
+      if (label === 'COOL LEAD') return s.includes('COOL');
+      if (label === 'CALL BACK') return s.includes('CALL BACK') || s.includes('CALLBACK');
+      if (label === 'GIVEN LOGIN') return s.includes('LOGIN');
+      if (label === 'CIBIL PENDING') return s.includes('CIBIL') || s.includes('CEBIL');
+      if (label === 'DOCCUMENT PENDING') return s.includes('DOC') || s.includes('DOCUMENT');
+      if (label === 'STATUS PENDING') return s.includes('STATUS PENDING');
+      if (label === 'APPROVED') return s.includes('APPROVED') && !s.includes('NOT DISBUSE');
+      if (label === 'DISBURSED') return s.includes('DISBURS') || s.includes('DISBUSED');
+      if (label === 'REJECT') return s.includes('REJECT');
+      if (label === 'FOLLOW-UP') return s.includes('FOLLOW');
+      if (label === 'DROPPED') return s.includes('DROP');
+      if (label === 'PENDING') return s === 'PENDING' || (s.includes('PENDING') && !s.includes('CIBIL') && !s.includes('CEBIL') && !s.includes('DOC') && !s.includes('STATUS') && !s.includes('APPROVAL'));
+      if (label === 'DEMO LEADS') return s.includes('DEMO');
+      return false;
+    }).length;
+  };
+
+  const statusCardsList = [
+    // Row 1 (6 Cards)
+    { label: 'ALL LEADS', icon: Icons.Users, topColor: 'border-t-indigo-600', iconColor: 'text-indigo-600', isAll: true },
+    { label: 'HOT LEAD', icon: Icons.Flame, topColor: 'border-t-rose-500', iconColor: 'text-rose-500' },
+    { label: 'WARM LEAD', icon: Icons.Sun, topColor: 'border-t-amber-500', iconColor: 'text-amber-500' },
+    { label: 'COOL LEAD', icon: Icons.Circle, topColor: 'border-t-cyan-500', iconColor: 'text-cyan-500' },
+    { label: 'CALL BACK', icon: Icons.PhoneCall, topColor: 'border-t-purple-500', iconColor: 'text-purple-500' },
+    { label: 'GIVEN LOGIN', icon: Icons.LogIn, topColor: 'border-t-violet-600', iconColor: 'text-violet-600' },
+
+    // Row 2 (6 Cards)
+    { label: 'CIBIL PENDING', icon: Icons.AlertCircle, topColor: 'border-t-pink-500', iconColor: 'text-pink-500' },
+    { label: 'DOCCUMENT PENDING', icon: Icons.FileText, topColor: 'border-t-teal-500', iconColor: 'text-teal-500' },
+    { label: 'STATUS PENDING', icon: Icons.Clock, topColor: 'border-t-amber-500', iconColor: 'text-amber-500' },
+    { label: 'APPROVED', icon: Icons.CheckCircle2, topColor: 'border-t-yellow-500', iconColor: 'text-yellow-600' },
+    { label: 'DISBURSED', icon: Icons.Banknote, topColor: 'border-t-emerald-500', iconColor: 'text-emerald-600' },
+    { label: 'REJECT', icon: Icons.XCircle, topColor: 'border-t-red-500', iconColor: 'text-red-500' },
+
+    // Row 3 (5 Cards)
+    { label: 'FOLLOW-UP', icon: Icons.PhoneForwarded, topColor: 'border-t-blue-500', iconColor: 'text-blue-500' },
+    { label: 'DROPPED', icon: Icons.ArrowDownCircle, topColor: 'border-t-rose-500', iconColor: 'text-rose-500' },
+    { label: 'PENDING', icon: Icons.Hourglass, topColor: 'border-t-amber-400', iconColor: 'text-amber-500' },
+    { label: 'DEMO LEADS', icon: Icons.Sparkles, topColor: 'border-t-purple-500', iconColor: 'text-purple-500' },
+    { label: 'PIPELINE VALUE', icon: Icons.IndianRupee, topColor: 'border-t-amber-600', iconColor: 'text-amber-600', isValue: true }
+  ];
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-left px-3 sm:px-6 md:px-8 py-4">
-      {/* 4 Vibrant Metric Hero Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Leads */}
-        <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Filtered Pipeline Leads
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xs">
-              <Icons.Users className="w-4.5 h-4.5" />
-            </div>
+      {/* 1. Header Bar matching Image 2 */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-md">
+            <Icons.BarChart2 className="w-6 h-6 stroke-[2.2]" />
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {filteredLeads.length}
-            </span>
-            <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md font-mono">
-              of {leads.length} Total
-            </span>
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+              <span>Reports</span>
+              <Icons.ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">Lead Reports & Pipeline Analytics</span>
+            </div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+                Lead Reports & Pipeline Analytics
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-extrabold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 tracking-wider">
+                <Icons.Users className="w-3.5 h-3.5" />
+                {totalLeadsCount} Total Leads
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Comprehensive chronological pipeline report, stage progression KPIs, and multi-filter analytics.
+            </p>
           </div>
         </div>
 
-        {/* Card 2: Hot & High Intent */}
-        <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Hot & Approved
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
-              <Icons.Flame className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {hotAndConvertedCount}
-            </span>
-            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md font-mono">
-              {hotRate}% High Intent
-            </span>
-          </div>
+        {/* Export Excel Button matching Image 2 */}
+        <div className="flex items-center gap-3 self-start md:self-center">
+          <button
+            onClick={exportCSV}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl text-white bg-[#0284c7] hover:bg-[#0369a1] active:scale-[0.98] transition-all shadow-sm shadow-sky-600/20 cursor-pointer"
+            title="Export official 19-column Lead Report spreadsheet"
+          >
+            <Icons.Download className="w-4 h-4 text-sky-100" />
+            <span>Export Excel</span>
+          </button>
         </div>
+      </div>
 
-        {/* Card 3: Pipeline Value */}
-        <div className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Pipeline Volume
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xs">
-              <Icons.IndianRupee className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              ₹{(totalAmount / 100000).toFixed(1)}L
-            </span>
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-md font-mono">
-              Est. Value
-            </span>
-          </div>
-        </div>
+      {/* 2. The 17 Interactive Status KPI Cards Grid matching Image 2 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-3.5">
+        {statusCardsList.map((card) => {
+          const isSelected = selectedKpiCard === card.label;
+          const CardIcon = card.icon;
 
-        {/* Card 4: Campaigns in Scope */}
-        <div className="bg-white dark:bg-slate-900 border border-sky-100 dark:border-slate-800 rounded-2xl p-5 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500 to-blue-500" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Campaign Sources
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-xs">
-              <Icons.Layers className="w-4.5 h-4.5" />
+          let countVal = 0;
+          let badgeText = '0.0%';
+          let displayVal = '0';
+
+          if (card.isValue) {
+            displayVal = totalAmount >= 10000000 
+              ? `₹${(totalAmount / 10000000).toFixed(2)}Cr` 
+              : `₹${(totalAmount / 100000).toFixed(1)}L`;
+            badgeText = 'Est. Volume';
+          } else if (card.isAll) {
+            countVal = totalLeadsCount;
+            displayVal = String(countVal);
+            badgeText = '100% Total';
+          } else {
+            countVal = getCardCount(card.label);
+            displayVal = String(countVal);
+            const pct = totalLeadsCount > 0 ? ((countVal / totalLeadsCount) * 100).toFixed(1) : '0.0';
+            badgeText = `${pct}%`;
+          }
+
+          return (
+            <div
+              key={card.label}
+              onClick={() => {
+                if (selectedKpiCard === card.label && card.label !== 'ALL LEADS') {
+                  setSelectedKpiCard('ALL LEADS');
+                } else {
+                  setSelectedKpiCard(card.label);
+                }
+              }}
+              className={`relative flex flex-col justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-900 transition-all duration-200 cursor-pointer select-none border-t-2 ${card.topColor} ${
+                isSelected
+                  ? 'ring-2 ring-indigo-500 border-indigo-500 shadow-md scale-[1.01]'
+                  : 'border border-black/[0.08] dark:border-slate-800 hover:border-indigo-300 dark:hover:border-slate-700 shadow-3xs hover:shadow-xs'
+              }`}
+            >
+              {/* Top: Label + Icon */}
+              <div className="flex items-start justify-between gap-1.5 mb-2">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 tracking-tight leading-tight uppercase truncate" title={card.label}>
+                  {card.label}
+                </span>
+                <CardIcon className={`w-4 h-4 flex-shrink-0 ${card.iconColor}`} />
+              </div>
+
+              {/* Bottom: Count + Percentage Badge */}
+              <div className="flex items-baseline justify-between gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                  {displayVal}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums ${
+                  card.isAll 
+                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' 
+                    : card.isValue 
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400' 
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                }`}>
+                  {badgeText}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              {campaignsList.length}
-            </span>
-            <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/50 px-2 py-0.5 rounded-md font-mono">
-              Active Drives
-            </span>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       {/* FILTER CONTROL CARD */}

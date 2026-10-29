@@ -8,6 +8,7 @@ import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { formatDate } from '../utils/dateFormatter';
 import { useToastStore } from '../store/toastStore';
 import SalesFunnel3D from '../components/SalesFunnel3D';
+import SalesCallingVisualIntelligence from '../components/SalesCallingVisualIntelligence';
 import { getStatusTokens } from '../utils/statusTokenMapper';
 
 // Reusable Animated Number component with tabular-nums and ease-out interpolation
@@ -188,6 +189,17 @@ export default function Dashboard() {
       return res.data || [];
     },
     staleTime: 60000
+  });
+
+    // Fetch live leads for Visual Intelligence charts
+  const { data: visualLeads = [] } = useQuery({
+    queryKey: ['dashboard-visual-leads'],
+    queryFn: async () => {
+      const res = await api.get('/records/leads?limit=1000').catch(() => ({ data: { records: [] } }));
+      return res.data?.records || res.data || [];
+    },
+    staleTime: 60000,
+    placeholderData: keepPreviousData
   });
 
   const { data: myCampaignsData } = useQuery({
@@ -752,6 +764,13 @@ export default function Dashboard() {
           </div>
         );
       })()}
+
+      {/* 3.5. SALES & CALLING VISUAL INTELLIGENCE (Image 1 Feature) */}
+      <SalesCallingVisualIntelligence
+        leads={visualLeads}
+        statusCounts={metricsData?.statusCounts}
+        totalLeadsCount={metricsData?.totalLeads}
+      />
 
       {/* 4. TODAY'S & UPCOMING FOLLOWUP LEADS DETAILS */}
       <div className="bg-surface-card border border-border-subtle rounded-card p-5 sm:p-6 shadow-card overflow-hidden text-left">
