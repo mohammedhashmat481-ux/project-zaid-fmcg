@@ -479,12 +479,12 @@ export default function Layout({ children }: LayoutProps) {
             <Icons.Menu className="w-5 h-5 stroke-[1.75]" />
           </button>
 
-          <Link to="/" className="flex items-center gap-3 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded-control">
-            <div className="w-9 h-9 rounded-control bg-white/10 p-1 flex items-center justify-center border border-white/15 flex-shrink-0 overflow-hidden shadow-xs">
+          <Link to="/" className="flex items-center gap-3.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded-control">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-white/15 via-white/[0.08] to-white/[0.02] p-1.5 flex items-center justify-center border border-white/20 flex-shrink-0 overflow-hidden shadow-sm shadow-black/30 group-hover:border-white/40 group-hover:bg-white/15 group-hover:scale-105 transition-all duration-200">
               <img 
                 src={resolveFileUrl(branding?.logoUrl) || loginLogo} 
                 alt="Logo" 
-                className="w-full h-full object-contain" 
+                className="w-full h-full object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" 
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
                   target.onerror = null;
@@ -492,13 +492,16 @@ export default function Layout({ children }: LayoutProps) {
                 }}
               />
             </div>
-            <div className="hidden sm:flex flex-col text-left">
-              <span className="text-sm font-bold text-white tracking-tight leading-tight line-clamp-1">
-                {branding?.name || 'INK CRM'}
+            <div className="hidden sm:flex flex-col text-left min-w-0">
+              <span className="text-[15.5px] font-extrabold text-white tracking-[-0.015em] leading-tight line-clamp-1 group-hover:text-white/95 transition-colors">
+                {branding?.name || 'inkSales Enterprises'}
               </span>
-              <span className="text-[10px] font-medium text-white/60 tracking-wider uppercase">
-                Loan & Lending CRM
-              </span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)] flex-shrink-0" />
+                <span className="text-[10px] font-bold text-sky-300 tracking-[0.06em] uppercase leading-none">
+                  Loan & Lending CRM
+                </span>
+              </div>
             </div>
           </Link>
         </div>
@@ -780,10 +783,18 @@ export default function Layout({ children }: LayoutProps) {
                 transition={{ duration: 0.2, ease: 'easeOut' }}
                 className="fixed inset-y-0 left-0 w-72 bg-surface-card border-r border-border-subtle z-50 flex flex-col lg:hidden"
               >
-                <div className="h-16 px-4 border-b border-border-subtle flex items-center justify-between bg-brand-dark text-white">
-                  <div className="flex items-center gap-2.5">
-                    <img src={resolveFileUrl(branding?.logoUrl) || loginLogo} alt="Logo" className="w-8 h-8 object-contain" />
-                    <span className="text-sm font-bold truncate text-white">{branding?.name || 'INK CRM'}</span>
+                <div className="h-16 px-4 border-b border-white/10 flex items-center justify-between bg-brand-dark text-white">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-white/15 via-white/[0.08] to-white/[0.02] p-1.5 flex items-center justify-center border border-white/20 flex-shrink-0 overflow-hidden shadow-sm shadow-black/20">
+                      <img src={resolveFileUrl(branding?.logoUrl) || loginLogo} alt="Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]" />
+                    </div>
+                    <div className="flex flex-col text-left min-w-0">
+                      <span className="text-sm font-extrabold truncate text-white leading-tight">{branding?.name || 'inkSales Enterprises'}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)] flex-shrink-0" />
+                        <span className="text-[9.5px] font-bold text-sky-300 tracking-wider uppercase">Loan & Lending CRM</span>
+                      </div>
+                    </div>
                   </div>
                   <button 
                     type="button" 
