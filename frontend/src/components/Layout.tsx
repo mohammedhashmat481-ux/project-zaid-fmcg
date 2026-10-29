@@ -240,9 +240,11 @@ export default function Layout({ children }: LayoutProps) {
   // Derive Current Page Title & Breadcrumbs for consistent content header
   const pageMeta = (() => {
     const path = location.pathname;
-    if (path === '/') return { title: 'Dashboard Overview', breadcrumb: 'DASHBOARD' };
+    if (path === '/') return { title: 'Dashboard', breadcrumb: 'DASHBOARD' };
     if (path === '/modules/leads/new') return { title: 'Create Lead', breadcrumb: 'LEADS' };
     if (path === '/modules/leads') return { title: 'Leads Process', breadcrumb: 'LEADS' };
+    if (path === '/modules/campaigns') return { title: 'Campaign List', breadcrumb: 'CAMPAIGNS' };
+    if (path === '/modules/campaignassignments') return { title: 'Assign Campaign', breadcrumb: 'CAMPAIGNS' };
     if (path === '/my-campaign') return { title: 'My Campaign', breadcrumb: 'CAMPAIGNS' };
     if (path === '/reports/telecaller-reports') return { title: 'Live Caller Status', breadcrumb: 'REPORTS' };
     if (path === '/reports/lead-reports') return { title: 'Lead Reports', breadcrumb: 'REPORTS' };
@@ -348,6 +350,35 @@ export default function Layout({ children }: LayoutProps) {
                   />
                 );
               })}
+            </SidebarAccordion>
+          )}
+
+          {/* Campaigns accordion */}
+          {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments')) && (
+            <SidebarAccordion 
+              label="Campaigns" 
+              icon={Icons.Megaphone} 
+              defaultOpen={location.pathname.startsWith('/modules/campaign') || location.pathname.startsWith('/my-campaign')}
+              isCollapsed={collapsed}
+            >
+              {canAccessMenu('campaigns') && (
+                <SidebarItem 
+                  to="/modules/campaigns" 
+                  label="Campaign List" 
+                  icon={Icons.Target} 
+                  indent 
+                  isCollapsed={collapsed} 
+                />
+              )}
+              {canAccessMenu('campaignassignments') && (
+                <SidebarItem 
+                  to="/modules/campaignassignments" 
+                  label="Assign Campaign" 
+                  icon={Icons.UserCheck} 
+                  indent 
+                  isCollapsed={collapsed} 
+                />
+              )}
             </SidebarAccordion>
           )}
 
@@ -791,7 +822,7 @@ export default function Layout({ children }: LayoutProps) {
                     to="/modules/leads/new"
                     className="inline-flex items-center gap-2 h-9 px-3.5 bg-brand-500 hover:bg-brand-600 text-brand-contrast text-xs font-semibold rounded-control shadow-xs hover:shadow-card transition-all cursor-pointer"
                   >
-                    <Icons.Plus className="w-4 h-4 stroke-[2.2]" />
+                    <Icons.Plus className="w-4.5 h-4.5 stroke-[2.5]" />
                     <span>Create Lead</span>
                   </Link>
                 )}

@@ -449,7 +449,7 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border-subtle">
         <div>
           <h1 className="text-lg sm:text-xl font-bold text-content-primary tracking-tight">
-            Lending Operations Overview
+            Dashboard
           </h1>
           <p className="text-xs text-content-muted mt-0.5">
             Live pipeline velocity, status distributions, and scheduled follow-ups
@@ -470,13 +470,13 @@ export default function Dashboard() {
             </span>
           </Link>
 
-          {/* Quick Add Lead CTA */}
+          {/* Quick Create Lead CTA */}
           <Link 
             to="/modules/leads/new" 
-            className="group h-8.5 px-3.5 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-brand-contrast rounded-control flex items-center gap-1.5 shadow-card hover:shadow-card-hover transition-all text-xs font-semibold"
+            className="group h-8.5 px-3.5 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-brand-contrast rounded-control flex items-center gap-2 shadow-card hover:shadow-card-hover transition-all text-xs font-semibold"
           >
-            <Icons.Plus className="w-3.5 h-3.5 stroke-[2.2]" />
-            <span>Add Lead</span>
+            <Icons.Plus className="w-4.5 h-4.5 stroke-[2.5]" />
+            <span>Create Lead</span>
           </Link>
         </div>
       </div>

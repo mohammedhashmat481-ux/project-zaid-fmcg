@@ -150,11 +150,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const roleName = (role.name || '').toLowerCase();
     const isSuperAdmin = roleName.includes('super admin');
 
-    // 2. Only Super Admin has permanent non-removable access to Access Privilege configuration
-    if (isSuperAdmin && (
-      normalizedKey === 'accessprivilege' ||
-      normalizedKey === 'access_privilege'
-    )) {
+    // Super Admin has full administrative access to all menus
+    if (isSuperAdmin) {
       return true;
     }
 
@@ -173,7 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (norm === 'reports' && (normalizedKey.includes('report') || normalizedKey.includes('telecaller'))) return true;
       if (norm === 'funnel' && normalizedKey.includes('funnel')) return true;
       if (norm === 'security' && (normalizedKey.includes('accessprivilege') || normalizedKey.includes('leadtransfer'))) return true;
-      if (norm === 'campaigns' && (normalizedKey.includes('campaign') || normalizedKey.includes('campaignassignment'))) return true;
+      if ((norm === 'campaigns' || norm === 'campaign') && (normalizedKey.includes('campaign') || normalizedKey.includes('campaignassignment'))) return true;
       if (norm === 'leads' && (normalizedKey.includes('lead') || normalizedKey.includes('leadsprocess'))) return true;
       return false;
     });
@@ -183,6 +180,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const state = get();
     const role = state.role;
     if (!role) return true;
+
+    const roleName = (role.name || '').toLowerCase();
+    if (roleName.includes('super admin')) return true;
 
     const modules = role.permissions?.modules;
     if (!Array.isArray(modules) || modules.length === 0) return true;
