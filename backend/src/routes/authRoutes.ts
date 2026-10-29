@@ -214,9 +214,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // ── Check Super Admin Approval Status (Exempt Super Admins) ──────────────
+    // ── Check Admin Approval Status (Exempt Main Admin & Super Admins) ──────────────
     const userRole = user.roleId ? await Role.findById(user.roleId) : null;
-    const isSuperAdmin = userRole?.name === 'Super Admin' || (userRole?.name || '').toLowerCase() === 'super admin';
+    const isSuperAdmin = ['Main Admin', 'Super Admin'].includes(userRole?.name || '') || (userRole?.name || '').toLowerCase() === 'main admin' || (userRole?.name || '').toLowerCase() === 'super admin';
 
     if (!isSuperAdmin) {
       if (user.approvalStatus === 'pending' || user.isApproved === false) {
@@ -1162,7 +1162,7 @@ router.post('/users', authenticate, async (req: Request, res: Response): Promise
   try {
     const requester = await User.findById((req as any).user.id);
     const requesterRole = await getRequesterRoleName(requester);
-    const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
+    const isAdmin = ['Main Admin', 'Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied: You do not have permission to create users.' });
       return;
@@ -1185,6 +1185,8 @@ router.post('/users', authenticate, async (req: Request, res: Response): Promise
     let rolePrefix = 'USR';
     if (selectedRole?.name === 'Teacher') {
       rolePrefix = 'TCH';
+    } else if (selectedRole?.name === 'Main Admin') {
+      rolePrefix = 'MAD';
     } else if (selectedRole?.name === 'Super Admin') {
       rolePrefix = 'ADM';
     } else if (selectedRole?.name) {
@@ -1263,6 +1265,8 @@ router.put('/users/:id', authenticate, async (req: Request, res: Response): Prom
       let rolePrefix = 'USR';
       if (selectedRole?.name === 'Teacher') {
         rolePrefix = 'TCH';
+      } else if (selectedRole?.name === 'Main Admin') {
+        rolePrefix = 'MAD';
       } else if (selectedRole?.name === 'Super Admin') {
         rolePrefix = 'ADM';
       } else if (selectedRole?.name) {
@@ -1376,7 +1380,7 @@ router.delete('/users/:id', authenticate, async (req: Request, res: Response): P
   try {
     const requester = await User.findById((req as any).user.id);
     const requesterRole = await getRequesterRoleName(requester);
-    const isAdmin = ['Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
+    const isAdmin = ['Main Admin', 'Super Admin', 'ADMIN', 'Sales Admin', 'SALES MANAGER', 'TELI CALLER'].includes(requesterRole) || requester?.email?.toLowerCase().includes('ink');
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied: You do not have permission to delete users.' });
       return;

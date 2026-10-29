@@ -275,7 +275,16 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
   const allModulePaths = ['leads', 'deals', 'companies', 'campaigns', 'campaignassignments', 'departments', 'bankmasters', 'bankingpartners', 'products'];
   const fullPermissions = createRolePermissions(allModulePaths);
 
-  // 2. Create System Roles
+  // 2. Create System Roles - Main Admin (Apex) & Super Admin
+  const mainAdminRole = await Role.create({
+    organizationId,
+    name: 'Main Admin',
+    description: 'Supreme organizational executive with ultimate root authority above Super Admin',
+    isSystem: true,
+    isActive: true,
+    permissions: fullPermissions
+  });
+
   const superAdminRole = await Role.create({
     organizationId,
     name: 'Super Admin',
@@ -357,12 +366,46 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
   });
 
   return {
+    mainAdminRole,
     superAdminRole,
     leadModule,
     companyModule,
     dealModule,
     departmentModule
   };
+}
+
+async function createMainAdmin(organizationId: any, roleId: any, email: string, password: string) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
+    logger.info(`[Auto-Seeder] Main Admin user with email ${normalizedEmail} already exists. Skipping.`);
+    return existing;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const admin = await User.create({
+    organizationId,
+    roleId,
+    firstName: 'Main',
+    lastName: 'Admin',
+    email: normalizedEmail,
+    passwordHash,
+    plainPassword: password,
+    userCode: 'MAD-MAIN',
+    isVerified: true,
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'approved',
+    skipFace: true,
+    skipLocation: true,
+    department: 'Management',
+    twoFactor: { enabled: false },
+    faceRecognition: { enabled: false }
+  });
+
+  logger.info(`[Auto-Seeder] Main Admin user created successfully with email: ${normalizedEmail}`);
+  return admin;
 }
 
 async function createSuperAdmin(organizationId: any, roleId: any, email: string, password: string) {
@@ -442,21 +485,27 @@ export async function seedDatabase(shouldDisconnect = false): Promise<void> {
   // 2. Seed Tenant Modules, Roles, Departments, Statuses
   const tenantData = await seedNewTenantData(organization._id);
 
-  // 3. Handle Super Admin User Creation via Environment Variables
-  const adminEmail = process.env.ADMIN_EMAIL ? process.env.ADMIN_EMAIL.trim() : '';
-  const adminPassword = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.trim() : '';
+  // 3. Handle Main Admin & Super Admin User Creation with Hierarchy
+  const mainAdmin = await createMainAdmin(
+    organization._id,
+    tenantData.mainAdminRole._id,
+    'mainadmin@crm.com',
+    'novaleadnexa1309'
+  );
 
-  if (!adminEmail || !adminPassword) {
-    if (process.env.NODE_ENV === 'production') {
-      logger.warn('[Auto-Seeder] ADMIN_EMAIL or ADMIN_PASSWORD is missing in production environment. Skipping Super Admin user creation. Please define ADMIN_EMAIL and ADMIN_PASSWORD in your environment variables.');
-    } else {
-      const fallbackEmail = 'admin@crm.com';
-      const fallbackPassword = 'novaleadnexa1309';
-      logger.info(`[Auto-Seeder] No ADMIN_EMAIL/ADMIN_PASSWORD provided. In development mode, provisioning Super Admin (${fallbackEmail} / ${fallbackPassword}).`);
-      await createSuperAdmin(organization._id, tenantData.superAdminRole._id, fallbackEmail, fallbackPassword);
-    }
-  } else {
-    await createSuperAdmin(organization._id, tenantData.superAdminRole._id, adminEmail, adminPassword);
+  const fallbackEmail = 'admin@crm.com';
+  const fallbackPassword = 'novaleadnexa1309';
+  const superAdmin = await createSuperAdmin(
+    organization._id,
+    tenantData.superAdminRole._id,
+    fallbackEmail,
+    fallbackPassword
+  );
+
+  if (superAdmin && mainAdmin) {
+    superAdmin.reportingManager = mainAdmin._id;
+    await superAdmin.save();
+    logger.info('[Auto-Seeder] Established hierarchy: Super Admin reports to Main Admin.');
   }
 
   logger.info('[Auto-Seeder] Automated PostgreSQL database seeding completed successfully!');

@@ -3,6 +3,7 @@ import app from './app';
 import { connectDB, disconnectDB } from './config/db';
 import Organization from './models/Organization';
 import { seedDatabase } from './utils/seeder';
+import { seedDemoData } from './utils/seedDemoData';
 import { logger } from './utils/logger';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -40,7 +41,8 @@ const startServer = async () => {
     if (count === 0) {
       logger.info('No organization tenants detected. Running auto-seeder...');
       await seedDatabase(false);
-      logger.info('Auto-seeding completed.');
+      await seedDemoData(false);
+      logger.info('Auto-seeding and initial demo pipeline completed.');
     }
 
     server = app.listen(PORT, () => {

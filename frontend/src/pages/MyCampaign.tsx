@@ -80,6 +80,24 @@ export default function MyCampaign() {
   const [saveSuccessModal, setSaveSuccessModal] = useState<SaveSuccessModalData | null>(null);
   const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
 
+  // Phone masking
+  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>({});
+  const togglePhoneReveal = (id: string) => {
+    setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const maskPhoneNumber = (phone?: string, isRevealed: boolean = false) => {
+    if (!phone || phone === 'N/A' || phone === 'XXXXXXXXXX') return 'N/A';
+    const clean = String(phone).trim();
+    if (isRevealed) return clean;
+    if (clean.length <= 4) return '******';
+    if (clean.length === 10) {
+      return `${clean.slice(0, 5)}*****`;
+    }
+    const prefixLen = Math.min(4, Math.floor(clean.length / 2));
+    return `${clean.slice(0, prefixLen)}${'*'.repeat(Math.max(4, clean.length - prefixLen))}`;
+  };
+
   // Fetch campaigns
   const fetchCampaigns = async () => {
     try {
@@ -1035,7 +1053,19 @@ export default function MyCampaign() {
                                 <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">{firmName}</td>
                                 <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800">
                                   <div className="space-y-1">
-                                    <span className="font-bold text-slate-900 dark:text-white block">{phoneVal}</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-slate-900 dark:text-white font-mono">{maskPhoneNumber(phoneVal, !!revealedPhones[lead._id])}</span>
+                                      {phoneVal && phoneVal !== 'N/A' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => togglePhoneReveal(lead._id)}
+                                          className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                          title={revealedPhones[lead._id] ? "Hide number" : "Show number"}
+                                        >
+                                          {revealedPhones[lead._id] ? <Icons.EyeOff className="w-3 h-3" /> : <Icons.Eye className="w-3 h-3" />}
+                                        </button>
+                                      )}
+                                    </div>
                                     <div className="flex gap-1">
                                       <button
                                         onClick={() => handleWhatsAppChat(lead)}
@@ -1217,7 +1247,21 @@ export default function MyCampaign() {
                             </div>
                             <div>
                               <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">MOBILE NUMBER:</span>
-                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 block">{phoneDisplay}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-slate-800 dark:text-slate-100 font-mono block">
+                                  {maskPhoneNumber(rawPhone, !!revealedPhones[lead._id])}
+                                </span>
+                                {rawPhone && (
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePhoneReveal(lead._id)}
+                                    className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                    title={revealedPhones[lead._id] ? "Hide number" : "Show number"}
+                                  >
+                                    {revealedPhones[lead._id] ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Row 4 */}

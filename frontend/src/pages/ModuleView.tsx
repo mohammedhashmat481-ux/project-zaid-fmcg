@@ -49,6 +49,68 @@ export default function ModuleView() {
   const [historyDocuments, setHistoryDocuments] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Phone number masking state and toggle
+  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>({});
+  const togglePhoneReveal = (id: string) => {
+    setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const maskPhoneNumber = (phone?: string, isRevealed: boolean = false) => {
+    if (!phone || phone === 'N/A') return 'N/A';
+    const clean = String(phone).trim();
+    if (isRevealed) return clean;
+    if (clean.length <= 4) return '******';
+    if (clean.length === 10) {
+      return `${clean.slice(0, 5)}*****`;
+    }
+    const prefixLen = Math.min(4, Math.floor(clean.length / 2));
+    return `${clean.slice(0, prefixLen)}${'*'.repeat(Math.max(4, clean.length - prefixLen))}`;
+  };
+
+  const getStatusTheme = (status?: string) => {
+    const s = String(status || '').toUpperCase();
+    if (s.includes('HOT')) {
+      return {
+        gradient: 'from-rose-500 via-pink-500 to-red-500',
+        badge: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/40',
+        dot: 'bg-rose-500'
+      };
+    }
+    if (s.includes('DISBUS') || s.includes('APPROVED')) {
+      return {
+        gradient: 'from-emerald-500 via-teal-500 to-green-600',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/40',
+        dot: 'bg-emerald-500'
+      };
+    }
+    if (s.includes('WARM') || s.includes('APPROVAL PENDING') || s.includes('DOCUMENT')) {
+      return {
+        gradient: 'from-amber-400 via-orange-400 to-amber-500',
+        badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/40',
+        dot: 'bg-amber-500'
+      };
+    }
+    if (s.includes('REJECT') || s.includes('DROP')) {
+      return {
+        gradient: 'from-slate-400 to-slate-600',
+        badge: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+        dot: 'bg-slate-500'
+      };
+    }
+    return {
+      gradient: 'from-indigo-500 via-sky-500 to-blue-600',
+      badge: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/40',
+      dot: 'bg-indigo-500'
+    };
+  };
+
+  const getCustomerInitials = (name?: string) => {
+    if (!name || name === 'N/A') return 'LD';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
   // Campaign expansion state for 12-column detailed view
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
   const [campaignLeadsMap, setCampaignLeadsMap] = useState<Record<string, any[]>>({});
@@ -2014,113 +2076,265 @@ export default function ModuleView() {
                         : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'System Router'));
                   const psmName = rec.data?.psmName || resolveUserDisplayName(rec.data?.psm || rec.data?.assignedTo || 'Unassigned');
 
+                  const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                  const isRevealed = !!revealedPhones[rec._id];
+                  const displayedPhone = maskPhoneNumber(rawPhone, isRevealed);
+                  const theme = getStatusTheme(rec.data?.status);
+                  const initials = getCustomerInitials(leadName);
+
                   return (
-                    <div key={rec._id} className="border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 bg-white dark:bg-slate-800 relative mb-6 last:mb-0 text-left shadow-sm">
-                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 to-green-500 rounded-t-2xl" />
+                    <div 
+                      key={rec._id} 
+                      className="group border border-slate-200/90 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-800 relative mb-5 last:mb-0 text-left shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
+                    >
+                      {/* Top Accent Gradient Line */}
+                      <div className={`h-1.5 w-full bg-gradient-to-r ${theme.gradient}`} />
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-6 gap-x-8 text-sm mt-2">
-                        {/* Column 1 */}
-                        <div className="space-y-4">
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Sl No.:</span> <span className="text-slate-600 dark:text-slate-400">{(page - 1) * 10 + idx + 1}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Lead No.:</span> <span className="text-slate-600 dark:text-slate-400">LND-{leadNo}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Product:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.loanType || 'N/A'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Status:</span> <span className="text-slate-600 dark:text-slate-400 uppercase font-semibold">{rec.data?.status || 'New'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Bank Partner:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.businessPartner || 'N/A'}</span></div>
+                      <div className="p-5 sm:p-6 space-y-5">
+                        {/* Header Row: Avatar, Name, Chips & Loan Amount Hero */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700/60">
+                          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-extrabold text-base flex items-center justify-center shadow-xs flex-shrink-0">
+                              {initials}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                                  {leadName}
+                                </h3>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-700/70 dark:text-slate-300">
+                                  #{(page - 1) * 10 + idx + 1}
+                                </span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
+                                  LND-{leadNo}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Icons.Building2 className="w-3.5 h-3.5 text-slate-400" />
+                                  {rec.data?.company || 'Individual / Enterprise'}
+                                </span>
+                                <span className="text-slate-300 dark:text-slate-600">•</span>
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Icons.MapPin className="w-3.5 h-3.5 text-slate-400" />
+                                  {leadLocation}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end md:self-center flex-shrink-0">
+                            {/* Status Pill */}
+                            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border shadow-3xs ${theme.badge}`}>
+                              <span className={`w-2 h-2 rounded-full ${theme.dot} animate-pulse`} />
+                              <span>{rec.data?.status ? rec.data.status.toUpperCase() : 'NEW'}</span>
+                            </div>
+
+                            {/* Hero Loan Amount Card */}
+                            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/40 rounded-xl px-4 py-2 text-right min-w-[140px]">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                                Loan Amount
+                              </span>
+                              <span className="block text-base sm:text-lg font-black text-emerald-700 dark:text-emerald-400">
+                                {formattedAmount}
+                              </span>
+                              <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[150px]">
+                                {rec.data?.loanType || 'Personal Loan'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Column 2 */}
-                        <div className="space-y-4">
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Lead Name:</span> <span className="text-slate-600 dark:text-slate-400 font-semibold">{leadName}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Location:</span> <span className="text-slate-600 dark:text-slate-400">{leadLocation}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Mobile No.:</span> <span className="text-slate-600 dark:text-slate-400 font-mono font-bold tracking-widest">{rec.data?.phone || 'N/A'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Amount:</span> <span className="text-emerald-700 dark:text-emerald-400 font-bold">{formattedAmount}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Case Details:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.caseDetails || 'N/A'}</span></div>
+                        {/* 4 Micro-cards Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                          {/* Panel 1: Contact & Partner */}
+                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                              <Icons.Phone className="w-3 h-3 text-slate-400" />
+                              Contact & Bank
+                            </div>
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Mobile Number</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm tracking-wide">
+                                  {displayedPhone}
+                                </span>
+                                {rawPhone && rawPhone !== 'N/A' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePhoneReveal(rec._id)}
+                                    title={isRevealed ? "Hide number" : "Show number"}
+                                    className="p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                  >
+                                    {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800">
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Bank Partner</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 mt-0.5 block truncate">
+                                {rec.data?.businessPartner || 'Direct / Multi-Bank'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Panel 2: Pipeline Schedule */}
+                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                              <Icons.Calendar className="w-3 h-3 text-indigo-500" />
+                              Pipeline Schedule
+                            </div>
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Follow-up Date</span>
+                              <span className="font-bold text-indigo-600 dark:text-indigo-400 text-xs mt-0.5 block">
+                                {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'No Follow-up Scheduled'}
+                              </span>
+                            </div>
+                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800 space-y-1">
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-slate-400">Created:</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
+                              </div>
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-slate-400">Modified:</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Panel 3: Ownership & Routing */}
+                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                              <Icons.UserCheck className="w-3 h-3 text-cyan-500" />
+                              Assignment & Routing
+                            </div>
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Assigned To</span>
+                              <span className="font-bold text-indigo-600 dark:text-indigo-300 mt-0.5 block truncate">
+                                {assignedToName}
+                              </span>
+                            </div>
+                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800 space-y-1">
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-slate-400">Created By:</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-[100px]">{createdByName}</span>
+                              </div>
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-slate-400">PSM:</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-semibold truncate max-w-[100px]">{psmName}</span>
+                              </div>
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-slate-400">Pending at:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-semibold truncate max-w-[100px]">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Panel 4: Case Intelligence & Remarks */}
+                          <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                              <Icons.FileText className="w-3 h-3 text-amber-500" />
+                              Case Intelligence
+                            </div>
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Case Details</span>
+                              <p className="font-medium text-slate-700 dark:text-slate-300 text-xs mt-0.5 line-clamp-2" title={rec.data?.caseDetails || 'N/A'}>
+                                {rec.data?.caseDetails || 'Standard verification case'}
+                              </p>
+                            </div>
+                            <div className="pt-1 border-t border-slate-200/50 dark:border-slate-800">
+                              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Remarks / Note</span>
+                              <p className="italic text-slate-500 dark:text-slate-400 text-[11px] mt-0.5 line-clamp-2" title={rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || 'N/A')}>
+                                {rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'Lead logged in system')}
+                              </p>
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Column 3 */}
-                        <div className="space-y-4">
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Created On:</span> <span className="text-slate-600 dark:text-slate-400">{formatDate(rec.createdAt)}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Created By:</span> <span className="text-slate-600 dark:text-slate-400 font-medium">{createdByName}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Followup Date:</span> <span className="text-indigo-600 dark:text-indigo-400 font-bold">{rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Pending at:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">PSM:</span> <span className="text-slate-600 dark:text-slate-400">{psmName}</span></div>
-                        </div>
+                        {/* Card Footer: Action Toolbar */}
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            {rec.data?.dataCode && (
+                              <span className="text-[11px] font-mono font-medium px-2 py-1 bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 rounded-md">
+                                Code: {rec.data.dataCode}
+                              </span>
+                            )}
+                          </div>
 
-                        {/* Column 4 */}
-                        <div className="space-y-4">
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Firm/Company:</span> <span className="text-slate-600 dark:text-slate-400">{rec.data?.company || 'N/A'}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Modified On:</span> <span className="text-slate-600 dark:text-slate-400">{formatDate(rec.updatedAt)}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Assigned By:</span> <span className="text-slate-600 dark:text-slate-400 font-medium">{assignedByName}</span></div>
-                          <div><span className="font-bold text-slate-700 dark:text-slate-350">Assigned To:</span> <span className="text-indigo-600 dark:text-indigo-400 font-bold">{assignedToName}</span></div>
-                          <div>
-                            <span className="font-bold text-slate-700 dark:text-slate-350">Remarks:</span> 
-                            <span className="text-slate-500 italic ml-1 text-xs">{rec.data?.notes ? rec.data.notes.replace(/<[^>]*>/g, '') : (rec.data?.dataCode || 'N/A')}</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* WhatsApp Button */}
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const phoneNum = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                                let cleanPhone = String(phoneNum).replace(/\D/g, '').trim();
+                                if (cleanPhone) {
+                                  if (cleanPhone.length === 10) {
+                                    cleanPhone = `91${cleanPhone}`;
+                                  }
+                                  window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                                } else {
+                                  showToast('No phone number available for this lead.', 'warning');
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Icons.MessageSquare className="w-3.5 h-3.5" />
+                              <span>WA Chat</span>
+                            </button>
+                            
+                            {/* Call Button */}
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const phoneNum = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                                const cleanPhone = String(phoneNum).replace(/[^\d+]/g, '').trim();
+                                if (cleanPhone) {
+                                  const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
+                                  showToast(`Calling ${name} (${cleanPhone})...`, 'info');
+                                  window.location.href = `tel:${cleanPhone}`;
+                                } else {
+                                  showToast('No phone number available for this lead.', 'warning');
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Icons.PhoneCall className="w-3.5 h-3.5" />
+                              <span>Call</span>
+                            </button>
+                            
+                            {/* Upload File */}
+                            <button 
+                              type="button"
+                              onClick={() => handleUploadClick(rec._id)}
+                              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Icons.Paperclip className="w-3.5 h-3.5" />
+                              <span>Upload File</span>
+                            </button>
+                            
+                            {/* Edit */}
+                            <Link 
+                              to={`/modules/leads/${rec._id}`} 
+                              className="inline-flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs"
+                            >
+                              <Icons.Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </Link>
+                            
+                            {/* History */}
+                            <button 
+                              type="button"
+                              onClick={() => openHistory(rec)}
+                              className="inline-flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 active:bg-slate-900 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Icons.History className="w-3.5 h-3.5" />
+                              <span>History</span>
+                            </button>
                           </div>
                         </div>
                       </div>
-
-                      <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="text-[10px] font-[800] uppercase tracking-wider px-3 py-1.5 rounded-lg border bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/30">
-                            {rec.data?.status ? rec.data.status.toUpperCase() : 'NEW'}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button 
-                            onClick={() => {
-                              const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
-                              let cleanPhone = String(rawPhone).replace(/\D/g, '').trim();
-                              if (cleanPhone) {
-                                if (cleanPhone.length === 10) {
-                                  cleanPhone = `91${cleanPhone}`;
-                                }
-                                window.open(`https://wa.me/${cleanPhone}`, '_blank');
-                              } else {
-                                showToast('No phone number available for this lead.', 'warning');
-                              }
-                            }}
-                            className="bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-150 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40 text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer"
-                          >
-                            WA Chat
-                          </button>
-                          
-                          <button 
-                            onClick={() => {
-                              const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
-                              const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
-                              if (cleanPhone) {
-                                const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
-                                showToast(`Calling ${leadName} (${cleanPhone})...`, 'info');
-                                window.location.href = `tel:${cleanPhone}`;
-                              } else {
-                                showToast('No phone number available for this lead.', 'warning');
-                              }
-                            }}
-                            className="bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-150 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/30 dark:hover:bg-indigo-900/40 text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer"
-                          >
-                            Call
-                          </button>
-                          
-                          <button 
-                            onClick={() => handleUploadClick(rec._id)}
-                            className="bg-amber-50 hover:bg-amber-100 active:bg-amber-150 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30 dark:hover:bg-amber-900/40 text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all duration-200"
-                          >
-                            Upload File
-                          </button>
-                          
-                          <Link to={`/modules/leads/${rec._id}`} className="bg-cyan-50 hover:bg-cyan-100 active:bg-cyan-150 text-cyan-700 border border-cyan-200 dark:bg-cyan-950/20 dark:text-cyan-400 dark:border-cyan-900/30 dark:hover:bg-cyan-900/40 text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all duration-200">
-                            Edit
-                          </Link>
-                          
-                          <button 
-                            onClick={() => openHistory(rec)}
-                            className="bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-600 border border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700/60 dark:hover:bg-slate-700/80 text-[10px] font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all duration-200"
-                          >
-                            History
-                          </button>
-                        </div>
-                      </div>
-
                     </div>
                   );
                 })}

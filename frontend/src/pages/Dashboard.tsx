@@ -72,6 +72,24 @@ export default function Dashboard() {
   const [historyDocuments, setHistoryDocuments] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Phone masking
+  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>({});
+  const togglePhoneReveal = (id: string) => {
+    setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const maskPhoneNumber = (phone?: string, isRevealed: boolean = false) => {
+    if (!phone || phone === 'N/A') return 'N/A';
+    const clean = String(phone).trim();
+    if (isRevealed) return clean;
+    if (clean.length <= 4) return '******';
+    if (clean.length === 10) {
+      return `${clean.slice(0, 5)}*****`;
+    }
+    const prefixLen = Math.min(4, Math.floor(clean.length / 2));
+    return `${clean.slice(0, prefixLen)}${'*'.repeat(Math.max(4, clean.length - prefixLen))}`;
+  };
+
   // Fetch dynamic configured statuses from database (Settings -> Status Settings)
   const { data: configuredStatuses = [] } = useQuery({
     queryKey: ['dashboard-configured-statuses'],
@@ -892,7 +910,19 @@ export default function Dashboard() {
 
                     <div className="leading-snug">
                       <span className="text-content-secondary font-medium">Mobile No.: </span>
-                      <span className="text-content-primary font-mono font-semibold tabular-nums">{rec.data?.phone || 'N/A'}</span>
+                      <span className="inline-flex items-center gap-1.5 text-content-primary font-mono font-semibold tabular-nums">
+                        {maskPhoneNumber(rec.data?.phone, !!revealedPhones[rec._id])}
+                        {rec.data?.phone && rec.data?.phone !== 'N/A' && (
+                          <button
+                            type="button"
+                            onClick={() => togglePhoneReveal(rec._id)}
+                            className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            title={revealedPhones[rec._id] ? "Hide number" : "Show number"}
+                          >
+                            {revealedPhones[rec._id] ? <Icons.EyeOff className="w-3 h-3" /> : <Icons.Eye className="w-3 h-3" />}
+                          </button>
+                        )}
+                      </span>
                     </div>
 
                     <div className="leading-snug flex items-center flex-wrap gap-1">

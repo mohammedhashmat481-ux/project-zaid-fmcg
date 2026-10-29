@@ -5,6 +5,22 @@ import * as Icons from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 
+const ROLE_HIERARCHY_ORDER: Record<string, { rank: number; label: string; badge: string; icon: string }> = {
+  'main admin': { rank: 1, label: 'Apex Authority (Rank 1)', badge: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800', icon: '👑' },
+  'super admin': { rank: 2, label: 'System Admin (Rank 2)', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800', icon: '⭐' },
+  'admin': { rank: 3, label: 'Administrator (Rank 3)', badge: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800', icon: '🛡️' },
+  'aria sales manager': { rank: 4, label: 'Area Sales Manager (Rank 4)', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800', icon: '👔' },
+  'area sales manager': { rank: 4, label: 'Area Sales Manager (Rank 4)', badge: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800', icon: '👔' },
+  'partner': { rank: 5, label: 'Partner (Rank 5)', badge: 'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800', icon: '🤝' },
+  'teli caller': { rank: 6, label: 'Telecaller (Rank 6)', badge: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800', icon: '📞' },
+  'telecaller': { rank: 6, label: 'Telecaller (Rank 6)', badge: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800', icon: '📞' }
+};
+
+const getRoleMeta = (roleName?: string) => {
+  const norm = String(roleName || '').toLowerCase().trim();
+  return ROLE_HIERARCHY_ORDER[norm] || { rank: 99, label: roleName || 'Standard Role', badge: 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', icon: '👤' };
+};
+
 export default function UsersManagement() {
   const { user, fetchProfile } = useAuthStore();
   const navigate = useNavigate();
@@ -316,6 +332,76 @@ export default function UsersManagement() {
         </button>
       </div>
 
+      {/* Enterprise Reporting Hierarchy Map */}
+      <div className="bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 dark:from-purple-950/30 dark:via-indigo-950/30 dark:to-blue-950/30 border border-purple-200/80 dark:border-purple-800/50 rounded-2xl p-5 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-purple-200/50 dark:border-purple-800/40">
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-sm shadow-xs flex-shrink-0">
+              👑
+            </span>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                Enterprise Role & Reporting Hierarchy
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Top-down operational authority and managerial reporting chain
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300 rounded-full border border-purple-200 dark:border-purple-800 w-max">
+            Apex Root: Main Admin
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-4 text-xs">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-purple-300/80 dark:border-purple-700 shadow-3xs">
+            <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
+            <div>
+              <div className="font-extrabold text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                <span>👑</span> Main Admin
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium">Apex Root Authority</div>
+            </div>
+          </div>
+
+          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 shadow-3xs">
+            <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
+            <div>
+              <div className="font-extrabold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                <span>⭐</span> Super Admin
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium">Reports to Main Admin</div>
+            </div>
+          </div>
+
+          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-cyan-200 dark:border-cyan-800 shadow-3xs">
+            <span className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-black">3</span>
+            <div>
+              <div className="font-extrabold text-cyan-700 dark:text-cyan-300 flex items-center gap-1">
+                <span>👔</span> Area Sales Manager
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium">Vikram Patel</div>
+            </div>
+          </div>
+
+          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 shadow-3xs">
+            <span className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px] font-black">4</span>
+            <div>
+              <div className="font-extrabold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                <span>📞</span> Telecallers
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium">Rahul, Ananya, Priya, Sneha</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
@@ -570,9 +656,23 @@ export default function UsersManagement() {
                     )}
                   </td>
 
-                  {/* Role (Read Only) */}
-                  <td className="px-4 py-2 text-xs font-semibold text-slate-700">
-                    {u.roleId?.name || 'No Role'}
+                  {/* Role with Hierarchy Badge */}
+                  <td className="px-4 py-2 text-xs">
+                    {(() => {
+                      const rName = u.roleId?.name || 'No Role';
+                      const meta = getRoleMeta(rName);
+                      return (
+                        <div className="space-y-0.5">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold border ${meta.badge}`}>
+                            <span>{meta.icon}</span>
+                            <span>{rName}</span>
+                          </span>
+                          <span className="block text-[10px] text-slate-400 dark:text-slate-500 font-semibold">
+                            {meta.label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
 
                   {/* Department */}
@@ -673,9 +773,17 @@ export default function UsersManagement() {
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Role Type <span className="text-red-500">*</span></label>
                   <select required value={userForm.roleId} onChange={e => setUserForm({ ...userForm, roleId: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer">
                     <option value="">Select Role</option>
-                    {roles.map(r => (
-                      <option key={r._id} value={r._id}>{r.name}</option>
-                    ))}
+                    {roles
+                      .slice()
+                      .sort((a, b) => getRoleMeta(a.name).rank - getRoleMeta(b.name).rank)
+                      .map(r => {
+                        const meta = getRoleMeta(r.name);
+                        return (
+                          <option key={r._id} value={r._id}>
+                            {meta.icon} {r.name} — {meta.label}
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
                 <div>

@@ -83,11 +83,14 @@ export async function seedDemoData(shouldDisconnect = false) {
     }
   ];
 
+  const superAdminUser = await User.findOne({ email: 'admin@crm.com' });
+  let vikramUser: any = null;
+
   const agentNames: string[] = ['Super Admin'];
   for (const u of demoUsersToCreate) {
-    const existing = await User.findOne({ email: u.email });
-    if (!existing) {
-      await User.create({
+    let userDoc = await User.findOne({ email: u.email });
+    if (!userDoc) {
+      userDoc = await User.create({
         organizationId: orgId,
         roleId: u.roleId,
         firstName: u.firstName,
@@ -108,6 +111,18 @@ export async function seedDemoData(shouldDisconnect = false) {
       });
       logger.info(`[Demo Seeder] Created User: ${u.firstName} ${u.lastName} (${u.email})`);
     }
+
+    if (u.firstName === 'Vikram') {
+      vikramUser = userDoc;
+      if (superAdminUser && !userDoc.reportingManager) {
+        userDoc.reportingManager = superAdminUser._id;
+        await userDoc.save();
+      }
+    } else if (vikramUser && !userDoc.reportingManager) {
+      userDoc.reportingManager = vikramUser._id;
+      await userDoc.save();
+    }
+
     agentNames.push(`${u.firstName} ${u.lastName}`);
   }
 
@@ -708,9 +723,21 @@ export async function seedDemoData(shouldDisconnect = false) {
   const createdLeads: any[] = [];
   let leadCodeIdx = 101;
 
+  const usedPhones = new Set<string>();
+
   for (const item of realisticLeadsData) {
     const dataCode = `LND-${leadCodeIdx++}`;
     const fullName = `${item.firstName} ${item.lastName}`;
+
+    let phoneNum = String(item.phone || `98${10000000 + leadCodeIdx}`).trim();
+    if (usedPhones.has(phoneNum)) {
+      phoneNum = `98${String(10000000 + leadCodeIdx + 500)}`;
+    }
+    usedPhones.add(phoneNum);
+
+    const creatorName = item.assignedTo || 'Super Admin';
+    const caseDetails = item.notes || `Requirement for ${item.loanType} - verification in progress`;
+
     const leadRecord = await CustomRecord.create({
       organizationId: orgId,
       moduleId: leadModule._id,
@@ -723,7 +750,7 @@ export async function seedDemoData(shouldDisconnect = false) {
         lastName: item.lastName,
         fullName: fullName,
         customerName: fullName,
-        phone: item.phone,
+        phone: phoneNum,
         email: item.email,
         company: item.company,
         firmName: item.company,
@@ -739,7 +766,10 @@ export async function seedDemoData(shouldDisconnect = false) {
         psm: item.psm,
         status: item.status,
         dialStatus: item.dialStatus,
-        source: item.source,
+        source: creatorName,
+        creatorName: creatorName,
+        caseDetails: caseDetails,
+        leadCategory: 'A1 CATE',
         campaign: item.campaign,
         campaignName: item.campaignName,
         assignedTo: item.assignedTo,

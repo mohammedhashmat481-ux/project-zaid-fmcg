@@ -40,8 +40,8 @@ const authorizeModuleAction = async (
     const role = await Role.findById(req.user?.roleId);
     if (!role) return { allowed: false, scope: 'none' as any };
 
-    // Super Admin bypass
-    if (role.name === 'Super Admin' && role.isSystem) {
+    // Main Admin & Super Admin bypass
+    if ((role.name === 'Main Admin' || role.name === 'Super Admin') && (role.isSystem || role.name === 'Main Admin')) {
       return { allowed: true, scope: 'all' };
     }
 
