@@ -132,7 +132,28 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
     return m < 10 ? `0${m}` : `${m}`;
   });
   const [selectedYear, setSelectedYear] = useState<string>(() => String(new Date().getFullYear()));
+  const [selectedUser, setSelectedUser] = useState<string>('ALL');
+  const [selectedRole, setSelectedRole] = useState<string>('ALL');
   const [searchCaller, setSearchCaller] = useState<string>('');
+
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [rolesList, setRolesList] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const [usersRes, rolesRes] = await Promise.all([
+          api.get('/auth/users?purpose=dropdown').catch(() => ({ data: [] })),
+          api.get('/auth/roles').catch(() => ({ data: [] }))
+        ]);
+        setUsersList(usersRes.data || []);
+        setRolesList(rolesRes.data || []);
+      } catch (e) {
+        console.error('Failed to load filter users/roles', e);
+      }
+    };
+    fetchDropdownData();
+  }, []);
 
   useEffect(() => {
     if (initialPeriod) {
@@ -164,7 +185,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   // Fast React Query with client & server cache (60s staleTime)
   const { data: matrixResponse, isLoading: loading, refetch: refetchMatrixReport } = useQuery({
-    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedMonth, selectedYear],
+    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedMonth, selectedYear, selectedUser, selectedRole],
     queryFn: async () => {
       const metricParam = activeCardConfig.metricParam;
       const res = await api.get('/reports/campaign-matrix', {
@@ -173,7 +194,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
           metric: metricParam,
           campaignName: selectedCampaign,
           month: selectedMonth,
-          year: selectedYear
+          year: selectedYear,
+          userId: selectedUser,
+          roleId: selectedRole
         }
       });
       return res.data;
@@ -356,6 +379,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   onChange={(e) => setSelectedMonth(e.target.value)}
                   className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
                 >
+                  <option value="ALL">-All Months-</option>
                   {months.map((m) => (
                     <option key={m.val} value={m.val}>
                       {m.label}
@@ -374,6 +398,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                 onChange={(e) => setSelectedYear(e.target.value)}
                 className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
               >
+                <option value="ALL">-All Years-</option>
                 {years.map((y) => (
                   <option key={y} value={y}>
                     {y}
@@ -401,6 +426,130 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
       {/* 3. Main Content Area */}
       <div className="p-4 sm:p-6 md:p-8 space-y-6 flex-1">
+        {/* ========================================================= */}
+        {/* Image 1: REPORT FILTER PARAMETERS Panel                   */}
+        {/* ========================================================= */}
+        <section aria-label="Report Filter Parameters" className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 shadow-3xs">
+                <Icons.SlidersHorizontal className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  REPORT FILTER PARAMETERS
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                  Filter metrics across all {usersList.length || 0} users by month and year
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => refetchMatrixReport()}
+              disabled={loading}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black text-white bg-[#0284c7] hover:bg-[#0369a1] active:scale-[0.98] transition-all shadow-sm shadow-sky-600/20 cursor-pointer self-start sm:self-auto"
+            >
+              <Icons.CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+              <span>APPLY FILTER</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+            {/* 1. Select Month */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Select Month
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                >
+                  <option value="ALL">-All Months-</option>
+                  {months.map((m) => (
+                    <option key={m.val} value={m.val}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* 2. Select Year */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Select Year
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                >
+                  <option value="ALL">-All Years-</option>
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* 3. Select User */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Select User
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedUser}
+                  onChange={(e) => setSelectedUser(e.target.value)}
+                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                >
+                  <option value="ALL">-All Users-</option>
+                  {usersList.map((u: any) => {
+                    const name = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+                    return (
+                      <option key={u._id || u.id} value={u._id || u.id}>
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* 4. Select Role */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Select Role
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                >
+                  <option value="ALL">-All Roles-</option>
+                  {rolesList.map((r: any) => (
+                    <option key={r._id || r.id} value={r._id || r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ========================================================= */}
         {/* Image 5 Feature: The 6 Clickable KPI Hero Cards           */}
         {/* ========================================================= */}

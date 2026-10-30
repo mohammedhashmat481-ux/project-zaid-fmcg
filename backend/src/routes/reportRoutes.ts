@@ -23,10 +23,12 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       month = '10',
       year = '2026',
       period = 'daily',
-      metric = 'callsMade'
+      metric = 'callsMade',
+      userId = 'ALL',
+      roleId = 'ALL'
     } = req.query;
 
-    const cacheKey = CacheKeys.campaignMatrix(orgId!, `${period}:${metric}:${campaignName}:${month}:${year}`);
+    const cacheKey = CacheKeys.campaignMatrix(orgId!, `${period}:${metric}:${campaignName}:${month}:${year}:${userId}:${roleId}`);
     const cached = serverCache.get(cacheKey);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
@@ -34,8 +36,10 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
-    const targetYear = parseInt(String(year || '2026'), 10) || 2026;
+    const isAllMonths = String(month).toUpperCase() === 'ALL' || String(month).toLowerCase().includes('all');
+    const isAllYears = String(year).toUpperCase() === 'ALL' || String(year).toLowerCase().includes('all');
+    const targetMonthIndex = isAllMonths ? -1 : (parseInt(String(month || '10'), 10) - 1); // 0 to 11
+    const targetYear = isAllYears ? -1 : (parseInt(String(year || '2026'), 10) || 2026);
 
     // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
     const campaignModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'campaigns' });
@@ -86,11 +90,23 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
 
     // 2. Fetch Real Users from Organization and build strict canonical lookup
     const users = await User.find({ organizationId: orgId })
-      .select('_id firstName lastName name username email')
+      .select('_id firstName lastName name username email roleId')
       .lean();
 
     const callerLookup = new Map<string, string>();
     const orderedCallersList: string[] = [];
+
+    // Filter users if roleId or userId filter is active
+    let targetUsers = users;
+    if (roleId && roleId !== 'ALL') {
+      targetUsers = targetUsers.filter((u: any) => String(u.roleId || '') === String(roleId));
+    }
+    if (userId && userId !== 'ALL') {
+      targetUsers = targetUsers.filter((u: any) => String(u._id || '') === String(userId) || String(u.id || '') === String(userId));
+    }
+
+    const isFilteredByUserOrRole = (roleId && roleId !== 'ALL') || (userId && userId !== 'ALL');
+    const targetUserNames = new Set<string>();
 
     users.forEach((u: any) => {
       const full = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
@@ -103,6 +119,13 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       if (u.id) callerLookup.set(String(u.id).toLowerCase().trim(), full);
       if (u.email) callerLookup.set(u.email.toLowerCase().trim(), full);
       if (u.username) callerLookup.set(u.username.toLowerCase().trim(), full);
+    });
+
+    targetUsers.forEach((u: any) => {
+      const full = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+      if (full) {
+        targetUserNames.add(full);
+      }
     });
 
     // Helper: Strictly resolve a lead/assignment to exactly one canonical caller name
@@ -127,22 +150,38 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       return str;
     };
 
-    // Ensure all callers who have assigned leads appear in the list
-    filteredLeads.forEach((l: any) => {
-      const caller = resolveCallerName(l);
-      if (caller && !orderedCallersList.includes(caller)) {
-        orderedCallersList.push(caller);
-      }
-    });
+    if (isFilteredByUserOrRole) {
+      filteredLeads = filteredLeads.filter(l => {
+        const caller = resolveCallerName(l);
+        return caller && targetUserNames.has(caller);
+      });
+      filteredAssignments = filteredAssignments.filter(a => {
+        const caller = resolveCallerName(a);
+        return caller && targetUserNames.has(caller);
+      });
+    }
 
-    filteredAssignments.forEach((a: any) => {
-      const caller = resolveCallerName(a);
-      if (caller && !orderedCallersList.includes(caller)) {
-        orderedCallersList.push(caller);
-      }
-    });
-
-    const callerNames = orderedCallersList.length > 0 ? orderedCallersList : ['Super Admin', 'Telecaller'];
+    let callerNames: string[] = [];
+    if (isFilteredByUserOrRole) {
+      callerNames = Array.from(targetUserNames);
+    } else {
+      callerNames = [...orderedCallersList];
+      filteredLeads.forEach((l: any) => {
+        const caller = resolveCallerName(l);
+        if (caller && !callerNames.includes(caller)) {
+          callerNames.push(caller);
+        }
+      });
+      filteredAssignments.forEach((a: any) => {
+        const caller = resolveCallerName(a);
+        if (caller && !callerNames.includes(caller)) {
+          callerNames.push(caller);
+        }
+      });
+    }
+    if (callerNames.length === 0) {
+      callerNames = isFilteredByUserOrRole ? ['Selected User'] : ['Super Admin', 'Telecaller'];
+    }
 
     // Helper: Determine if a lead has ACTUALLY been dialed / called
     // (A newly created lead in form without a call made is NOT dialed!)
@@ -214,7 +253,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     // 4. Generate Columns based on Period
     let columns: string[] = [];
     if (period === 'daily') {
-      const daysInMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+      const daysInMonth = (isAllMonths || isAllYears) ? 31 : new Date(targetYear, targetMonthIndex + 1, 0).getDate();
       columns = Array.from({ length: daysInMonth }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
     } else if (period === 'monthly') {
       columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -260,11 +299,14 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       relevantLeads.forEach(l => {
         const parts = getEventDateParts(l, String(metric));
         if (parts) {
-          if (parts.month === targetMonthIndex && parts.year === targetYear) {
+          const monthMatch = isAllMonths || parts.month === targetMonthIndex;
+          const yearMatch = isAllYears || parts.year === targetYear;
+
+          if (monthMatch && yearMatch) {
             if (!leadsByDay[parts.day]) leadsByDay[parts.day] = [];
             leadsByDay[parts.day].push(l);
           }
-          if (parts.year === targetYear) {
+          if (yearMatch) {
             if (!leadsByMonth[parts.month]) leadsByMonth[parts.month] = [];
             leadsByMonth[parts.month].push(l);
           }
@@ -361,10 +403,13 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     const periodScopedLeads = filteredLeads.filter(l => {
       const parts = getEventDateParts(l, 'callsMade');
       if (!parts) return false;
+      const monthMatch = isAllMonths || parts.month === targetMonthIndex;
+      const yearMatch = isAllYears || parts.year === targetYear;
+
       if (period === 'daily') {
-        return parts.month === targetMonthIndex && parts.year === targetYear;
+        return monthMatch && yearMatch;
       } else if (period === 'monthly') {
-        return parts.year === targetYear;
+        return yearMatch;
       }
       return true;
     });

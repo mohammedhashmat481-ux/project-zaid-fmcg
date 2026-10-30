@@ -58,6 +58,8 @@ export default function UsersManagement() {
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
   const [deletingUser, setDeletingUser] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [deptFilter, setDeptFilter] = useState<string>('all');
   const [userSearchQuery, setUserSearchQuery] = useState<string>('');
 
   const [loading, setLoading] = useState(true);
@@ -278,10 +280,47 @@ export default function UsersManagement() {
 
   const pendingUsersCount = users.filter(u => u.approvalStatus === 'pending' || u.isApproved === false).length;
   const activeUsersCount = users.filter(u => u.isActive && u.isApproved !== false).length;
+  const faceEnforcedCount = users.filter(u => !u.skipFace).length;
+  const locationEnforcedCount = users.filter(u => !u.skipLocation).length;
+
+  const exportUsersCSV = () => {
+    const headers = ['Name', 'Email', 'Role', 'Department', 'Employee ID', 'Account Status', 'Face MFA', 'Location Tracking'];
+    const rows = filteredUsers.map(u => {
+      const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || 'N/A';
+      const roleName = roles.find(r => r._id === u.roleId)?.name || u.roleId || 'N/A';
+      return [
+        `"${name}"`,
+        `"${u.email || ''}"`,
+        `"${roleName}"`,
+        `"${u.department || 'General'}"`,
+        `"${u.userCode || u._id}"`,
+        `"${u.isActive ? 'Active' : 'Disabled'}"`,
+        `"${u.skipFace ? 'Bypassed' : 'Enforced'}"`,
+        `"${u.skipLocation ? 'Bypassed' : 'Enforced'}"`
+      ];
+    });
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Users_Directory_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Exported users directory to CSV.', 'success');
+  };
 
   const filteredUsers = users.filter(u => {
     if (statusFilter === 'pending' && !(u.approvalStatus === 'pending' || u.isApproved === false)) return false;
     if (statusFilter === 'active' && !(u.isActive && u.isApproved !== false)) return false;
+    if (roleFilter !== 'all') {
+      const uRoleName = (roles.find(r => r._id === u.roleId)?.name || '').toLowerCase();
+      if (u.roleId !== roleFilter && uRoleName !== roleFilter.toLowerCase()) return false;
+    }
+    if (deptFilter !== 'all') {
+      const uDept = (u.department || '').toLowerCase();
+      if (uDept !== deptFilter.toLowerCase()) return false;
+    }
     if (userSearchQuery.trim()) {
       const q = userSearchQuery.toLowerCase().trim();
       const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
@@ -324,103 +363,130 @@ export default function UsersManagement() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setUserEditing(false);
-            setUserForm({
-              id: '',
-              email: '',
-              password: '',
-              firstName: '',
-              lastName: '',
-              roleId: '',
-              department: '',
-              skipFace: false,
-              skipLocation: false,
-              isActive: true
-            });
-            setUserModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-5 h-10 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-xl text-xs font-black shadow-md shadow-sky-500/20 transition-all cursor-pointer flex-shrink-0"
-        >
-          <Icons.Plus className="w-4 h-4" /> Add New User
-        </button>
-      </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3.5 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-3xs cursor-pointer"
+            title="Refresh Users"
+          >
+            <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
 
-      {/* Enterprise Reporting Hierarchy Map */}
-      <div className="bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 dark:from-purple-950/30 dark:via-indigo-950/30 dark:to-blue-950/30 border border-purple-200/80 dark:border-purple-800/50 rounded-2xl p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-purple-200/50 dark:border-purple-800/40">
-          <div className="flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-sm shadow-xs flex-shrink-0">
-              👑
-            </span>
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
-                Enterprise Role & Reporting Hierarchy
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Top-down operational authority and managerial reporting chain
-              </p>
-            </div>
-          </div>
-          <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300 rounded-full border border-purple-200 dark:border-purple-800 w-max">
-            Apex Root: Main Admin
-          </span>
-        </div>
+          <button
+            type="button"
+            onClick={exportUsersCSV}
+            className="inline-flex items-center gap-1.5 px-3.5 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-3xs cursor-pointer"
+            title="Export CSV"
+          >
+            <Icons.Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-4 text-xs">
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-purple-300/80 dark:border-purple-700 shadow-3xs">
-            <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
-            <div>
-              <div className="font-extrabold text-purple-700 dark:text-purple-300 flex items-center gap-1">
-                <span>👑</span> Main Admin
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium">Apex Root Authority</div>
-            </div>
-          </div>
-
-          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
-
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 shadow-3xs">
-            <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
-            <div>
-              <div className="font-extrabold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
-                <span>⭐</span> Super Admin
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium">Reports to Main Admin</div>
-            </div>
-          </div>
-
-          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
-
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-cyan-200 dark:border-cyan-800 shadow-3xs">
-            <span className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-black">3</span>
-            <div>
-              <div className="font-extrabold text-cyan-700 dark:text-cyan-300 flex items-center gap-1">
-                <span>👔</span> Area Sales Manager
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium">Vikram Patel</div>
-            </div>
-          </div>
-
-          <Icons.ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
-
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 shadow-3xs">
-            <span className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px] font-black">4</span>
-            <div>
-              <div className="font-extrabold text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                <span>📞</span> Telecallers
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium">Rahul, Ananya, Priya, Sneha</div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setUserEditing(false);
+              setUserForm({
+                id: '',
+                email: '',
+                password: '',
+                firstName: '',
+                lastName: '',
+                roleId: '',
+                department: '',
+                skipFace: false,
+                skipLocation: false,
+                isActive: true
+              });
+              setUserModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-5 h-10 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-xl text-xs font-black shadow-md shadow-sky-500/20 transition-all cursor-pointer flex-shrink-0"
+          >
+            <Icons.Plus className="w-4 h-4" /> Add New User
+          </button>
         </div>
       </div>
 
-      {/* Filter Tabs & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+      {/* 5 KPI Stat Cards matching exact layout from Image 3 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {/* 1. Total Staff */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Total Staff</span>
+            <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-3xs">
+              <Icons.Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">{users.length}</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 block">Registered Profiles</span>
+        </div>
+
+        {/* 2. Active Team */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
+          <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Team</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-3xs">
+              <Icons.CheckCircle2 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{activeUsersCount}</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 block">Enabled & Verified</span>
+        </div>
+
+        {/* 3. Pending Action */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
+          <div className="flex items-center justify-between text-amber-600 dark:text-amber-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Pending Action</span>
+            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-3xs">
+              <Icons.Clock className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">{pendingUsersCount}</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 block">{pendingUsersCount === 0 ? 'All Clear' : 'Needs Review'}</span>
+        </div>
+
+        {/* 4. Face Biometric */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs relative overflow-hidden text-left hover:shadow-md transition-all">
+          <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Face Biometric</span>
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-3xs">
+              <Icons.ShieldCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">{faceEnforcedCount}</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 block">MFA Enforced / Active</span>
+        </div>
+
+        {/* 5. GPS Geofence */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs col-span-2 sm:col-span-1 relative overflow-hidden text-left hover:shadow-md transition-all">
+          <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">GPS Geofence</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-3xs">
+              <Icons.MapPin className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">{locationEnforcedCount}</span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 block">Location Verified</span>
+        </div>
+      </div>
+
+      {/* Filter Tabs & Search Controls with Dropdown Filters from Image 3 */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        {/* Status Tabs */}
+        <div className="flex items-center bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 flex-wrap">
           <button
             type="button"
             onClick={() => setStatusFilter('all')}
@@ -441,7 +507,7 @@ export default function UsersManagement() {
                 : 'text-slate-500 hover:text-amber-600'
             }`}
           >
-            <Icons.Clock className="w-3.5 h-3.5" /> Pending Approval
+            <Icons.Clock className="w-3.5 h-3.5" /> Pending
             {pendingUsersCount > 0 && (
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${statusFilter === 'pending' ? 'bg-white/30 text-white' : 'bg-amber-100 text-amber-800 font-extrabold'}`}>
                 {pendingUsersCount}
@@ -457,31 +523,72 @@ export default function UsersManagement() {
                 : 'text-slate-500 hover:text-emerald-600'
             }`}
           >
-            <Icons.CheckCircle className="w-3.5 h-3.5" /> Active Team
+            <Icons.CheckCircle className="w-3.5 h-3.5" /> Active
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${statusFilter === 'active' ? 'bg-white/30 text-white' : 'bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
               {activeUsersCount}
             </span>
           </button>
         </div>
 
-        {/* Real-time search bar */}
-        <div className="relative w-full sm:w-72">
-          <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by name, email, role, dept..."
-            value={userSearchQuery}
-            onChange={(e) => setUserSearchQuery(e.target.value)}
-            className="w-full h-9 pl-9 pr-8 text-xs bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-sky-500 text-slate-800 dark:text-white font-medium placeholder:text-slate-400 transition-all"
-          />
-          {userSearchQuery && (
-            <button
-              onClick={() => setUserSearchQuery('')}
-              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+        {/* Filters & Search: All Roles, All Depts, Search input */}
+        <div className="flex items-center gap-2.5 flex-wrap flex-1 justify-end">
+          {/* Roles Dropdown */}
+          <div className="relative min-w-[140px]">
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-slate-50/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none shadow-3xs cursor-pointer"
             >
-              <Icons.X className="w-3.5 h-3.5" />
-            </button>
-          )}
+              <option value="all">All Roles</option>
+              {roles.map(r => (
+                <option key={r._id || r.id} value={r._id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+            <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+          </div>
+
+          {/* Departments Dropdown */}
+          <div className="relative min-w-[140px]">
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-slate-50/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none shadow-3xs cursor-pointer"
+            >
+              <option value="all">All Depts</option>
+              {departments.map((d: any) => {
+                const dName = d.data?.departmentName || d.data?.name || d.name || d;
+                return (
+                  <option key={d._id || dName} value={dName}>
+                    {dName}
+                  </option>
+                );
+              })}
+            </select>
+            <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+          </div>
+
+          {/* Real-time search bar */}
+          <div className="relative min-w-[190px] flex-1 sm:flex-initial">
+            <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search name, code, email, role, dept..."
+              value={userSearchQuery}
+              onChange={(e) => setUserSearchQuery(e.target.value)}
+              className="w-full h-9 pl-9 pr-8 text-xs bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-sky-500 text-slate-800 dark:text-white font-medium placeholder:text-slate-400 transition-all shadow-3xs"
+            />
+            {userSearchQuery && (
+              <button
+                onClick={() => setUserSearchQuery('')}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                title="Clear search"
+              >
+                <Icons.X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
