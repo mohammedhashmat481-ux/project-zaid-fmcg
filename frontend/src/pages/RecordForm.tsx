@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -117,81 +117,99 @@ export default function RecordForm() {
 
   const isInitialLoadRef = React.useRef(true);
 
+  // Master dependencies queries with 5-minute cache for instantaneous form hydration
+  const { data: cachedStatuses = [] } = useQuery<string[]>({
+    queryKey: ['master-statuses-list'],
+    queryFn: async () => {
+      const res = await api.get('/statuses');
+      return Array.isArray(res.data) ? res.data.map((s: any) => s.name) : [];
+    },
+    staleTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
+
+  const { data: cachedBP = [] } = useQuery({
+    queryKey: ['master-bankingpartners'],
+    queryFn: async () => (await api.get('/records/bankingpartners')).data?.records || [],
+    staleTime: 5 * 60 * 1000,
+    enabled: apiPath === 'leads',
+    placeholderData: keepPreviousData
+  });
+
+  const { data: cachedBM = [] } = useQuery({
+    queryKey: ['master-bankmasters'],
+    queryFn: async () => (await api.get('/records/bankmasters')).data?.records || [],
+    staleTime: 5 * 60 * 1000,
+    enabled: apiPath === 'leads',
+    placeholderData: keepPreviousData
+  });
+
+  const { data: cachedProducts = [] } = useQuery({
+    queryKey: ['master-products'],
+    queryFn: async () => (await api.get('/records/products')).data?.records || [],
+    staleTime: 5 * 60 * 1000,
+    enabled: apiPath === 'leads',
+    placeholderData: keepPreviousData
+  });
+
+  const { data: cachedDepts = [] } = useQuery({
+    queryKey: ['master-departments'],
+    queryFn: async () => (await api.get('/records/departments')).data?.records || [],
+    staleTime: 5 * 60 * 1000,
+    enabled: apiPath === 'leads',
+    placeholderData: keepPreviousData
+  });
+
+  const { data: cachedUsers = [] } = useQuery({
+    queryKey: ['users-dropdown'],
+    queryFn: async () => (await api.get('/auth/users?purpose=dropdown')).data || [],
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
+
   useEffect(() => {
-    const fetchDynamicStatuses = async () => {
-      try {
-        const res = await api.get('/statuses');
-        setDynamicStatuses(res.data.map((s: any) => s.name));
-      } catch (err) {
-        console.error('Failed to fetch dynamic statuses', err);
-      }
-    };
-    fetchDynamicStatuses();
-
-    // Fetch dependencies for Leads module
-    if (apiPath === 'leads') {
-      const fetchLeadsDependencies = async () => {
-        try {
-          const [resBP, resBM, resProducts, resDepts, resUsers] = await Promise.all([
-            api.get('/records/bankingpartners'),
-            api.get('/records/bankmasters'),
-            api.get('/records/products'),
-            api.get('/records/departments'),
-            api.get('/auth/users?purpose=dropdown')
-          ]);
-          
-          setBankPartnerMappings(resBP.data?.records || resBP.data || []);
-          
-          // 1. Process bank options list (Bank Master Settings)
-          const customBanks = (resBM.data?.records || []).map((r: any) => r.data?.bankName).filter(Boolean);
-          const mergedBanks = customBanks.map((b: string) => b.toUpperCase());
-          // Keep both 'SBI' and 'STATE BANK OF INDIA' for backwards-compatibility matching
-          if (mergedBanks.includes('STATE BANK OF INDIA') && !mergedBanks.includes('SBI')) {
-            mergedBanks.unshift('SBI');
-          }
-          setAllBanks(mergedBanks);
-
-          // 2. Process loan types (Products Settings)
-          const dbLoanTypes = (resProducts.data?.records || [])
-            .map((r: any) => r.data?.name)
-            .filter(Boolean)
-            .map((b: string) => b.toUpperCase());
-          if (dbLoanTypes.length > 0) {
-            setAllLoanTypes(dbLoanTypes);
-          } else {
-            setAllLoanTypes(['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP']);
-          }
-
-          // 3. Process teams (Departments Settings)
-          const dbTeams = (resDepts.data?.records || [])
-            .map((r: any) => r.data?.name)
-            .filter(Boolean);
-          if (dbTeams.length > 0) {
-            setAllTeams(dbTeams);
-          } else {
-            setAllTeams(['Team A', 'Team B']);
-          }
-
-          // 4. Process agents (Users settings)
-          const dbUsers = (resUsers.data || [])
-            .map((u: any) => [u.firstName, u.lastName].filter(Boolean).join(' '))
-            .filter(Boolean);
-          setAllUsers(dbUsers);
-          setRawUsersList(resUsers.data || []);
-
-        } catch (err) {
-          console.error('Failed to load leads dependency data', err);
-          // Fallbacks
-          setAllBanks([]);
-          setAllLoanTypes(['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP']);
-          setAllTeams(['Team A', 'Team B']);
-          setAllUsers([]);
-          setRawUsersList([]);
-        }
-      };
-      fetchLeadsDependencies();
+    if (cachedStatuses.length > 0) {
+      setDynamicStatuses(cachedStatuses);
     }
-  }, [apiPath]);
+  }, [cachedStatuses]);
+
+  useEffect(() => {
+    if (apiPath === 'leads') {
+      setBankPartnerMappings(cachedBP);
+
+      const customBanks = cachedBM.map((r: any) => r.data?.bankName).filter(Boolean);
+      const mergedBanks = customBanks.map((b: string) => b.toUpperCase());
+      if (mergedBanks.includes('STATE BANK OF INDIA') && !mergedBanks.includes('SBI')) {
+        mergedBanks.unshift('SBI');
+      }
+      setAllBanks(mergedBanks);
+
+      const dbLoanTypes = cachedProducts
+        .map((r: any) => r.data?.name)
+        .filter(Boolean)
+        .map((b: string) => b.toUpperCase());
+      if (dbLoanTypes.length > 0) {
+        setAllLoanTypes(dbLoanTypes);
+      } else {
+        setAllLoanTypes(['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP']);
+      }
+
+      const dbTeams = cachedDepts
+        .map((r: any) => r.data?.name)
+        .filter(Boolean);
+      if (dbTeams.length > 0) {
+        setAllTeams(dbTeams);
+      } else {
+        setAllTeams(['Team A', 'Team B']);
+      }
+
+      const dbUsers = cachedUsers
+        .map((u: any) => [u.firstName, u.lastName].filter(Boolean).join(' '))
+        .filter(Boolean);
+      setAllUsers(dbUsers);
+      setRawUsersList(cachedUsers);
+    }
+  }, [apiPath, cachedBP, cachedBM, cachedProducts, cachedDepts, cachedUsers]);
 
   // Set isInitialLoadRef to false when loading goes from true to false
   useEffect(() => {
@@ -311,7 +329,7 @@ export default function RecordForm() {
       const [recordRes, docRes, activityRes] = await Promise.all([
         api.get(`/records/${apiPath}/${id}`),
         api.get('/documents', { params: { recordId: id } }),
-        api.get('/dashboard/metrics') // loads activities
+        api.get(`/records/${apiPath}/${id}/activities`).catch(() => ({ data: [] }))
       ]);
 
       const rawData = recordRes.data.data instanceof Map 
@@ -365,8 +383,8 @@ export default function RecordForm() {
       setDocuments(docRes.data || []);
       
       // Filter activities for this record
-      const fullTimeline = activityRes.data.recentActivities || [];
-      setTimeline(fullTimeline.filter((t: any) => t.recordId === id));
+      const fullTimeline = activityRes.data?.activities || activityRes.data || [];
+      setTimeline(Array.isArray(fullTimeline) ? fullTimeline : (activityRes.data?.recentActivities?.filter((t: any) => t.recordId === id) || []));
     } catch (e) {
       console.error(e);
     } finally {

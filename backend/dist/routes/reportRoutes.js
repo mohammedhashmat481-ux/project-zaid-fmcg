@@ -11,6 +11,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const User_1 = __importDefault(require("../models/User"));
+const cache_1 = require("../utils/cache");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
 router.use(tenantMiddleware_1.requireTenant);
@@ -19,6 +20,13 @@ router.get('/campaign-matrix', async (req, res) => {
     try {
         const orgId = req.organizationId;
         const { campaignName = 'ALL', month = '10', year = '2026', period = 'daily', metric = 'callsMade' } = req.query;
+        const cacheKey = cache_1.CacheKeys.campaignMatrix(orgId, `${period}:${metric}:${campaignName}:${month}:${year}`);
+        const cached = cache_1.serverCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cached);
+            return;
+        }
         const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
         const targetYear = parseInt(String(year || '2026'), 10) || 2026;
         // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
@@ -368,7 +376,7 @@ router.get('/campaign-matrix', async (req, res) => {
         if (metric === 'targetAchievement' || metric === 'progressPct') {
             grandTotal = targetAchievementValue;
         }
-        res.status(200).json({
+        const responsePayload = {
             summary: {
                 callsMade: callsMadeCount,
                 hotLeads: hotLeadsCount,
@@ -389,7 +397,10 @@ router.get('/campaign-matrix', async (req, res) => {
                 grandTotal
             },
             campaignsList: registeredCampaignNames
-        });
+        };
+        cache_1.serverCache.set(cacheKey, responsePayload, 60);
+        res.setHeader('X-Cache', 'MISS');
+        res.status(200).json(responsePayload);
     }
     catch (error) {
         console.error('Campaign matrix aggregation error:', error);

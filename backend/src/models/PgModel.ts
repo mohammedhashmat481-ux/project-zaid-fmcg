@@ -49,6 +49,7 @@ export class PgQueryChain {
   private limitVal: number | null = null;
   private isSingle: boolean = false;
 
+  private selectFields: string[] | null = null;
   private populateList: Array<{ path: string; select?: string }> = [];
 
   constructor(tableName: string, mappings: FieldMapping[], queryObj: any = {}, isSingle: boolean = false) {
@@ -77,6 +78,11 @@ export class PgQueryChain {
   }
 
   select(fields?: any) {
+    if (typeof fields === 'string') {
+      this.selectFields = fields.trim().split(/\s+/).filter(Boolean);
+    } else if (Array.isArray(fields)) {
+      this.selectFields = fields.filter(Boolean);
+    }
     return this;
   }
 
@@ -260,8 +266,57 @@ export class PgQueryChain {
     }
 
     const rows = await queryPg(sql, params);
-    return rows.map((r: any) => mapDbToJs(this.tableName, this.mappings, r));
+    const docs = rows.map((r: any) => mapDbToJs(this.tableName, this.mappings, r));
+    if (this.selectFields && this.selectFields.length > 0) {
+      return docs.map((d: any) => applyProjection(d, this.selectFields!));
+    }
+    return docs;
   }
+}
+
+function applyProjection(doc: any, selectFields: string[]): any {
+  if (!doc || !selectFields || selectFields.length === 0) return doc;
+
+  const inclusions = selectFields.filter((f) => !f.startsWith('-'));
+  const exclusions = selectFields.filter((f) => f.startsWith('-')).map((f) => f.slice(1));
+
+  if (exclusions.length > 0) {
+    exclusions.forEach((field) => {
+      if (field.startsWith('data.')) {
+        const sub = field.slice(5);
+        if (doc.data && typeof doc.data === 'object') delete doc.data[sub];
+      } else {
+        delete doc[field];
+      }
+    });
+  }
+
+  if (inclusions.length > 0) {
+    const projected: any = {};
+    if (inclusions.includes('_id') || !inclusions.some((f) => f === '-_id')) {
+      projected._id = doc._id;
+      projected.id = doc.id;
+    }
+    const dataInclusions = inclusions.filter((f) => f.startsWith('data.')).map((f) => f.slice(5));
+    if (dataInclusions.length > 0 && doc.data && typeof doc.data === 'object') {
+      projected.data = {};
+      dataInclusions.forEach((k) => {
+        if (doc.data[k] !== undefined) {
+          projected.data[k] = doc.data[k];
+        }
+      });
+    } else if (inclusions.includes('data') && doc.data) {
+      projected.data = doc.data;
+    }
+    inclusions.forEach((f) => {
+      if (!f.startsWith('data.') && doc[f] !== undefined) {
+        projected[f] = doc[f];
+      }
+    });
+    return projected;
+  }
+
+  return doc;
 }
 
 export class PgModel {

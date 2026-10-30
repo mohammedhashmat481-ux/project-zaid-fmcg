@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
@@ -58,13 +59,39 @@ export default function MyCampaign() {
   const navigate = useNavigate();
   const { showToast } = useToastStore();
   const { user } = useAuthStore();
-  const [campaigns, setCampaigns] = useState<CampaignStats[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [campaignError, setCampaignError] = useState<string | null>(null);
+  // React Query for campaigns with 60s cache and instantaneous cache hydration
+  const {
+    data: campaigns = [],
+    isLoading: loading,
+    error: queryError,
+    refetch: refetchCampaigns
+  } = useQuery<CampaignStats[]>({
+    queryKey: ['dashboard-my-campaigns'],
+    queryFn: async () => {
+      const res = await api.get('/records/campaigns/my-campaigns');
+      return res.data?.campaigns || [];
+    },
+    staleTime: 60000,
+    gcTime: 15 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
+
+  const campaignError = queryError ? (queryError as any).message || 'Failed to load campaigns.' : null;
+
+  // React Query for status options
+  const { data: statuses = [] } = useQuery<string[]>({
+    queryKey: ['master-statuses-list'],
+    queryFn: async () => {
+      const res = await api.get('/statuses').catch(() => ({ data: [] }));
+      return Array.isArray(res.data) ? res.data.map((s: any) => s.name) : [];
+    },
+    staleTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
+
   const [activeCampaign, setActiveCampaign] = useState<CampaignStats | null>(null);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
-  const [statuses, setStatuses] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [filterTab, setFilterTab] = useState<'yetToDial' | 'dialed' | 'all'>('yetToDial');
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,23 +125,7 @@ export default function MyCampaign() {
     return `${clean.slice(0, prefixLen)}${'*'.repeat(Math.max(4, clean.length - prefixLen))}`;
   };
 
-  // Fetch campaigns
-  const fetchCampaigns = async () => {
-    try {
-      setLoading(true);
-      setCampaignError(null);
-      const res = await api.get('/records/campaigns/my-campaigns');
-      setCampaigns(res.data.campaigns || []);
-    } catch (err: any) {
-      console.error(err);
-      setCampaignError(err?.message || 'Failed to load campaigns.');
-      showToast('Failed to load campaigns.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch lead details for active campaign (optimized for instant load)
+  // Fetch lead details for active campaign (optimized with projection)
   const fetchLeadDetails = async (campaignName: string) => {
     try {
       setLoadingLeads(true);
@@ -130,14 +141,6 @@ export default function MyCampaign() {
     }
   };
 
-  // Fetch status dropdown options
-  useEffect(() => {
-    fetchCampaigns();
-    api.get('/statuses')
-      .then(res => setStatuses(res.data.map((s: any) => s.name)))
-      .catch(err => console.error('Failed to load statuses', err));
-  }, []);
-
   const handleViewDetails = (campaign: CampaignStats) => {
     setActiveCampaign(campaign);
     setCurrentPage(1);
@@ -149,7 +152,7 @@ export default function MyCampaign() {
     setLeads([]);
     setLeadStates({});
     setCurrentPage(1);
-    fetchCampaigns();
+    refetchCampaigns();
   };
 
   const handleDownloadCampaign = async (campaignName: string, campaignLeads?: LeadRecord[]) => {
@@ -455,9 +458,8 @@ export default function MyCampaign() {
       });
 
       // Refresh campaigns listing in background
-      api.get('/records/campaigns/my-campaigns').then(res => {
-        const updatedCampaigns: CampaignStats[] = res.data.campaigns || [];
-        setCampaigns(updatedCampaigns);
+      refetchCampaigns().then(res => {
+        const updatedCampaigns: CampaignStats[] = res.data || [];
         if (activeCampaign) {
           const found = updatedCampaigns.find(c => c.campaignName === activeCampaign.campaignName);
           if (found) setActiveCampaign(found);
@@ -471,8 +473,29 @@ export default function MyCampaign() {
 
   if (loading && campaigns.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="space-y-6 max-w-[1400px] mx-auto text-left p-4 sm:p-6 animate-pulse">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="space-y-2">
+            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded"></div>
+            <div className="h-7 w-48 bg-slate-300 dark:bg-slate-700 rounded-lg"></div>
+          </div>
+          <div className="h-10 w-36 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="h-6 w-36 bg-slate-200 dark:bg-slate-800 rounded"></div>
+                <div className="h-6 w-16 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="h-16 bg-slate-100 dark:bg-slate-800/60 rounded-xl"></div>
+                <div className="h-16 bg-slate-100 dark:bg-slate-800/60 rounded-xl"></div>
+              </div>
+              <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl mt-4"></div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -487,7 +510,7 @@ export default function MyCampaign() {
           <h3 className="text-sm font-bold text-slate-800 dark:text-white">Failed to load campaigns</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">{campaignError}</p>
           <button
-            onClick={() => fetchCampaigns()}
+            onClick={() => refetchCampaigns()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
           >
             <Icons.RefreshCw className="w-3 h-3" />

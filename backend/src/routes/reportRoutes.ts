@@ -7,6 +7,7 @@ import { requireTenant } from '../middleware/tenantMiddleware';
 
 import CustomRecord from '../models/CustomRecord';
 import User from '../models/User';
+import { serverCache, CacheKeys } from '../utils/cache';
 
 const router = Router();
 
@@ -24,6 +25,14 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       period = 'daily',
       metric = 'callsMade'
     } = req.query;
+
+    const cacheKey = CacheKeys.campaignMatrix(orgId!, `${period}:${metric}:${campaignName}:${month}:${year}`);
+    const cached = serverCache.get(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json(cached);
+      return;
+    }
 
     const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
     const targetYear = parseInt(String(year || '2026'), 10) || 2026;
@@ -376,7 +385,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       grandTotal = targetAchievementValue;
     }
 
-    res.status(200).json({
+    const responsePayload = {
       summary: {
         callsMade: callsMadeCount,
         hotLeads: hotLeadsCount,
@@ -397,7 +406,11 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
         grandTotal
       },
       campaignsList: registeredCampaignNames
-    });
+    };
+
+    serverCache.set(cacheKey, responsePayload, 60);
+    res.setHeader('X-Cache', 'MISS');
+    res.status(200).json(responsePayload);
   } catch (error: any) {
     console.error('Campaign matrix aggregation error:', error);
     res.status(500).json({ error: error.message || 'Failed to aggregate campaign report data' });

@@ -936,7 +936,9 @@ export default function ModuleView() {
       const res = await api.get('/records/campaigns/allocation-stats');
       return res.data || {};
     },
-    enabled: apiPath === 'campaigns' || apiPath === 'campaignassignments'
+    enabled: apiPath === 'campaigns' || apiPath === 'campaignassignments',
+    staleTime: 60000,
+    placeholderData: keepPreviousData
   });
 
   const campAllocStats = campaignStatsData?.campaignAllocatedStats || {};

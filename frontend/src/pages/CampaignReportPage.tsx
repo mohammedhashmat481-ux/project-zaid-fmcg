@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import * as Icons from 'lucide-react';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
@@ -123,7 +124,6 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   const navigate = useNavigate();
   const { showToast } = useToastStore();
 
-  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodType>(initialPeriod);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
@@ -133,23 +133,6 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   });
   const [selectedYear, setSelectedYear] = useState<string>(() => String(new Date().getFullYear()));
   const [searchCaller, setSearchCaller] = useState<string>('');
-
-  const [campaignsList, setCampaignsList] = useState<string[]>([]);
-  const [summary, setSummary] = useState<CampaignSummaryData>({
-    callsMade: 0,
-    hotLeads: 0,
-    logins: 0,
-    approved: 0,
-    disbursed: 0,
-    targetAchievement: 0
-  });
-
-  const [matrixData, setMatrixData] = useState<CampaignMatrixData>({
-    columns: [],
-    rows: [],
-    totals: {},
-    grandTotal: 0
-  });
 
   useEffect(() => {
     if (initialPeriod) {
@@ -176,16 +159,13 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   // Current active KPI config
   const activeCardConfig = useMemo(() => {
-    return KPI_CARDS.find((c) => c.key === selectedMetric) || KPI_CARDS[4];
+    return KPI_CARDS.find((c) => c.key === selectedMetric) || KPI_CARDS[0];
   }, [selectedMetric]);
 
-  useEffect(() => {
-    fetchMatrixReport();
-  }, [period, selectedMetric, selectedCampaign, selectedMonth, selectedYear]);
-
-  const fetchMatrixReport = async () => {
-    setLoading(true);
-    try {
+  // Fast React Query with client & server cache (60s staleTime)
+  const { data: matrixResponse, isLoading: loading, refetch: refetchMatrixReport } = useQuery({
+    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedMonth, selectedYear],
+    queryFn: async () => {
       const metricParam = activeCardConfig.metricParam;
       const res = await api.get('/reports/campaign-matrix', {
         params: {
@@ -196,25 +176,36 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
           year: selectedYear
         }
       });
+      return res.data;
+    },
+    staleTime: 60000,
+    gcTime: 15 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
 
-      if (res.data) {
-        if (res.data.summary) {
-          setSummary(res.data.summary);
-        }
-        if (res.data.matrix) {
-          setMatrixData(res.data.matrix);
-        }
-        if (Array.isArray(res.data.campaignsList)) {
-          setCampaignsList(res.data.campaignsList);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load campaign matrix report:', err);
-      showToast('Loaded campaign reporting metrics.', 'info');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const summary: CampaignSummaryData = useMemo(() => {
+    return matrixResponse?.summary || {
+      callsMade: 0,
+      hotLeads: 0,
+      logins: 0,
+      approved: 0,
+      disbursed: 0,
+      targetAchievement: 0
+    };
+  }, [matrixResponse]);
+
+  const matrixData: CampaignMatrixData = useMemo(() => {
+    return matrixResponse?.matrix || {
+      columns: [],
+      rows: [],
+      totals: {},
+      grandTotal: 0
+    };
+  }, [matrixResponse]);
+
+  const campaignsList: string[] = useMemo(() => {
+    return matrixResponse?.campaignsList || [];
+  }, [matrixResponse]);
 
   // Filter rows based on search input
   const filteredRows = useMemo(() => {
@@ -281,7 +272,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </button>
 
             <button
-              onClick={fetchMatrixReport}
+              onClick={() => refetchMatrixReport()}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition-colors shadow-sm cursor-pointer"
               title="Refresh live data"

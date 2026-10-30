@@ -121,9 +121,18 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
   try {
     const orgId = req.organizationId;
     
+    const cacheKey = `campaigns:alloc-stats:${orgId}`;
+    const cached = serverCache.get(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json(cached);
+      return;
+    }
+
     // Find Lead Module Definition
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
     if (!leadModule) {
+      serverCache.set(cacheKey, { stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {} }, 60);
       res.status(200).json({ stats: {}, dialedStats: {} });
       return;
     }
@@ -171,7 +180,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
       campaignRecords = await CustomRecord.find({
         organizationId: orgId,
         moduleId: campaignModule._id
-      }).lean();
+      }).select('_id data.campaignName data.name data.source').lean();
     }
 
     const registeredCampaignNames = new Set(
@@ -181,6 +190,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
       }).filter(Boolean)
     );
 
+    const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt';
     const allLeads = await CustomRecord.find({
       organizationId: orgId,
       moduleId: leadModule._id,
@@ -190,7 +200,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
         { 'data.campaign': { $exists: true, $ne: '' } },
         { 'data.campaign_name': { $exists: true, $ne: '' } }
       ]
-    }).lean();
+    }).select(LEAD_CAMPAIGN_PROJECTION).lean();
 
     const campaignAllocatedStats: Record<string, number> = {};
     const campaignDialedStats: Record<string, number> = {};
@@ -225,12 +235,16 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
       }
     });
 
-    res.status(200).json({
+    const payload = {
       stats: statsMap,
       dialedStats: dialedMap,
       campaignAllocatedStats,
       campaignDialedStats
-    });
+    };
+
+    serverCache.set(cacheKey, payload, 60);
+    res.setHeader('X-Cache', 'MISS');
+    res.status(200).json(payload);
   } catch (error) {
     console.error('Failed to get allocation stats:', error);
     res.status(500).json({ error: 'Failed to get allocation stats.' });
@@ -321,6 +335,7 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
     });
 
     CacheInvalidators.invalidateDashboard(orgId!);
+    CacheInvalidators.invalidateCampaigns(orgId!);
 
     res.status(201).json({
       success: true,
@@ -418,6 +433,7 @@ router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<v
     });
 
     CacheInvalidators.invalidateDashboard(orgId!);
+    CacheInvalidators.invalidateCampaigns(orgId!);
 
     res.status(200).json({
       success: true,
@@ -611,6 +627,15 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
       return;
     }
 
+    const userScopeKey = `${userId}:${req.user?.roleId || 'role'}`;
+    const cacheKey = CacheKeys.campaigns(orgId!, userScopeKey);
+    const cached = serverCache.get(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json({ campaigns: cached });
+      return;
+    }
+
     // 1. Get registered campaigns from the Campaigns module
     const campaignModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'campaigns' });
     let campaignRecords: any[] = [];
@@ -618,7 +643,7 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
       campaignRecords = await CustomRecord.find({
         organizationId: orgId,
         moduleId: campaignModule._id
-      }).lean();
+      }).select('_id data.campaignName data.name data.source createdAt').lean();
     }
 
     const registeredCampaignNames = new Set(
@@ -631,6 +656,7 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
     // 2. Get the leads module
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
     if (!leadModule) {
+      serverCache.set(cacheKey, [], 60);
       res.status(200).json({ campaigns: [] });
       return;
     }
@@ -649,7 +675,8 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
     // Filter by reporting hierarchy
     await HierarchyService.modifyRecordQuery(leadQuery, req.user as any, orgId!);
 
-    let leads = await CustomRecord.find(leadQuery).lean();
+    const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
+    let leads = await CustomRecord.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
 
     // Fallback: If hierarchy query found 0, fetch all leads for org
     if (leads.length === 0) {
@@ -662,7 +689,7 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
           { 'data.campaign': { $exists: true, $ne: '' } },
           { 'data.campaign_name': { $exists: true, $ne: '' } }
         ]
-      }).lean();
+      }).select(LEAD_CAMPAIGN_PROJECTION).lean();
     }
 
     // Group leads by campaign name — only include actual campaigns!
@@ -733,6 +760,8 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
         };
       });
 
+    serverCache.set(cacheKey, result, 60);
+    res.setHeader('X-Cache', 'MISS');
     res.status(200).json({ campaigns: result });
   } catch (error) {
     console.error('Failed to get my campaigns:', error);
@@ -752,14 +781,21 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       return;
     }
 
+    const decodedCampaignName = decodeURIComponent(campaignName).trim();
+    const detailsCacheKey = CacheKeys.campaignDetails(orgId!, decodedCampaignName);
+    const cachedDetails = serverCache.get(detailsCacheKey);
+    if (cachedDetails) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(200).json(cachedDetails);
+      return;
+    }
+
     // Get the leads module
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
     if (!leadModule) {
       res.status(404).json({ error: 'Leads module not found.' });
       return;
     }
-
-    const decodedCampaignName = decodeURIComponent(campaignName).trim();
     const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const campaignRegex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
 
@@ -810,7 +846,10 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       .lean();
     }
 
-    res.status(200).json({ leads });
+    const payload = { leads };
+    serverCache.set(detailsCacheKey, payload, 60);
+    res.setHeader('X-Cache', 'MISS');
+    res.status(200).json(payload);
   } catch (error) {
     console.error('Failed to get my campaign details:', error);
     res.status(500).json({ error: 'Failed to retrieve campaign details.' });
@@ -1336,6 +1375,7 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'create', newRecord);
 
     CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateCampaigns(req.organizationId!);
     CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
 
     res.status(201).json(newRecord);
@@ -1587,6 +1627,7 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'update', record, changedFields);
 
     CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateCampaigns(req.organizationId!);
     CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
 
     res.status(200).json(record);
@@ -1650,6 +1691,7 @@ router.delete('/:apiPath/:id', async (req: Request, res: Response): Promise<void
     WorkflowEngine.trigger(req.organizationId as any, moduleDef._id as any, 'delete', record);
 
     CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateCampaigns(req.organizationId!);
     CacheInvalidators.invalidateMaster(req.organizationId!, apiPath.toLowerCase());
 
     res.status(200).json({ message: 'Record deleted successfully.' });
@@ -1721,6 +1763,7 @@ router.post('/transfer/leads', async (req: Request, res: Response): Promise<void
     }
 
     CacheInvalidators.invalidateDashboard(req.organizationId!);
+    CacheInvalidators.invalidateCampaigns(req.organizationId!);
 
     res.status(200).json({ message: 'Leads transferred successfully.', modifiedCount: result.modifiedCount });
   } catch (error: any) {

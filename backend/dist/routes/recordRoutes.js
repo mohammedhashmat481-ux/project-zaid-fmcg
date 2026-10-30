@@ -111,9 +111,17 @@ const validateFields = (fields, data, oldValues) => {
 router.get('/campaigns/allocation-stats', async (req, res) => {
     try {
         const orgId = req.organizationId;
+        const cacheKey = `campaigns:alloc-stats:${orgId}`;
+        const cached = cache_1.serverCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cached);
+            return;
+        }
         // Find Lead Module Definition
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         if (!leadModule) {
+            cache_1.serverCache.set(cacheKey, { stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {} }, 60);
             res.status(200).json({ stats: {}, dialedStats: {} });
             return;
         }
@@ -156,12 +164,13 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
             campaignRecords = await CustomRecord_1.default.find({
                 organizationId: orgId,
                 moduleId: campaignModule._id
-            }).lean();
+            }).select('_id data.campaignName data.name data.source').lean();
         }
         const registeredCampaignNames = new Set(campaignRecords.map((c) => {
             const d = c.data || {};
             return (d.campaignName || d.name || d.source || '').toString().trim().toLowerCase();
         }).filter(Boolean));
+        const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt';
         const allLeads = await CustomRecord_1.default.find({
             organizationId: orgId,
             moduleId: leadModule._id,
@@ -171,7 +180,7 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
                 { 'data.campaign': { $exists: true, $ne: '' } },
                 { 'data.campaign_name': { $exists: true, $ne: '' } }
             ]
-        }).lean();
+        }).select(LEAD_CAMPAIGN_PROJECTION).lean();
         const campaignAllocatedStats = {};
         const campaignDialedStats = {};
         allLeads.forEach((lead) => {
@@ -197,12 +206,15 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
                 }
             }
         });
-        res.status(200).json({
+        const payload = {
             stats: statsMap,
             dialedStats: dialedMap,
             campaignAllocatedStats,
             campaignDialedStats
-        });
+        };
+        cache_1.serverCache.set(cacheKey, payload, 60);
+        res.setHeader('X-Cache', 'MISS');
+        res.status(200).json(payload);
     }
     catch (error) {
         console.error('Failed to get allocation stats:', error);
@@ -284,6 +296,7 @@ router.post('/leads/bulk-import', async (req, res) => {
             newValue: { count: inserted.length, campaignName }
         });
         cache_1.CacheInvalidators.invalidateDashboard(orgId);
+        cache_1.CacheInvalidators.invalidateCampaigns(orgId);
         res.status(201).json({
             success: true,
             count: inserted.length,
@@ -377,6 +390,7 @@ router.post('/leads/bulk-delete', async (req, res) => {
             oldValue: { deletedCount: result.deletedCount, filters, leadIdsCount: leadIds?.length }
         });
         cache_1.CacheInvalidators.invalidateDashboard(orgId);
+        cache_1.CacheInvalidators.invalidateCampaigns(orgId);
         res.status(200).json({
             success: true,
             count: result.deletedCount,
@@ -553,6 +567,14 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
             res.status(401).json({ error: 'Unauthorized.' });
             return;
         }
+        const userScopeKey = `${userId}:${req.user?.roleId || 'role'}`;
+        const cacheKey = cache_1.CacheKeys.campaigns(orgId, userScopeKey);
+        const cached = cache_1.serverCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json({ campaigns: cached });
+            return;
+        }
         // 1. Get registered campaigns from the Campaigns module
         const campaignModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' });
         let campaignRecords = [];
@@ -560,7 +582,7 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
             campaignRecords = await CustomRecord_1.default.find({
                 organizationId: orgId,
                 moduleId: campaignModule._id
-            }).lean();
+            }).select('_id data.campaignName data.name data.source createdAt').lean();
         }
         const registeredCampaignNames = new Set(campaignRecords.map((c) => {
             const d = c.data || {};
@@ -569,6 +591,7 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
         // 2. Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         if (!leadModule) {
+            cache_1.serverCache.set(cacheKey, [], 60);
             res.status(200).json({ campaigns: [] });
             return;
         }
@@ -584,7 +607,8 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
         };
         // Filter by reporting hierarchy
         await hierarchy_1.HierarchyService.modifyRecordQuery(leadQuery, req.user, orgId);
-        let leads = await CustomRecord_1.default.find(leadQuery).lean();
+        const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
+        let leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
         // Fallback: If hierarchy query found 0, fetch all leads for org
         if (leads.length === 0) {
             leads = await CustomRecord_1.default.find({
@@ -596,7 +620,7 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                     { 'data.campaign': { $exists: true, $ne: '' } },
                     { 'data.campaign_name': { $exists: true, $ne: '' } }
                 ]
-            }).lean();
+            }).select(LEAD_CAMPAIGN_PROJECTION).lean();
         }
         // Group leads by campaign name — only include actual campaigns!
         const campaignGroups = {};
@@ -654,6 +678,8 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                 dailyTarget: 200
             };
         });
+        cache_1.serverCache.set(cacheKey, result, 60);
+        res.setHeader('X-Cache', 'MISS');
         res.status(200).json({ campaigns: result });
     }
     catch (error) {
@@ -671,13 +697,20 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             res.status(401).json({ error: 'Unauthorized.' });
             return;
         }
+        const decodedCampaignName = decodeURIComponent(campaignName).trim();
+        const detailsCacheKey = cache_1.CacheKeys.campaignDetails(orgId, decodedCampaignName);
+        const cachedDetails = cache_1.serverCache.get(detailsCacheKey);
+        if (cachedDetails) {
+            res.setHeader('X-Cache', 'HIT');
+            res.status(200).json(cachedDetails);
+            return;
+        }
         // Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         if (!leadModule) {
             res.status(404).json({ error: 'Leads module not found.' });
             return;
         }
-        const decodedCampaignName = decodeURIComponent(campaignName).trim();
         const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
         const campaignRegex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
         const matchFilter = {
@@ -721,7 +754,10 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                 .sort({ createdAt: -1 })
                 .lean();
         }
-        res.status(200).json({ leads });
+        const payload = { leads };
+        cache_1.serverCache.set(detailsCacheKey, payload, 60);
+        res.setHeader('X-Cache', 'MISS');
+        res.status(200).json(payload);
     }
     catch (error) {
         console.error('Failed to get my campaign details:', error);
@@ -1197,6 +1233,7 @@ router.post('/:apiPath', async (req, res) => {
         // Execute Workflows
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'create', newRecord);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
         cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(201).json(newRecord);
     }
@@ -1416,6 +1453,7 @@ router.put('/:apiPath/:id', async (req, res) => {
         // Execute Workflows
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'update', record, changedFields);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
         cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(200).json(record);
     }
@@ -1468,6 +1506,7 @@ router.delete('/:apiPath/:id', async (req, res) => {
         // Execute delete workflow triggers
         workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'delete', record);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
         cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
         res.status(200).json({ message: 'Record deleted successfully.' });
     }
@@ -1528,6 +1567,7 @@ router.post('/transfer/leads', async (req, res) => {
             });
         }
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
         res.status(200).json({ message: 'Leads transferred successfully.', modifiedCount: result.modifiedCount });
     }
     catch (error) {

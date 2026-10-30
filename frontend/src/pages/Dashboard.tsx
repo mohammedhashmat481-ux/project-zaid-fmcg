@@ -183,22 +183,25 @@ export default function Dashboard() {
   const { showLoading: showDelayedSkeleton, isTakingLonger } = useDelayedLoading(isLoading && !metricsData, 400);
 
   const { data: usersDropdown } = useQuery({
-    queryKey: ['dashboard-users-dropdown'],
+    queryKey: ['users-dropdown'],
     queryFn: async () => {
       const res = await api.get('/auth/users?purpose=dropdown');
       return res.data || [];
     },
-    staleTime: 60000
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    placeholderData: keepPreviousData
   });
 
-    // Fetch live leads for Visual Intelligence charts
+    // Fetch live leads for Visual Intelligence charts (cached for 5 minutes)
   const { data: visualLeads = [] } = useQuery({
     queryKey: ['dashboard-visual-leads'],
     queryFn: async () => {
-      const res = await api.get('/records/leads?limit=1000').catch(() => ({ data: { records: [] } }));
+      const res = await api.get('/records/leads?limit=100').catch(() => ({ data: { records: [] } }));
       return res.data?.records || res.data || [];
     },
-    staleTime: 60000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
     placeholderData: keepPreviousData
   });
 
@@ -206,9 +209,11 @@ export default function Dashboard() {
     queryKey: ['dashboard-my-campaigns'],
     queryFn: async () => {
       const res = await api.get('/records/campaigns/my-campaigns');
-      return res.data;
+      return res.data?.campaigns || [];
     },
-    staleTime: 60000
+    staleTime: 60000,
+    gcTime: 15 * 60 * 1000,
+    placeholderData: keepPreviousData
   });
 
   const resolveUserDisplayName = (val: any) => {
@@ -585,7 +590,7 @@ export default function Dashboard() {
 
       {/* 3. CAMPAIGN STATUS & EXECUTION TELEMETRY */}
       {(() => {
-        const campaignsList: any[] = myCampaignsData?.campaigns || [];
+        const campaignsList: any[] = Array.isArray(myCampaignsData) ? myCampaignsData : (myCampaignsData?.campaigns || []);
         const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : 21;
         const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && c.totalAssigned > 0).length || 0;
         const inProgressCampaigns = campaignsList.filter((c: any) => c.yetToDial > 0 || c.dialed > 0).length || totalCampaigns;

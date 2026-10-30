@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import * as Icons from 'lucide-react';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
@@ -12,10 +13,6 @@ export default function LeadReportsPage() {
   const initialCamp = searchParams.get('campaign');
 
   const { showToast } = useToastStore();
-  const [loading, setLoading] = useState(false);
-  const [leads, setLeads] = useState<any[]>([]);
-  const [campaignsList, setCampaignsList] = useState<string[]>([]);
-
   // Multi-Select Filter States with Checkboxes
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>(['2026']);
@@ -52,31 +49,31 @@ export default function LeadReportsPage() {
     'LAP'
   ];
 
-  useEffect(() => {
-    fetchReportData();
-  }, []);
-
-  const fetchReportData = async () => {
-    setLoading(true);
-    try {
+  // High performance React Query with cache
+  const { data: reportData, isLoading: loading, refetch: fetchReportData } = useQuery<{ leads: any[]; campaignsList: string[] }>({
+    queryKey: ['lead-reports-dataset'],
+    queryFn: async () => {
       const [leadsRes, campRes] = await Promise.all([
-        api.get('/records/leads?limit=5000').catch(() => ({ data: [] })),
-        api.get('/records/campaigns?limit=1000').catch(() => ({ data: [] }))
+        api.get('/records/leads?limit=100').catch(() => ({ data: [] })),
+        api.get('/records/campaigns?limit=100').catch(() => ({ data: [] }))
       ]);
 
-      const allRecords = leadsRes.data?.records || leadsRes.data || [];
+      const allRecords: any[] = leadsRes.data?.records || leadsRes.data || [];
       const fetchedCampaigns = (campRes.data?.records || []).map((c: any) => c.data?.campaignName || c.name).filter(Boolean);
       const leadCampaigns = allRecords.map((l: any) => l.data?.campaign || l.data?.campaignName || l.campaignName).filter(Boolean);
 
-      setLeads(allRecords);
-      setCampaignsList(Array.from(new Set([...fetchedCampaigns, ...leadCampaigns])));
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to load lead report data.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+      return {
+        leads: allRecords,
+        campaignsList: Array.from(new Set([...fetchedCampaigns, ...leadCampaigns]))
+      };
+    },
+    staleTime: 60000,
+    gcTime: 15 * 60 * 1000,
+    placeholderData: keepPreviousData
+  });
+
+  const leads: any[] = reportData?.leads || [];
+  const campaignsList: string[] = reportData?.campaignsList || [];
 
   const handleFilterClick = () => {
     fetchReportData();

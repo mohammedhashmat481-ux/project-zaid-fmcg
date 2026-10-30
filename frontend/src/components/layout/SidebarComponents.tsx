@@ -90,8 +90,34 @@ export const SidebarItem = ({
       } else if (to === '/my-campaign') {
         queryClient.prefetchQuery({
           queryKey: ['dashboard-my-campaigns'],
-          queryFn: async () => (await api.get('/records/campaigns/my-campaigns')).data,
+          queryFn: async () => (await api.get('/records/campaigns/my-campaigns')).data?.campaigns || [],
           staleTime: 60000
+        });
+      } else if (to === '/modules/leads/new') {
+        queryClient.prefetchQuery({
+          queryKey: ['master-bankmasters'],
+          queryFn: async () => (await api.get('/records/bankmasters')).data?.records || [],
+          staleTime: 5 * 60 * 1000
+        });
+        queryClient.prefetchQuery({
+          queryKey: ['master-products'],
+          queryFn: async () => (await api.get('/records/products')).data?.records || [],
+          staleTime: 5 * 60 * 1000
+        });
+        queryClient.prefetchQuery({
+          queryKey: ['master-departments'],
+          queryFn: async () => (await api.get('/records/departments')).data?.records || [],
+          staleTime: 5 * 60 * 1000
+        });
+        queryClient.prefetchQuery({
+          queryKey: ['master-bankingpartners'],
+          queryFn: async () => (await api.get('/records/bankingpartners')).data?.records || [],
+          staleTime: 5 * 60 * 1000
+        });
+        queryClient.prefetchQuery({
+          queryKey: ['users-dropdown'],
+          queryFn: async () => (await api.get('/auth/users?purpose=dropdown')).data || [],
+          staleTime: 5 * 60 * 1000
         });
       }
     } catch (e) {

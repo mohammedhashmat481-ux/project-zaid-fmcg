@@ -50,6 +50,7 @@ class PgQueryChain {
     skipVal = 0;
     limitVal = null;
     isSingle = false;
+    selectFields = null;
     populateList = [];
     constructor(tableName, mappings, queryObj = {}, isSingle = false) {
         this.tableName = tableName;
@@ -73,6 +74,12 @@ class PgQueryChain {
         return this;
     }
     select(fields) {
+        if (typeof fields === 'string') {
+            this.selectFields = fields.trim().split(/\s+/).filter(Boolean);
+        }
+        else if (Array.isArray(fields)) {
+            this.selectFields = fields.filter(Boolean);
+        }
         return this;
     }
     populate(arg, selectFields) {
@@ -257,10 +264,58 @@ class PgQueryChain {
             sql += ` OFFSET ${this.skipVal}`;
         }
         const rows = await (0, postgres_1.queryPg)(sql, params);
-        return rows.map((r) => mapDbToJs(this.tableName, this.mappings, r));
+        const docs = rows.map((r) => mapDbToJs(this.tableName, this.mappings, r));
+        if (this.selectFields && this.selectFields.length > 0) {
+            return docs.map((d) => applyProjection(d, this.selectFields));
+        }
+        return docs;
     }
 }
 exports.PgQueryChain = PgQueryChain;
+function applyProjection(doc, selectFields) {
+    if (!doc || !selectFields || selectFields.length === 0)
+        return doc;
+    const inclusions = selectFields.filter((f) => !f.startsWith('-'));
+    const exclusions = selectFields.filter((f) => f.startsWith('-')).map((f) => f.slice(1));
+    if (exclusions.length > 0) {
+        exclusions.forEach((field) => {
+            if (field.startsWith('data.')) {
+                const sub = field.slice(5);
+                if (doc.data && typeof doc.data === 'object')
+                    delete doc.data[sub];
+            }
+            else {
+                delete doc[field];
+            }
+        });
+    }
+    if (inclusions.length > 0) {
+        const projected = {};
+        if (inclusions.includes('_id') || !inclusions.some((f) => f === '-_id')) {
+            projected._id = doc._id;
+            projected.id = doc.id;
+        }
+        const dataInclusions = inclusions.filter((f) => f.startsWith('data.')).map((f) => f.slice(5));
+        if (dataInclusions.length > 0 && doc.data && typeof doc.data === 'object') {
+            projected.data = {};
+            dataInclusions.forEach((k) => {
+                if (doc.data[k] !== undefined) {
+                    projected.data[k] = doc.data[k];
+                }
+            });
+        }
+        else if (inclusions.includes('data') && doc.data) {
+            projected.data = doc.data;
+        }
+        inclusions.forEach((f) => {
+            if (!f.startsWith('data.') && doc[f] !== undefined) {
+                projected[f] = doc[f];
+            }
+        });
+        return projected;
+    }
+    return doc;
+}
 class PgModel {
     tableName;
     mappings;

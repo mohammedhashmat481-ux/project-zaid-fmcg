@@ -102,11 +102,19 @@ export const CacheKeys = {
   statuses: (orgId: string) => `master:statuses:${orgId}`,
   modules: (orgId: string) => `master:modules:${orgId}`,
   masterRecords: (orgId: string, apiPath: string) => `master:records:${orgId}:${apiPath}`,
-  userDropdown: (orgId: string) => `users:dropdown:${orgId}`
+  userDropdown: (orgId: string) => `users:dropdown:${orgId}`,
+  campaigns: (orgId: string, userKey: string) => `campaigns:my:${orgId}:${userKey}`,
+  campaignDetails: (orgId: string, campaignName: string) => `campaigns:details:${orgId}:${campaignName.toLowerCase().trim()}`,
+  campaignMatrix: (orgId: string, queryStr: string) => `reports:matrix:${orgId}:${queryStr}`
 };
 
 export const CacheInvalidators = {
   invalidateDashboard: (orgId: string) => {
+    return serverCache.invalidatePattern(`dash:metrics:${orgId}`);
+  },
+  invalidateCampaigns: (orgId: string) => {
+    serverCache.invalidatePattern(`campaigns:${orgId}`);
+    serverCache.invalidatePattern(`reports:matrix:${orgId}`);
     return serverCache.invalidatePattern(`dash:metrics:${orgId}`);
   },
   invalidateMaster: (orgId: string, apiPath?: string) => {
