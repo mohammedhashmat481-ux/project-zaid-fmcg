@@ -51,19 +51,22 @@ cd ..
 
 # Auto-sync built frontend to all active Nginx root directories on server
 echo "Scanning active Nginx site configurations for web roots..."
-NGINX_ROOTS=$(grep -rn "root " /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | awk '{print $3}' | tr -d ';')
+chmod -R 755 frontend/dist || true
+NGINX_ROOTS=$(grep -rh "root[[:space:]]" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/ 2>/dev/null | sed -n 's/.*root[[:space:]]\+\([^;[:space:]]\+\).*/\1/p' | sort -u)
 echo "Detected Nginx root directories: $NGINX_ROOTS"
 for dir in $NGINX_ROOTS; do
   if [ -d "$dir" ] && [ "$dir" != "$(pwd)/frontend/dist" ]; then
     echo "Syncing frontend dist to Nginx root: $dir"
     cp -r frontend/dist/* "$dir/" || true
+    chmod -R 755 "$dir" || true
   fi
 done
 
-for web_root in "/var/www/inkcrm/frontend/dist" "/var/www/inkCRM/frontend/dist" "/var/www/novaleadnexa/frontend/dist" "/var/www/novaleadnexa.in/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist" "/usr/share/nginx/html"; do
+for web_root in "/var/www/html" "/var/www/inkcrm/frontend/dist" "/var/www/inkCRM/frontend/dist" "/var/www/novaleadnexa/frontend/dist" "/var/www/novaleadnexa.in/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist" "/usr/share/nginx/html"; do
   if [ -d "$web_root" ] && [ "$web_root" != "$(pwd)/frontend/dist" ]; then
     echo "Syncing frontend dist to $web_root..."
     cp -r frontend/dist/* "$web_root/" || true
+    chmod -R 755 "$web_root" || true
   fi
 done
 
@@ -87,6 +90,10 @@ pm2 start ecosystem.config.cjs --env production
 
 # Save PM2 process list to persist across OS reboots
 pm2 save
+
+# 8. Reload Nginx web server automatically
+echo "Reloading Nginx web server..."
+systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
 
 echo "========================================================="
 echo " inkCRM Production Deployment Completed Successfully! 🎉"
