@@ -49,7 +49,17 @@ echo "Building React frontend production package..."
 npx vite build
 cd ..
 
-# Auto-sync built frontend to Nginx root locations if configured elsewhere
+# Auto-sync built frontend to all active Nginx root directories on server
+echo "Scanning active Nginx site configurations for web roots..."
+NGINX_ROOTS=$(grep -rn "root " /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | awk '{print $3}' | tr -d ';')
+echo "Detected Nginx root directories: $NGINX_ROOTS"
+for dir in $NGINX_ROOTS; do
+  if [ -d "$dir" ] && [ "$dir" != "$(pwd)/frontend/dist" ]; then
+    echo "Syncing frontend dist to Nginx root: $dir"
+    cp -r frontend/dist/* "$dir/" || true
+  fi
+done
+
 for web_root in "/var/www/inkcrm/frontend/dist" "/var/www/inkCRM/frontend/dist" "/var/www/novaleadnexa/frontend/dist" "/var/www/novaleadnexa.in/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist" "/usr/share/nginx/html"; do
   if [ -d "$web_root" ] && [ "$web_root" != "$(pwd)/frontend/dist" ]; then
     echo "Syncing frontend dist to $web_root..."
