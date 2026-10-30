@@ -126,12 +126,6 @@ export default function Settings() {
   const [bpFilterPsm, setBpFilterPsm] = useState('');
   const [bpFilterLoanType, setBpFilterLoanType] = useState('');
   const [showAllBp, setShowAllBp] = useState(false);
-  const [bpConflictModal, setBpConflictModal] = useState<{
-    isOpen: boolean;
-    psmName: string;
-    bankName: string;
-    loanType: string;
-  } | null>(null);
   const [bpPsmDropdownOpen, setBpPsmDropdownOpen] = useState(false);
   const [bpPsmSearchQuery, setBpPsmSearchQuery] = useState('');
   const [bpEditPsmDropdownOpen, setBpEditPsmDropdownOpen] = useState(false);
@@ -141,7 +135,6 @@ export default function Settings() {
   const [bpEditBanksDropdownOpen, setBpEditBanksDropdownOpen] = useState(false);
   const [bpEditBankSearchQuery, setBpEditBankSearchQuery] = useState('');
   const [bpProductsList, setBpProductsList] = useState<string[]>([]);
-  const [bpSuccessModal, setBpSuccessModal] = useState<{ isOpen: boolean; title: string; message: string } | null>(null);
 
   const checkBpConflict = (banks: string[], loanType: string, excludeId?: string) => {
     for (const bank of banks) {
@@ -175,11 +168,10 @@ export default function Settings() {
       if (bpForm.loanType) {
         const conflict = checkBpConflict([bankName], bpForm.loanType);
         if (conflict) {
-          setBpConflictModal({
-            isOpen: true,
-            psmName: conflict.psmName,
-            bankName: bankName,
-            loanType: bpForm.loanType
+          showAlertModal({
+            title: 'Bank Already Assigned',
+            message: `Bank "${bankName}" is already assigned to PSM "${conflict.psmName}" for loan type "${bpForm.loanType}". Please select another bank.`,
+            type: 'warning'
           });
           return; // Do not check the box
         }
@@ -195,11 +187,10 @@ export default function Settings() {
       if (bpEditForm.loanType) {
         const conflict = checkBpConflict([bankName], bpEditForm.loanType, editingBpId || undefined);
         if (conflict) {
-          setBpConflictModal({
-            isOpen: true,
-            psmName: conflict.psmName,
-            bankName: bankName,
-            loanType: bpEditForm.loanType
+          showAlertModal({
+            title: 'Bank Already Assigned',
+            message: `Bank "${bankName}" is already assigned to PSM "${conflict.psmName}" for loan type "${bpEditForm.loanType}". Please select another bank.`,
+            type: 'warning'
           });
           return; // Do not check the box
         }
@@ -214,11 +205,10 @@ export default function Settings() {
     if (newLoanType && selectedBanks.length > 0) {
       const conflict = checkBpConflict(selectedBanks, newLoanType);
       if (conflict) {
-        setBpConflictModal({
-          isOpen: true,
-          psmName: conflict.psmName,
-          bankName: conflict.bank,
-          loanType: newLoanType
+        showAlertModal({
+          title: 'Bank Already Assigned',
+          message: `Bank "${conflict.bank}" is already assigned to PSM "${conflict.psmName}" for loan type "${newLoanType}".`,
+          type: 'warning'
         });
         // Uncheck the conflicting bank
         setSelectedBanks(selectedBanks.filter(b => b !== conflict.bank));
@@ -231,11 +221,10 @@ export default function Settings() {
     if (newLoanType && selectedEditBanks.length > 0) {
       const conflict = checkBpConflict(selectedEditBanks, newLoanType, editingBpId || undefined);
       if (conflict) {
-        setBpConflictModal({
-          isOpen: true,
-          psmName: conflict.psmName,
-          bankName: conflict.bank,
-          loanType: newLoanType
+        showAlertModal({
+          title: 'Bank Already Assigned',
+          message: `Bank "${conflict.bank}" is already assigned to PSM "${conflict.psmName}" for loan type "${newLoanType}".`,
+          type: 'warning'
         });
         // Uncheck the conflicting bank
         setSelectedEditBanks(selectedEditBanks.filter(b => b !== conflict.bank));
@@ -774,17 +763,20 @@ export default function Settings() {
     e.preventDefault();
     const banksStr = selectedBanks.join(', ');
     if (!banksStr || !bpForm.loanType || !bpForm.psm) {
-      showToast('Please select all required fields (including at least one bank).', 'warning');
+      showAlertModal({
+        title: 'Missing Required Fields',
+        message: 'Please select a Loan Type, assign a PSM, and select at least one Bank before saving.',
+        type: 'warning'
+      });
       return;
     }
 
     const conflict = checkBpConflict(selectedBanks, bpForm.loanType);
     if (conflict) {
-      setBpConflictModal({
-        isOpen: true,
-        psmName: conflict.psmName,
-        bankName: conflict.bank,
-        loanType: conflict.loanType
+      showAlertModal({
+        title: 'Banking Partner Conflict',
+        message: `Bank "${conflict.bank}" is already mapped to PSM "${conflict.psmName}" for loan type "${conflict.loanType}". Each bank under a loan type must be uniquely assigned.`,
+        type: 'warning'
       });
       return;
     }
@@ -795,17 +787,21 @@ export default function Settings() {
         loanType: bpForm.loanType,
         psm: bpForm.psm
       });
-      setBpSuccessModal({
-        isOpen: true,
-        title: 'Successfully Created',
-        message: 'The Banking Partner record has been successfully created and linked.'
+      showAlertModal({
+        title: 'Banking Partner Saved',
+        message: `Successfully linked ${banksStr} for ${bpForm.loanType} under PSM ${bpForm.psm}.`,
+        type: 'success'
       });
       setBpForm({ bank: '', loanType: '', psm: '' });
       setSelectedBanks([]);
       setBpPsmSearchQuery('');
       loadSettingsData();
     } catch (err: any) {
-      showToast(err.response?.data?.error || 'Failed to save banking partner.', 'error');
+      showAlertModal({
+        title: 'Unable to Save Partner',
+        message: err.response?.data?.details?.[0] || err.response?.data?.error || 'Failed to save banking partner. Please try again.',
+        type: 'error'
+      });
     }
   };
 
@@ -826,17 +822,20 @@ export default function Settings() {
     e.preventDefault();
     const banksStr = selectedEditBanks.join(', ');
     if (!banksStr || !bpEditForm.loanType || !bpEditForm.psm) {
-      showToast('Please select all required fields (including at least one bank).', 'warning');
+      showAlertModal({
+        title: 'Missing Required Fields',
+        message: 'Please ensure Loan Type, PSM, and at least one Bank are selected.',
+        type: 'warning'
+      });
       return;
     }
 
     const conflict = checkBpConflict(selectedEditBanks, bpEditForm.loanType, editingBpId || undefined);
     if (conflict) {
-      setBpConflictModal({
-        isOpen: true,
-        psmName: conflict.psmName,
-        bankName: conflict.bank,
-        loanType: conflict.loanType
+      showAlertModal({
+        title: 'Banking Partner Conflict',
+        message: `Bank "${conflict.bank}" is already mapped to PSM "${conflict.psmName}" for loan type "${conflict.loanType}".`,
+        type: 'warning'
       });
       return;
     }
@@ -847,10 +846,10 @@ export default function Settings() {
         loanType: bpEditForm.loanType,
         psm: bpEditForm.psm
       });
-      setBpSuccessModal({
-        isOpen: true,
-        title: 'Successfully Saved',
-        message: 'The Banking Partner record has been successfully updated and saved.'
+      showAlertModal({
+        title: 'Banking Partner Updated',
+        message: `Successfully updated ${banksStr} for ${bpEditForm.loanType} under PSM ${bpEditForm.psm}.`,
+        type: 'success'
       });
       setBpEditForm({ bank: '', loanType: '', psm: '' });
       setSelectedEditBanks([]);
@@ -859,7 +858,11 @@ export default function Settings() {
       setBpEditModalOpen(false);
       loadSettingsData();
     } catch (err: any) {
-      showToast(err.response?.data?.error || 'Failed to save banking partner.', 'error');
+      showAlertModal({
+        title: 'Unable to Update Partner',
+        message: err.response?.data?.details?.[0] || err.response?.data?.error || 'Failed to update banking partner.',
+        type: 'error'
+      });
     }
   };
 
@@ -873,7 +876,10 @@ export default function Settings() {
   const handleDeleteBankingPartner = (id: string) => {
     showConfirm({
       title: 'Delete Banking Partner',
-      message: 'Are you sure you want to delete this banking partner?',
+      message: 'Are you sure you want to permanently delete this banking partner? This action cannot be undone.',
+      confirmText: 'Delete Partner',
+      cancelText: 'Cancel',
+      type: 'danger',
       onConfirm: async () => {
         try {
           await api.delete(`/records/bankingpartners/${id}`);
@@ -884,7 +890,11 @@ export default function Settings() {
           });
           loadSettingsData();
         } catch (err) {
-          showToast('Failed to delete banking partner.', 'error');
+          showAlertModal({
+            title: 'Delete Failed',
+            message: 'Failed to delete banking partner.',
+            type: 'error'
+          });
         }
       }
     });
@@ -2424,65 +2434,6 @@ export default function Settings() {
         )}
 
       </div>
-
-      {/* Premium Conflict Modal for Banking Partner Settings */}
-      {bpConflictModal && bpConflictModal.isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            onClick={() => setBpConflictModal(null)}
-            className="absolute inset-0 bg-[#0f1115]/50 backdrop-blur-sm animate-fade-in"
-          />
-          <div className="relative w-full max-w-md bg-white border border-slate-200/80 rounded-3xl shadow-2xl p-6 text-center z-10 transform transition-all duration-300 scale-100 animate-scale-up">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-4 text-amber-600">
-              <Icons.AlertTriangle className="w-6 h-6 animate-pulse" />
-            </div>
-            <h3 className="text-base font-black text-slate-800 uppercase tracking-wider mb-2">
-              PSM Already Assigned
-            </h3>
-            <p className="text-xs font-bold text-slate-500 leading-relaxed mb-6">
-              This Bank (<span className="text-slate-800 font-extrabold">{bpConflictModal.bankName}</span>) and Loan Type (<span className="text-slate-800 font-extrabold">{bpConflictModal.loanType}</span>) are already assigned to PSM '<span className="text-indigo-600 font-extrabold">{bpConflictModal.psmName}</span>'. Please select another Bank if you want a different assignment.
-            </p>
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setBpConflictModal(null)}
-                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all text-xs font-bold text-white shadow-md shadow-indigo-600/20"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Premium Success Modal for Banking Partner Settings */}
-      {bpSuccessModal && bpSuccessModal.isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            onClick={() => setBpSuccessModal(null)}
-            className="absolute inset-0 bg-[#0f1115]/50 backdrop-blur-sm animate-fade-in"
-          />
-          <div className="relative w-full max-w-md bg-white border border-slate-200/80 rounded-3xl shadow-2xl p-6 text-center z-10 transform transition-all duration-300 scale-100 animate-scale-up">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4 text-emerald-600">
-              <Icons.BadgeCheck className="w-6 h-6 animate-pulse" />
-            </div>
-            <h3 className="text-base font-black text-slate-800 uppercase tracking-wider mb-2">
-              {bpSuccessModal.title}
-            </h3>
-            <p className="text-xs font-bold text-slate-500 leading-relaxed mb-6">
-              {bpSuccessModal.message}
-            </p>
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setBpSuccessModal(null)}
-                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all text-xs font-bold text-white shadow-md shadow-indigo-600/20"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

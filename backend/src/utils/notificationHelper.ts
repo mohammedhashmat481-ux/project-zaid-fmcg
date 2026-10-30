@@ -48,14 +48,6 @@ export const createNotification = async ({
           { email: searchStr },
           { firstName: new RegExp(`^${searchStr}$`, 'i') },
           { lastName: new RegExp(`^${searchStr}$`, 'i') },
-          {
-            $expr: {
-              $eq: [
-                { $toLower: { $concat: ['$firstName', ' ', '$lastName'] } },
-                searchStr
-              ]
-            }
-          },
           ...(parts.length > 1
             ? [
                 {

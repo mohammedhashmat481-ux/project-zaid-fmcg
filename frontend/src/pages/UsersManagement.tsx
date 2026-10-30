@@ -139,15 +139,27 @@ export default function UsersManagement() {
         if (userForm.id === user?.id) {
           await fetchProfile();
         }
-        showToast('User details updated successfully.', 'success');
+        showAlertModal({
+          title: 'User Details Updated',
+          message: `The user account "${userForm.firstName} ${userForm.lastName}" has been successfully updated.`,
+          type: 'success'
+        });
       } else {
         await api.post('/auth/register', userForm);
-        showToast('New user account created successfully.', 'success');
+        showAlertModal({
+          title: 'User Created Successfully',
+          message: `New account for "${userForm.firstName} ${userForm.lastName}" (${userForm.email}) has been provisioned.`,
+          type: 'success'
+        });
       }
       setUserModalOpen(false);
       loadData();
     } catch (err: any) {
-      showToast(err.response?.data?.error || 'Failed to save user.', 'error');
+      showAlertModal({
+        title: 'Failed to Save User',
+        message: err.response?.data?.error || 'Failed to save user.',
+        type: 'error'
+      });
     }
   };
 
@@ -226,7 +238,11 @@ export default function UsersManagement() {
     try {
       setDeletingUser(true);
       await api.delete(`/auth/users/${selectedUserForDelete._id}`);
-      showToast(`User '${selectedUserForDelete.firstName} ${selectedUserForDelete.lastName}' removed successfully.`, 'success');
+      showAlertModal({
+        title: 'User Deleted',
+        message: `User '${selectedUserForDelete.firstName} ${selectedUserForDelete.lastName}' has been permanently deleted.`,
+        type: 'success'
+      });
       setDeleteModalOpen(false);
       setSelectedUserForDelete(null);
       loadData();

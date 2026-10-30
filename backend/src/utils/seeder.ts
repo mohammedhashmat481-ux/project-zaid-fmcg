@@ -253,7 +253,10 @@ export async function seedNewTenantData(organizationId: any, adminUserId?: any) 
     icon: 'Handshake',
     isSystem: true,
     fields: [
-      { name: 'partnerName', label: 'Partner Name', type: 'text', required: true, unique: true },
+      { name: 'bank', label: 'Bank Name', type: 'text', required: true, unique: false },
+      { name: 'loanType', label: 'Loan Type', type: 'text', required: true, unique: false },
+      { name: 'psm', label: 'PSM', type: 'text', required: true, unique: false },
+      { name: 'partnerName', label: 'Partner Name', type: 'text', required: false, unique: false },
       { name: 'partnerCode', label: 'Partner Code', type: 'text', required: false, unique: false }
     ]
   });

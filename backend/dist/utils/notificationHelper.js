@@ -34,14 +34,6 @@ const createNotification = async ({ organizationId, recipient, title, message, t
                     { email: searchStr },
                     { firstName: new RegExp(`^${searchStr}$`, 'i') },
                     { lastName: new RegExp(`^${searchStr}$`, 'i') },
-                    {
-                        $expr: {
-                            $eq: [
-                                { $toLower: { $concat: ['$firstName', ' ', '$lastName'] } },
-                                searchStr
-                            ]
-                        }
-                    },
                     ...(parts.length > 1
                         ? [
                             {

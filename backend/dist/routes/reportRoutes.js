@@ -18,7 +18,9 @@ router.use(tenantMiddleware_1.requireTenant);
 router.get('/campaign-matrix', async (req, res) => {
     try {
         const orgId = req.organizationId;
-        const { campaignName = 'ALL', month = '08', year = '2026', period = 'daily', metric = 'callsMade' } = req.query;
+        const { campaignName = 'ALL', month = '10', year = '2026', period = 'daily', metric = 'callsMade' } = req.query;
+        const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
+        const targetYear = parseInt(String(year || '2026'), 10) || 2026;
         // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
         const campaignModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' });
         const assignmentModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaignassignments' });
@@ -106,18 +108,46 @@ router.get('/campaign-matrix', async (req, res) => {
         const dialedLeads = filteredLeads.filter(isLeadDialed);
         const leadsCalledCount = dialedLeads.length;
         const yetToCallCount = Math.max(0, totalLeadsAssignedCount - leadsCalledCount);
-        // Total calls made: sum callAttempts or dialed leads count
+        // 1. CALLS MADE: sum callAttempts or dialed leads count
         const callsMadeCount = dialedLeads.reduce((sum, l) => {
             const attempts = Number(l.data?.callAttempts || 0);
             return sum + (attempts > 0 ? attempts : 1);
         }, 0);
-        const progressPctValue = totalLeadsAssignedCount > 0
-            ? Math.min(100, Math.round((leadsCalledCount / totalLeadsAssignedCount) * 100))
-            : 0;
+        // 2. HOT LEADS: leads with HOT LEADS status or hot category
+        const hotLeads = filteredLeads.filter((l) => {
+            const st = (l.data?.status || l.status || '').toString().toLowerCase();
+            const cat = (l.data?.leadCategory || '').toString().toLowerCase();
+            return st.includes('hot') || cat.includes('hot');
+        });
+        const hotLeadsCount = hotLeads.length;
+        // 3. LOGINS: files / applications submitted for banking credit approval
+        const loginLeads = filteredLeads.filter((l) => {
+            const st = (l.data?.status || l.status || '').toString().toLowerCase();
+            return st.includes('login') || st.includes('document') || st.includes('cebil') || st.includes('approval pending') || !!l.data?.loginDate || !!l.data?.loginAmount;
+        });
+        const loginsCount = loginLeads.length;
+        // 4. APPROVED: loans sanctioned / approved by partner banks
+        const approvedLeads = filteredLeads.filter((l) => {
+            const st = (l.data?.status || l.status || '').toString().toLowerCase();
+            return (st.includes('approv') && !st.includes('pending')) || st.includes('approved but not disbuse') || st === 'approved';
+        });
+        const approvedCount = approvedLeads.length;
+        // 5. DISBURSED: loans successfully disbursed to customers (closed won)
+        const disbursedLeads = filteredLeads.filter((l) => {
+            const st = (l.data?.status || l.status || '').toString().toLowerCase();
+            return st.includes('disbus') || st.includes('disburs') || st.includes('closed won');
+        });
+        const disbursedCount = disbursedLeads.length;
+        // 6. TARGET ACHIEVEMENT: percentage of goal achieved
+        const targetBenchmark = Math.max(1, Math.ceil(totalLeadsAssignedCount * 0.15));
+        const targetAchievementValue = disbursedCount > 0
+            ? Math.min(100, Math.round((disbursedCount / targetBenchmark) * 100))
+            : (totalLeadsAssignedCount > 0 ? Math.min(100, Math.round((leadsCalledCount / totalLeadsAssignedCount) * 100)) : 0);
         // 4. Generate Columns based on Period
         let columns = [];
         if (period === 'daily') {
-            columns = Array.from({ length: 31 }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
+            const daysInMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+            columns = Array.from({ length: daysInMonth }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
         }
         else if (period === 'monthly') {
             columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -132,11 +162,42 @@ router.get('/campaign-matrix', async (req, res) => {
             const userDialed = userLeads.filter(isLeadDialed);
             const rowData = {};
             let rowTotal = 0;
+            // Filter relevant leads for this metric
+            let relevantLeads = userLeads;
+            if (metric === 'callsMade') {
+                relevantLeads = userDialed;
+            }
+            else if (metric === 'hotLeads') {
+                relevantLeads = userLeads.filter((l) => {
+                    const st = (l.data?.status || l.status || '').toString().toLowerCase();
+                    return st.includes('hot');
+                });
+            }
+            else if (metric === 'logins') {
+                relevantLeads = userLeads.filter((l) => {
+                    const st = (l.data?.status || l.status || '').toString().toLowerCase();
+                    return st.includes('login') || st.includes('document') || st.includes('cebil') || st.includes('approval pending');
+                });
+            }
+            else if (metric === 'approved') {
+                relevantLeads = userLeads.filter((l) => {
+                    const st = (l.data?.status || l.status || '').toString().toLowerCase();
+                    return (st.includes('approv') && !st.includes('pending')) || st.includes('approved but not disbuse') || st === 'approved';
+                });
+            }
+            else if (metric === 'disbursed') {
+                relevantLeads = userLeads.filter((l) => {
+                    const st = (l.data?.status || l.status || '').toString().toLowerCase();
+                    return st.includes('disbus') || st.includes('disburs') || st.includes('closed won');
+                });
+            }
+            else if (metric === 'yetToCall' || metric === 'assigned') {
+                relevantLeads = userLeads;
+            }
             // Map leads by date
             const leadsByDay = {};
             const leadsByMonth = {};
             const leadsByYear = {};
-            const relevantLeads = (metric === 'yetToCall' || metric === 'assigned') ? userLeads : userDialed;
             relevantLeads.forEach((l) => {
                 const rawDate = l.data?.dialedAt || l.data?.followUpDate || l.updatedAt || l.createdAt;
                 if (rawDate) {
@@ -145,12 +206,19 @@ router.get('/campaign-matrix', async (req, res) => {
                         const dayNum = d.getDate(); // 1-31
                         const monthNum = d.getMonth(); // 0-11
                         const yearNum = d.getFullYear(); // e.g. 2026
-                        if (!leadsByDay[dayNum])
-                            leadsByDay[dayNum] = [];
-                        leadsByDay[dayNum].push(l);
-                        if (!leadsByMonth[monthNum])
-                            leadsByMonth[monthNum] = [];
-                        leadsByMonth[monthNum].push(l);
+                        // For daily, only include if same month & year as selected
+                        if (monthNum === targetMonthIndex && yearNum === targetYear) {
+                            if (!leadsByDay[dayNum])
+                                leadsByDay[dayNum] = [];
+                            leadsByDay[dayNum].push(l);
+                        }
+                        // For monthly, only include if same year as selected
+                        if (yearNum === targetYear) {
+                            if (!leadsByMonth[monthNum])
+                                leadsByMonth[monthNum] = [];
+                            leadsByMonth[monthNum].push(l);
+                        }
+                        // For annual, include by year
                         if (!leadsByYear[yearNum])
                             leadsByYear[yearNum] = [];
                         leadsByYear[yearNum].push(l);
@@ -164,6 +232,21 @@ router.get('/campaign-matrix', async (req, res) => {
                     const dayLeads = leadsByDay[dayNum] || [];
                     if (metric === 'callsMade') {
                         val = dayLeads.reduce((sum, l) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
+                    }
+                    else if (metric === 'hotLeads') {
+                        val = dayLeads.length;
+                    }
+                    else if (metric === 'logins') {
+                        val = dayLeads.length;
+                    }
+                    else if (metric === 'approved') {
+                        val = dayLeads.length;
+                    }
+                    else if (metric === 'disbursed') {
+                        val = dayLeads.length;
+                    }
+                    else if (metric === 'targetAchievement') {
+                        val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
                     }
                     else if (metric === 'leadsCalled') {
                         val = dayLeads.length;
@@ -185,6 +268,21 @@ router.get('/campaign-matrix', async (req, res) => {
                     const monthLeads = leadsByMonth[cIdx] || [];
                     if (metric === 'callsMade') {
                         val = monthLeads.reduce((sum, l) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
+                    }
+                    else if (metric === 'hotLeads') {
+                        val = monthLeads.length;
+                    }
+                    else if (metric === 'logins') {
+                        val = monthLeads.length;
+                    }
+                    else if (metric === 'approved') {
+                        val = monthLeads.length;
+                    }
+                    else if (metric === 'disbursed') {
+                        val = monthLeads.length;
+                    }
+                    else if (metric === 'targetAchievement') {
+                        val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
                     }
                     else if (metric === 'leadsCalled') {
                         val = monthLeads.length;
@@ -209,6 +307,21 @@ router.get('/campaign-matrix', async (req, res) => {
                     if (metric === 'callsMade') {
                         val = yearLeads.reduce((sum, l) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
                     }
+                    else if (metric === 'hotLeads') {
+                        val = yearLeads.length;
+                    }
+                    else if (metric === 'logins') {
+                        val = yearLeads.length;
+                    }
+                    else if (metric === 'approved') {
+                        val = yearLeads.length;
+                    }
+                    else if (metric === 'disbursed') {
+                        val = yearLeads.length;
+                    }
+                    else if (metric === 'targetAchievement') {
+                        val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+                    }
                     else if (metric === 'leadsCalled') {
                         val = yearLeads.length;
                     }
@@ -225,16 +338,14 @@ router.get('/campaign-matrix', async (req, res) => {
                         val = userAssigns.length > 0 ? 1 : 0;
                     }
                 }
-                // If leads don't have explicit dates but caller has assigned/dialed count, show overall count in active column
-                if (val === 0 && relevantLeads.length > 0) {
-                    const activeDay = (callerName.length + cIdx) % 31;
-                    if (period === 'daily' && activeDay === 18) {
-                        val = metric === 'callsMade' ? userDialed.length || Math.min(relevantLeads.length, 3) : Math.min(relevantLeads.length, 3);
-                    }
-                }
                 rowData[col] = val;
-                rowTotal += val;
+                if (metric !== 'targetAchievement' && metric !== 'progressPct') {
+                    rowTotal += val;
+                }
             });
+            if (metric === 'targetAchievement' || metric === 'progressPct') {
+                rowTotal = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+            }
             return {
                 callerName,
                 data: rowData,
@@ -246,17 +357,30 @@ router.get('/campaign-matrix', async (req, res) => {
         let grandTotal = 0;
         columns.forEach(col => {
             const sum = rows.reduce((acc, r) => acc + (r.data[col] || 0), 0);
-            totals[col] = sum;
-            grandTotal += sum;
+            if (metric === 'targetAchievement' || metric === 'progressPct') {
+                totals[col] = rows.length > 0 ? Math.round(sum / rows.length) : 0;
+            }
+            else {
+                totals[col] = sum;
+                grandTotal += sum;
+            }
         });
+        if (metric === 'targetAchievement' || metric === 'progressPct') {
+            grandTotal = targetAchievementValue;
+        }
         res.status(200).json({
             summary: {
+                callsMade: callsMadeCount,
+                hotLeads: hotLeadsCount,
+                logins: loginsCount,
+                approved: approvedCount,
+                disbursed: disbursedCount,
+                targetAchievement: targetAchievementValue,
                 campaignsAssigned: campaignsAssignedCount,
                 totalLeadsAssigned: totalLeadsAssignedCount,
                 leadsCalled: leadsCalledCount,
                 yetToCall: yetToCallCount,
-                callsMade: callsMadeCount,
-                progressPct: progressPctValue
+                progressPct: targetAchievementValue
             },
             matrix: {
                 columns,
@@ -268,8 +392,8 @@ router.get('/campaign-matrix', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Failed to generate campaign matrix report:', error);
-        res.status(500).json({ error: 'Failed to retrieve campaign matrix report.' });
+        console.error('Campaign matrix aggregation error:', error);
+        res.status(500).json({ error: error.message || 'Failed to aggregate campaign report data' });
     }
 });
 // 1. Get all report definitions

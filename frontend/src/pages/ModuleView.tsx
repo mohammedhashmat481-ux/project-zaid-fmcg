@@ -986,23 +986,33 @@ export default function ModuleView() {
     }
   };
 
-  const handleDeleteCampaign = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete campaign "${name}"? This action cannot be undone.`)) {
-      return;
-    }
-    try {
-      await api.delete(`/records/campaigns/${id}`);
-      showAlertModal({
-        title: 'Campaign Deleted',
-        message: `Campaign "${name}" was deleted successfully.`,
-        type: 'success'
-      });
-      refetch();
-      queryClient.invalidateQueries({ queryKey: ['records', 'campaigns'] });
-      queryClient.invalidateQueries({ queryKey: ['campaign-allocation-stats'] });
-    } catch (err: any) {
-      showToast(err.response?.data?.error || 'Failed to delete campaign', 'error');
-    }
+  const handleDeleteCampaign = (id: string, name: string) => {
+    showConfirm({
+      title: 'Delete Campaign',
+      message: `Are you sure you want to delete campaign "${name}"? All related allocations and records will be permanently affected. This action cannot be undone.`,
+      confirmText: 'Delete Campaign',
+      cancelText: 'Cancel',
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/records/campaigns/${id}`);
+          showAlertModal({
+            title: 'Campaign Deleted',
+            message: `Campaign "${name}" was deleted successfully.`,
+            type: 'success'
+          });
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ['records', 'campaigns'] });
+          queryClient.invalidateQueries({ queryKey: ['campaign-allocation-stats'] });
+        } catch (err: any) {
+          showAlertModal({
+            title: 'Delete Failed',
+            message: err.response?.data?.error || 'Failed to delete campaign',
+            type: 'error'
+          });
+        }
+      }
+    });
   };
 
   // Read ?status= and ?followup= from URL and apply as filter

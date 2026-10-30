@@ -6,6 +6,7 @@ import { useAuthStore } from './store/authStore';
 import Layout from './components/Layout';
 import { TopProgressBar } from './components/TopProgressBar';
 import { PageFallback } from './components/PageFallback';
+import { GlobalModalContainer } from './components/GlobalModalContainer';
 
 // Code-split page components (Part B: Code-split every route with React.lazy + Suspense)
 const Login = React.lazy(() => import('./pages/Login'));
@@ -78,6 +79,7 @@ export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <TopProgressBar />
+      <GlobalModalContainer />
       <Suspense fallback={<PageFallback />}>
         <Routes>
           {/* Public Routes */}

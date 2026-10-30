@@ -2,6 +2,7 @@
 import app from './app';
 import { connectDB, disconnectDB } from './config/db';
 import Organization from './models/Organization';
+import ModuleDefinition from './models/ModuleDefinition';
 import { seedDatabase } from './utils/seeder';
 import { seedDemoData } from './utils/seedDemoData';
 import { logger } from './utils/logger';
@@ -43,6 +44,29 @@ const startServer = async () => {
       await seedDatabase(false);
       await seedDemoData(false);
       logger.info('Auto-seeding and initial demo pipeline completed.');
+    }
+
+    // Ensure BankingPartner module definition has required schema fields (bank, loanType, psm)
+    try {
+      const bpModules = await ModuleDefinition.find({ apiPath: 'bankingpartners' });
+      for (const bpMod of bpModules) {
+        const hasBankField = bpMod.fields?.some((f: any) => f.name === 'bank');
+        if (!hasBankField) {
+          logger.info('[Migration] Updating BankingPartner module definition schema fields...');
+          await ModuleDefinition.findByIdAndUpdate(bpMod._id || bpMod.id, {
+            fields: [
+              { name: 'bank', label: 'Bank Name', type: 'text', required: true, unique: false },
+              { name: 'loanType', label: 'Loan Type', type: 'text', required: true, unique: false },
+              { name: 'psm', label: 'PSM', type: 'text', required: true, unique: false },
+              { name: 'partnerName', label: 'Partner Name', type: 'text', required: false, unique: false },
+              { name: 'partnerCode', label: 'Partner Code', type: 'text', required: false, unique: false }
+            ]
+          });
+          logger.info('[Migration] BankingPartner module definition schema fields updated successfully.');
+        }
+      }
+    } catch (migErr: any) {
+      logger.warn(`[Migration Warning] Could not verify BankingPartner schema: ${migErr.message}`);
     }
 
     server = app.listen(PORT, () => {

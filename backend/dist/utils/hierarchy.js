@@ -16,7 +16,7 @@ class HierarchyService {
             if (!role)
                 return false;
             const lower = (role.name || '').toLowerCase();
-            return lower === 'super admin' || lower === 'admin' || lower === 'administrator' || lower === 'org admin' || lower === 'organization admin';
+            return lower === 'main admin' || lower === 'super admin' || lower === 'admin' || lower === 'administrator' || lower === 'org admin' || lower === 'organization admin';
         }
         catch (e) {
             return false;

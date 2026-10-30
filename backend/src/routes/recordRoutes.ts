@@ -46,7 +46,7 @@ const authorizeModuleAction = async (
     }
 
     // Allow reading settings/metadata modules (Departments, Bank Masters, Products, etc.)
-    const settingsModules = ['departments', 'bankmasters', 'bankingpartners', 'products'];
+    const settingsModules = ['departments', 'department', 'bankmasters', 'bankmaster', 'bankingpartners', 'bankingpartner', 'products', 'product'];
     if (action === 'read' && settingsModules.includes(moduleName.toLowerCase())) {
       return { allowed: true, scope: 'all' };
     }
@@ -1221,6 +1221,13 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Auto-populate partnerName for bankingpartners if omitted
+    if (apiPath.toLowerCase() === 'bankingpartners') {
+      if (!recordData.partnerName && (recordData.bank || recordData.loanType || recordData.psm)) {
+        recordData.partnerName = `${recordData.bank || ''} - ${recordData.loanType || ''} - ${recordData.psm || ''}`.trim() || 'Banking Partner';
+      }
+    }
+
     // Check RBAC permissions
     const { allowed } = await authorizeModuleAction(req, res, moduleDef.name, 'create');
     if (!allowed) {
@@ -1430,6 +1437,13 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     }
 
     const oldValues = record.data instanceof Map ? Object.fromEntries(record.data) : record.data;
+
+    // Auto-populate partnerName for bankingpartners if omitted
+    if (apiPath.toLowerCase() === 'bankingpartners') {
+      if (!updateData.partnerName && (updateData.bank || updateData.loanType || updateData.psm)) {
+        updateData.partnerName = `${updateData.bank || oldValues.bank || ''} - ${updateData.loanType || oldValues.loanType || ''} - ${updateData.psm || oldValues.psm || ''}`.trim() || 'Banking Partner';
+      }
+    }
 
     // Validate inputs against the merged data
     const mergedData = {

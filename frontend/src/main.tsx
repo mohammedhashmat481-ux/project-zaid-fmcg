@@ -8,11 +8,12 @@ import { useThemeStore } from './store/themeStore';
 import { useAuthStore } from './store/authStore';
 import { useToastStore } from './store/toastStore';
 
-// Override native window.alert to use premium custom toast notifications
+// Override native window.alert to use premium custom modal alerts
 window.alert = (message: any) => {
   const msgStr = message ? String(message) : '';
   const msgLower = msgStr.toLowerCase();
   let type: 'success' | 'error' | 'info' | 'warning' = 'info';
+  let title = 'Information';
   if (
     msgLower.includes('success') ||
     msgLower.includes('successfully') ||
@@ -21,6 +22,7 @@ window.alert = (message: any) => {
     msgLower.includes('added')
   ) {
     type = 'success';
+    title = 'Successful';
   } else if (
     msgLower.includes('fail') ||
     msgLower.includes('failed') ||
@@ -28,6 +30,7 @@ window.alert = (message: any) => {
     msgLower.includes('denied')
   ) {
     type = 'error';
+    title = 'Action Required';
   } else if (
     msgLower.includes('warning') ||
     msgLower.includes('invalid') ||
@@ -35,8 +38,13 @@ window.alert = (message: any) => {
     msgLower.includes('select')
   ) {
     type = 'warning';
+    title = 'Attention';
   }
-  useToastStore.getState().showToast(msgStr, type);
+  useToastStore.getState().showAlertModal({
+    title,
+    message: msgStr,
+    type
+  });
 };
 
 // Override native window.confirm to prevent Chrome default popups

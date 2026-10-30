@@ -7,7 +7,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const app_1 = __importDefault(require("./app"));
 const db_1 = require("./config/db");
 const Organization_1 = __importDefault(require("./models/Organization"));
+const ModuleDefinition_1 = __importDefault(require("./models/ModuleDefinition"));
 const seeder_1 = require("./utils/seeder");
+const seedDemoData_1 = require("./utils/seedDemoData");
 const logger_1 = require("./utils/logger");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
@@ -37,7 +39,31 @@ const startServer = async () => {
         if (count === 0) {
             logger_1.logger.info('No organization tenants detected. Running auto-seeder...');
             await (0, seeder_1.seedDatabase)(false);
-            logger_1.logger.info('Auto-seeding completed.');
+            await (0, seedDemoData_1.seedDemoData)(false);
+            logger_1.logger.info('Auto-seeding and initial demo pipeline completed.');
+        }
+        // Ensure BankingPartner module definition has required schema fields (bank, loanType, psm)
+        try {
+            const bpModules = await ModuleDefinition_1.default.find({ apiPath: 'bankingpartners' });
+            for (const bpMod of bpModules) {
+                const hasBankField = bpMod.fields?.some((f) => f.name === 'bank');
+                if (!hasBankField) {
+                    logger_1.logger.info('[Migration] Updating BankingPartner module definition schema fields...');
+                    await ModuleDefinition_1.default.findByIdAndUpdate(bpMod._id || bpMod.id, {
+                        fields: [
+                            { name: 'bank', label: 'Bank Name', type: 'text', required: true, unique: false },
+                            { name: 'loanType', label: 'Loan Type', type: 'text', required: true, unique: false },
+                            { name: 'psm', label: 'PSM', type: 'text', required: true, unique: false },
+                            { name: 'partnerName', label: 'Partner Name', type: 'text', required: false, unique: false },
+                            { name: 'partnerCode', label: 'Partner Code', type: 'text', required: false, unique: false }
+                        ]
+                    });
+                    logger_1.logger.info('[Migration] BankingPartner module definition schema fields updated successfully.');
+                }
+            }
+        }
+        catch (migErr) {
+            logger_1.logger.warn(`[Migration Warning] Could not verify BankingPartner schema: ${migErr.message}`);
         }
         server = app_1.default.listen(PORT, () => {
             logger_1.logger.info(`=================================`);

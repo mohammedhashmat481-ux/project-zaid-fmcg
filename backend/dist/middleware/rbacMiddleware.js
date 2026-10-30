@@ -28,8 +28,8 @@ const checkPermission = (moduleName, action) => {
                 res.status(403).json({ error: 'Access Denied. User role not found.' });
                 return;
             }
-            // Bypass checks for Super Admin
-            if (role.name === 'Super Admin' && role.isSystem) {
+            // Bypass checks for Main Admin and Super Admin
+            if ((role.name === 'Main Admin' || role.name === 'Super Admin') && (role.isSystem || role.name === 'Main Admin')) {
                 req.permissionScope = 'all';
                 return next();
             }

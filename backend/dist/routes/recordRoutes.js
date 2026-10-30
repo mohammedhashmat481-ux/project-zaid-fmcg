@@ -41,12 +41,12 @@ const authorizeModuleAction = async (req, res, moduleName, action) => {
         const role = await Role_1.default.findById(req.user?.roleId);
         if (!role)
             return { allowed: false, scope: 'none' };
-        // Super Admin bypass
-        if (role.name === 'Super Admin' && role.isSystem) {
+        // Main Admin & Super Admin bypass
+        if ((role.name === 'Main Admin' || role.name === 'Super Admin') && (role.isSystem || role.name === 'Main Admin')) {
             return { allowed: true, scope: 'all' };
         }
         // Allow reading settings/metadata modules (Departments, Bank Masters, Products, etc.)
-        const settingsModules = ['departments', 'bankmasters', 'bankingpartners', 'products'];
+        const settingsModules = ['departments', 'department', 'bankmasters', 'bankmaster', 'bankingpartners', 'bankingpartner', 'products', 'product'];
         if (action === 'read' && settingsModules.includes(moduleName.toLowerCase())) {
             return { allowed: true, scope: 'all' };
         }
@@ -1094,6 +1094,12 @@ router.post('/:apiPath', async (req, res) => {
             res.status(404).json({ error: `Module definition not found: ${apiPath}` });
             return;
         }
+        // Auto-populate partnerName for bankingpartners if omitted
+        if (apiPath.toLowerCase() === 'bankingpartners') {
+            if (!recordData.partnerName && (recordData.bank || recordData.loanType || recordData.psm)) {
+                recordData.partnerName = `${recordData.bank || ''} - ${recordData.loanType || ''} - ${recordData.psm || ''}`.trim() || 'Banking Partner';
+            }
+        }
         // Check RBAC permissions
         const { allowed } = await authorizeModuleAction(req, res, moduleDef.name, 'create');
         if (!allowed) {
@@ -1276,6 +1282,12 @@ router.put('/:apiPath/:id', async (req, res) => {
             return;
         }
         const oldValues = record.data instanceof Map ? Object.fromEntries(record.data) : record.data;
+        // Auto-populate partnerName for bankingpartners if omitted
+        if (apiPath.toLowerCase() === 'bankingpartners') {
+            if (!updateData.partnerName && (updateData.bank || updateData.loanType || updateData.psm)) {
+                updateData.partnerName = `${updateData.bank || oldValues.bank || ''} - ${updateData.loanType || oldValues.loanType || ''} - ${updateData.psm || oldValues.psm || ''}`.trim() || 'Banking Partner';
+            }
+        }
         // Validate inputs against the merged data
         const mergedData = {
             ...oldValues,

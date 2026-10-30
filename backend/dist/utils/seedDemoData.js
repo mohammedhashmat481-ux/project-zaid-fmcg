@@ -81,11 +81,13 @@ async function seedDemoData(shouldDisconnect = false) {
             userCode: 'TC-SNEHA-104'
         }
     ];
+    const superAdminUser = await User_1.default.findOne({ email: 'admin@crm.com' });
+    let vikramUser = null;
     const agentNames = ['Super Admin'];
     for (const u of demoUsersToCreate) {
-        const existing = await User_1.default.findOne({ email: u.email });
-        if (!existing) {
-            await User_1.default.create({
+        let userDoc = await User_1.default.findOne({ email: u.email });
+        if (!userDoc) {
+            userDoc = await User_1.default.create({
                 organizationId: orgId,
                 roleId: u.roleId,
                 firstName: u.firstName,
@@ -105,6 +107,17 @@ async function seedDemoData(shouldDisconnect = false) {
                 faceRecognition: { enabled: false }
             });
             logger_1.logger.info(`[Demo Seeder] Created User: ${u.firstName} ${u.lastName} (${u.email})`);
+        }
+        if (u.firstName === 'Vikram') {
+            vikramUser = userDoc;
+            if (superAdminUser && !userDoc.reportingManager) {
+                userDoc.reportingManager = superAdminUser._id;
+                await userDoc.save();
+            }
+        }
+        else if (vikramUser && !userDoc.reportingManager) {
+            userDoc.reportingManager = vikramUser._id;
+            await userDoc.save();
         }
         agentNames.push(`${u.firstName} ${u.lastName}`);
     }
@@ -679,9 +692,17 @@ async function seedDemoData(shouldDisconnect = false) {
     ];
     const createdLeads = [];
     let leadCodeIdx = 101;
+    const usedPhones = new Set();
     for (const item of realisticLeadsData) {
         const dataCode = `LND-${leadCodeIdx++}`;
         const fullName = `${item.firstName} ${item.lastName}`;
+        let phoneNum = String(item.phone || `98${10000000 + leadCodeIdx}`).trim();
+        if (usedPhones.has(phoneNum)) {
+            phoneNum = `98${String(10000000 + leadCodeIdx + 500)}`;
+        }
+        usedPhones.add(phoneNum);
+        const creatorName = item.assignedTo || 'Super Admin';
+        const caseDetails = item.notes || `Requirement for ${item.loanType} - verification in progress`;
         const leadRecord = await CustomRecord_1.default.create({
             organizationId: orgId,
             moduleId: leadModule._id,
@@ -694,7 +715,7 @@ async function seedDemoData(shouldDisconnect = false) {
                 lastName: item.lastName,
                 fullName: fullName,
                 customerName: fullName,
-                phone: item.phone,
+                phone: phoneNum,
                 email: item.email,
                 company: item.company,
                 firmName: item.company,
@@ -710,7 +731,10 @@ async function seedDemoData(shouldDisconnect = false) {
                 psm: item.psm,
                 status: item.status,
                 dialStatus: item.dialStatus,
-                source: item.source,
+                source: creatorName,
+                creatorName: creatorName,
+                caseDetails: caseDetails,
+                leadCategory: 'A1 CATE',
                 campaign: item.campaign,
                 campaignName: item.campaignName,
                 assignedTo: item.assignedTo,
