@@ -229,7 +229,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
         recentActivities: recentActivitiesRes
       };
 
-      serverCache.set(cacheKey, resultData, 180); // 3 minutes cache TTL (invalidated on every lead mutation)
+      serverCache.set(cacheKey, resultData, 5); // 5 seconds cache TTL for instantaneous UI sync
       res.setHeader('X-Cache', 'MISS');
       res.status(200).json(resultData);
       return;

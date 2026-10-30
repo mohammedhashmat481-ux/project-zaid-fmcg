@@ -173,12 +173,12 @@ export default function Dashboard() {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    staleTime: 2 * 60 * 1000,
+    staleTime: 5000,
     gcTime: 15 * 60 * 1000,
     placeholderData: keepPreviousData,
     retry: 1,
-    refetchInterval: false,
-    refetchOnWindowFocus: false
+    refetchInterval: (query) => (query.state.error ? false : 30000),
+    refetchOnWindowFocus: true
   });
 
   const { showLoading: showDelayedSkeleton, isTakingLonger } = useDelayedLoading(isLoading && !metricsData, 400);

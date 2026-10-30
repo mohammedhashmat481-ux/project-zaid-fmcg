@@ -133,16 +133,16 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [branding, fetchBranding]);
 
-  // Lead metrics for sidebar badge
+  // Lead metrics for sidebar badge (Shares identical queryKey and cache with Dashboard page)
   const { data: metricsData } = useQuery({
-    queryKey: ['dashboard-metrics-sidebar'],
+    queryKey: ['dashboard-metrics'],
     queryFn: async () => {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    staleTime: 60000,
-    refetchInterval: (query) => (query.state.error ? false : 60000),
-    refetchOnWindowFocus: false
+    staleTime: 5000,
+    refetchInterval: (query) => (query.state.error ? false : 30000),
+    refetchOnWindowFocus: true
   });
 
   // Notifications queries
