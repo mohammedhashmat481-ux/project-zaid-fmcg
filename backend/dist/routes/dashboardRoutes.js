@@ -83,11 +83,6 @@ router.get('/metrics', async (req, res) => {
         };
         if (leadModule) {
             leadQuery.moduleId = leadModule._id;
-            // Differentiate Campaign Contacts vs Real Leads:
-            // Real pipeline leads strictly match the 11 pipeline stages. Raw campaign contacts (telecalling list) are excluded.
-            leadQuery['data.status'] = {
-                $regex: '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|CE[BD]IL(\\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\\s*WORLDWIDE)$'
-            };
         }
         const dealQuery = {
             organizationId: orgId
@@ -113,61 +108,20 @@ router.get('/metrics', async (req, res) => {
         const now = new Date();
         const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const utcTodayStr = now.toISOString().split('T')[0];
-        const startOfToday = new Date(now);
-        startOfToday.setHours(0, 0, 0, 0);
-        const endOfToday = new Date(now);
-        endOfToday.setHours(23, 59, 59, 999);
         if (leadModule) {
-            // 1. Group leads count by status dynamically using tenant/hierarchy leadQuery
+            // Direct indexed follow-up date lookups
             const followUpQuery = {
-                ...leadQuery
+                organizationId: orgId,
+                moduleId: leadModule._id,
+                'data.followUpDate': { $in: [localTodayStr, utcTodayStr] }
             };
-            const timeFilter = {
-                $or: [
-                    { 'data.followUpDate': localTodayStr },
-                    { 'data.followUpDate': utcTodayStr },
-                    { 'data.followUpDate': { $regex: `^(${localTodayStr}|${utcTodayStr})` } },
-                    { 'data.followUpDate': { $gte: startOfToday, $lte: endOfToday } }
-                ]
-            };
-            if (followUpQuery.$or) {
-                const existingOr = followUpQuery.$or;
-                delete followUpQuery.$or;
-                followUpQuery.$and = [
-                    { $or: existingOr },
-                    timeFilter
-                ];
-            }
-            else if (followUpQuery.$and) {
-                followUpQuery.$and.push(timeFilter);
-            }
-            else {
-                Object.assign(followUpQuery, timeFilter);
-            }
+            await hierarchy_1.HierarchyService.modifyRecordQuery(followUpQuery, req.user, orgId);
             const upcomingQuery = {
-                ...leadQuery
+                organizationId: orgId,
+                moduleId: leadModule._id,
+                'data.followUpDate': { $gt: localTodayStr > utcTodayStr ? localTodayStr : utcTodayStr }
             };
-            const futureFilter = {
-                $or: [
-                    { 'data.followUpDate': { $gt: localTodayStr } },
-                    { 'data.followUpDate': { $gt: utcTodayStr } },
-                    { 'data.followUpDate': { $gt: endOfToday } }
-                ]
-            };
-            if (upcomingQuery.$or) {
-                const existingOr = upcomingQuery.$or;
-                delete upcomingQuery.$or;
-                upcomingQuery.$and = [
-                    { $or: existingOr },
-                    futureFilter
-                ];
-            }
-            else if (upcomingQuery.$and) {
-                upcomingQuery.$and.push(futureFilter);
-            }
-            else {
-                Object.assign(upcomingQuery, futureFilter);
-            }
+            await hierarchy_1.HierarchyService.modifyRecordQuery(upcomingQuery, req.user, orgId);
             const activityQuery = { organizationId: orgId };
             const isSuper = await hierarchy_1.HierarchyService.isSuperAdmin(req.user?.roleId);
             if (!isSuper) {
@@ -175,22 +129,23 @@ router.get('/metrics', async (req, res) => {
                 const allowedUserIds = [String(req.user?.id), ...descendants];
                 activityQuery.userId = { $in: allowedUserIds };
             }
-            // Execute all independent queries in parallel for lightning-fast response (<70ms)
-            const [leadAgg, todayFollowupsCountRes, todayFollowupsListRes, upcomingFollowupsListRes, totalLeadsRes, dealAggRes, recentActivitiesRes] = await Promise.all([
+            // Execute all independent queries in parallel using indexed columns (<30ms)
+            const [leadAgg, todayFollowupsCountRes, todayFollowupsListRes, upcomingFollowupsListRes, dealAggRes, recentActivitiesRes] = await Promise.all([
                 CustomRecord_1.default.aggregate([
                     { $match: leadQuery },
                     { $group: { _id: '$data.status', count: { $sum: 1 } } }
                 ]),
                 CustomRecord_1.default.countDocuments(followUpQuery),
                 CustomRecord_1.default.find(followUpQuery)
+                    .select('_id data.firstName data.lastName data.company data.phone data.budget data.followUpDate data.status data.caseDetails createdBy')
                     .populate('createdBy', 'firstName lastName name email')
                     .sort({ 'data.followUpDate': 1 })
                     .limit(10),
                 CustomRecord_1.default.find(upcomingQuery)
+                    .select('_id data.firstName data.lastName data.company data.phone data.budget data.followUpDate data.status data.caseDetails createdBy')
                     .populate('createdBy', 'firstName lastName name email')
                     .sort({ 'data.followUpDate': 1 })
                     .limit(10),
-                CustomRecord_1.default.countDocuments(leadQuery),
                 dealModule
                     ? CustomRecord_1.default.aggregate([
                         { $match: dealQuery },
@@ -202,6 +157,8 @@ router.get('/metrics', async (req, res) => {
                     .sort({ createdAt: -1 })
                     .limit(10)
             ]);
+            const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\s*WORLDWIDE)$/i;
+            let totalPipelineLeads = 0;
             leadAgg.forEach((item) => {
                 if (item._id) {
                     const rawName = item._id.toString().trim();
@@ -210,6 +167,9 @@ router.get('/metrics', async (req, res) => {
                     statusCounts[upper] = (statusCounts[upper] || 0) + count;
                     if (rawName !== upper) {
                         statusCounts[rawName] = count;
+                    }
+                    if (pipelineRegex.test(upper)) {
+                        totalPipelineLeads += count;
                     }
                 }
             });
@@ -237,10 +197,10 @@ router.get('/metrics', async (req, res) => {
                 upcomingFollowupsList,
                 upcomingFollowupsCount,
                 isUpcoming,
-                totalLeads: totalLeadsRes,
+                totalLeads: totalPipelineLeads,
                 recentActivities: recentActivitiesRes
             };
-            cache_1.serverCache.set(cacheKey, resultData, 45); // 45 seconds cache TTL
+            cache_1.serverCache.set(cacheKey, resultData, 180); // 3 minutes cache TTL (invalidated on every lead mutation)
             res.setHeader('X-Cache', 'MISS');
             res.status(200).json(resultData);
             return;

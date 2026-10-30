@@ -173,10 +173,11 @@ export default function Dashboard() {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    staleTime: 60000,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
     placeholderData: keepPreviousData,
     retry: 1,
-    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchInterval: false,
     refetchOnWindowFocus: false
   });
 
