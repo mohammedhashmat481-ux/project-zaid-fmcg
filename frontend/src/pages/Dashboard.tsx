@@ -261,54 +261,13 @@ export default function Dashboard() {
       return metricsData.todayFollowupsCount || 0;
     }
 
-    // Accumulate all counts that match synonyms for this status label
-    let total = 0;
-    const matchedKeys = new Set<string>();
-
-    const checkAndAdd = (key: string) => {
-      const kUpper = key.trim().toUpperCase();
-      if (!matchedKeys.has(kUpper) && metricsData.statusCounts[kUpper] !== undefined) {
-        matchedKeys.add(kUpper);
-        total += Number(metricsData.statusCounts[kUpper] || 0);
-      }
-    };
-
-    if (upper.includes('HOT')) {
-      ['HOT', 'HOT LEADS', 'HOT LEAD'].forEach(checkAndAdd);
-    } else if (upper.includes('WARM')) {
-      ['WARM', 'WARM LEADS', 'WARM LEAD'].forEach(checkAndAdd);
-    } else if (upper.includes('CEBIL') || upper.includes('CEDIL')) {
-      ['CEBIL PENDING', 'CEDIL PENDING', 'CEBIL', 'CEDIL'].forEach(checkAndAdd);
-    } else if (upper.includes('DOCUMENT') || upper.includes('DOC PENDING')) {
-      ['DOCUMENT PENDING', 'DOCUMENTS PENDING', 'DOC PENDING', 'PROPOSAL'].forEach(checkAndAdd);
-    } else if (upper.includes('APPROVAL') || upper === 'NEGOTIATION') {
-      ['APPROVAL PENDING', 'APPROVALS PENDING', 'NEGOTIATION'].forEach(checkAndAdd);
-    } else if (upper.includes('APPROVED') && !upper.includes('DISBU')) {
-      ['APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED'].forEach(checkAndAdd);
-    } else if (upper.includes('APPROVED BUT NOT')) {
-      ['APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED'].forEach(checkAndAdd);
-    } else if (upper.includes('DISBUSED') || upper.includes('DISBURSED')) {
-      ['DISBUSED', 'DISBURSED'].forEach(checkAndAdd);
-    } else if (upper.includes('REJECT')) {
-      ['REJECTED', 'REJECT'].forEach(checkAndAdd);
-    } else if (upper.includes('FOLLOW')) {
-      ['FOLLOWUP', 'FOLLOW UP', 'FOLLOW-UP'].forEach(checkAndAdd);
-    } else if (upper.includes('DROP')) {
-      ['DROPPED', 'DROP'].forEach(checkAndAdd);
-    } else if (upper === 'PENDING' || upper.includes('INKWORLDWIDE')) {
-      ['PENDING', 'INKWORLDWIDE', 'INK WORLDWIDE'].forEach(checkAndAdd);
-    } else {
-      checkAndAdd(raw);
-      checkAndAdd(upper);
-      const noLeadsKey = upper.replace(/\s+LEADS?$/, '');
-      if (noLeadsKey) checkAndAdd(noLeadsKey);
+    // Direct exact match to configured status name (matches Sidebar "Leads Process" exactly)
+    if (metricsData.statusCounts[upper] !== undefined) {
+      return Number(metricsData.statusCounts[upper]);
     }
-
-    if (total > 0) return total;
-
-    // Fallback: check exact or case-insensitive key
-    if (metricsData.statusCounts[raw] !== undefined) return Number(metricsData.statusCounts[raw]);
-    if (metricsData.statusCounts[upper] !== undefined) return Number(metricsData.statusCounts[upper]);
+    if (metricsData.statusCounts[raw] !== undefined) {
+      return Number(metricsData.statusCounts[raw]);
+    }
 
     return 0;
   };
