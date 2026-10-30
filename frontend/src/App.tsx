@@ -7,6 +7,7 @@ import Layout from './components/Layout';
 import { TopProgressBar } from './components/TopProgressBar';
 import { PageFallback } from './components/PageFallback';
 import { GlobalModalContainer } from './components/GlobalModalContainer';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Code-split page components (Part B: Code-split every route with React.lazy + Suspense)
 const Login = React.lazy(() => import('./pages/Login'));
@@ -59,7 +60,11 @@ function ProtectedRoute({ children, menuKey }: { children: React.ReactNode; menu
     return <Navigate to="/my-campaign" replace />;
   }
 
-  return <Layout>{children}</Layout>;
+  return (
+    <Layout>
+      <ErrorBoundary>{children}</ErrorBoundary>
+    </Layout>
+  );
 }
 
 function DashboardGuard() {

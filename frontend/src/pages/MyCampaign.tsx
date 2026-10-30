@@ -466,9 +466,10 @@ export default function MyCampaign() {
 
       // Refresh campaigns listing in background
       refetchCampaigns().then(res => {
-        const updatedCampaigns: CampaignStats[] = res.data || [];
+        const rawData = res.data;
+        const updatedCampaigns: CampaignStats[] = Array.isArray(rawData) ? rawData : (Array.isArray((rawData as any)?.campaigns) ? (rawData as any).campaigns : []);
         if (activeCampaign) {
-          const found = updatedCampaigns.find(c => c.campaignName === activeCampaign.campaignName);
+          const found = updatedCampaigns.find(c => c && c.campaignName === activeCampaign.campaignName);
           if (found) setActiveCampaign(found);
         }
       }).catch(err => console.error(err));
@@ -534,8 +535,11 @@ export default function MyCampaign() {
       {!activeCampaign ? (
         // CAMPAIGNS CARDS VIEW
         (() => {
-          const filteredCampaigns = campaigns.filter(c => 
-            c.campaignName.toLowerCase().includes(searchQuery.trim().toLowerCase())
+          const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
+          const filteredCampaigns = safeCampaigns.filter(c => 
+            c && c.campaignName && typeof c.campaignName === 'string'
+              ? c.campaignName.toLowerCase().includes(searchQuery.trim().toLowerCase())
+              : false
           );
 
           return (
@@ -553,7 +557,7 @@ export default function MyCampaign() {
                           My Call Campaigns
                         </h2>
                         <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                          ({campaigns.length} {campaigns.length === 1 ? 'Active' : 'Active'})
+                          ({safeCampaigns.length} {safeCampaigns.length === 1 ? 'Active' : 'Active'})
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -563,17 +567,17 @@ export default function MyCampaign() {
                   </div>
 
                   {/* Compact Stats Indicators with Border */}
-                  {campaigns.length > 0 && (
+                  {safeCampaigns.length > 0 && (
                     <div className="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 pt-2.5 sm:pt-0 sm:pl-5 flex-shrink-0">
                       <div className="text-left">
                         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Campaigns</span>
-                        <span className="text-base font-bold text-slate-800 dark:text-slate-100 font-mono leading-tight">{campaigns.length}</span>
+                        <span className="text-base font-bold text-slate-800 dark:text-slate-100 font-mono leading-tight">{safeCampaigns.length}</span>
                       </div>
                       <div className="w-px h-7 bg-slate-200 dark:bg-slate-700" />
                       <div className="text-left">
                         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Total Leads</span>
                         <span className="text-base font-bold text-emerald-700 dark:text-emerald-400 font-mono leading-tight">
-                          {campaigns.reduce((sum, c) => sum + c.totalAssigned, 0)}
+                          {safeCampaigns.reduce((sum, c) => sum + (c?.totalAssigned || 0), 0)}
                         </span>
                       </div>
                     </div>
@@ -582,7 +586,7 @@ export default function MyCampaign() {
               </div>
 
               {/* Search & Filter Toolbar with Crisp Border */}
-              {campaigns.length > 0 && (
+              {safeCampaigns.length > 0 && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl shadow-xs">
                   <div className="relative flex-1 max-w-sm">
                     <Icons.Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -608,13 +612,13 @@ export default function MyCampaign() {
                     <span>Showing</span>
                     <span className="font-bold text-slate-800 dark:text-slate-200">{filteredCampaigns.length}</span>
                     <span>of</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">{campaigns.length}</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{safeCampaigns.length}</span>
                     <span>campaigns</span>
                   </div>
                 </div>
               )}
 
-              {campaigns.length === 0 ? (
+              {safeCampaigns.length === 0 ? (
                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-10 text-center text-slate-500 dark:text-slate-400 shadow-xs">
                   <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center mx-auto mb-3 text-slate-400 shadow-3xs">
                     <Icons.Megaphone className="w-5 h-5" />
