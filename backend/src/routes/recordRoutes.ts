@@ -1228,6 +1228,23 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // Lead Creator & Permanent Source enforcement
+    if (apiPath.toLowerCase() === 'leads') {
+      let creatorName = 'Super Admin';
+      try {
+        const u = await User.findById(req.user?.id);
+        if (u) {
+          creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email?.split('@')[0] || 'Super Admin';
+        }
+      } catch (_) {}
+      
+      // Source is permanently locked to who is creating the lead
+      if (!recordData.source || recordData.source === 'Ink CRM' || recordData.source === 'inkcrm') {
+        recordData.source = creatorName;
+      }
+      recordData.creatorName = recordData.source;
+    }
+
     // Check RBAC permissions
     const { allowed } = await authorizeModuleAction(req, res, moduleDef.name, 'create');
     if (!allowed) {
@@ -1442,6 +1459,16 @@ router.put('/:apiPath/:id', async (req: Request, res: Response): Promise<void> =
     if (apiPath.toLowerCase() === 'bankingpartners') {
       if (!updateData.partnerName && (updateData.bank || updateData.loanType || updateData.psm)) {
         updateData.partnerName = `${updateData.bank || oldValues.bank || ''} - ${updateData.loanType || oldValues.loanType || ''} - ${updateData.psm || oldValues.psm || ''}`.trim() || 'Banking Partner';
+      }
+    }
+
+    // Lead Source is permanently immutable: never overwrite original creator
+    if (apiPath.toLowerCase() === 'leads') {
+      if (oldValues.source) {
+        updateData.source = oldValues.source;
+      }
+      if (oldValues.creatorName) {
+        updateData.creatorName = oldValues.creatorName;
       }
     }
 

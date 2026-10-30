@@ -48,7 +48,7 @@ const getFallbackField = (name: string): FieldDefinition => {
     notes: { name: 'notes', label: 'REMARKS', type: 'rich-text', required: false, unique: false },
     budget: { name: 'budget', label: 'LOAN AMOUNT', type: 'currency', required: true, unique: false },
     assignedTo: { name: 'assignedTo', label: 'ASSIGN TO AGENT', type: 'dropdown', required: true, unique: false },
-    source: { name: 'source', label: 'SOURCE', type: 'text', required: false, unique: false, defaultValue: 'Ink CRM' },
+    source: { name: 'source', label: 'SOURCE', type: 'text', required: false, unique: false },
     businessPartner: { name: 'businessPartner', label: 'BUSINESS PARTNERS', type: 'dropdown', required: true, unique: false },
     psm: { name: 'psm', label: 'PSM', type: 'text', required: true, unique: false },
     assignToTeam: { name: 'assignToTeam', label: 'ASSIGN TO TEAM', type: 'dropdown', required: false, unique: false },
@@ -80,6 +80,10 @@ export default function RecordForm() {
   const { branding } = useThemeStore();
   const isLeads = true; // Use light layout for all creation/edit forms
 
+  const loggedInCreatorName = user 
+    ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
+    : 'Super Admin';
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formSchema, setFormSchema] = useState<any>(z.object({}));
@@ -109,6 +113,7 @@ export default function RecordForm() {
   const [allTeams, setAllTeams] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<string[]>([]);
   const [rawUsersList, setRawUsersList] = useState<any[]>([]);
+  const [originalCreatorSource, setOriginalCreatorSource] = useState<string>('');
 
   const isInitialLoadRef = React.useRef(true);
 
@@ -273,11 +278,11 @@ export default function RecordForm() {
       });
       defaults['country'] = 'INDIA';
       const loggedInCreatorName = user 
-        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
         : 'Super Admin';
 
       if (apiPath === 'leads') {
-        defaults['source'] = 'Ink CRM';
+        defaults['source'] = loggedInCreatorName;
         if (!defaults['status']) {
           defaults['status'] = dynamicStatuses.includes('HOT LEAD') ? 'HOT LEAD' : (dynamicStatuses.includes('HOT LEADS') ? 'HOT LEADS' : 'HOT LEAD');
         }
@@ -291,12 +296,9 @@ export default function RecordForm() {
         ...passedData
       };
 
-      // FIXED: When creating a new lead, SOURCE is ALWAYS fixed to the creator's name!
-      // Even if passedData contains a campaign name, the creator's name is locked in as the SOURCE!
+      // SOURCE is PERMANENTLY fixed to the user who creates the lead!
       if (apiPath === 'leads') {
-        if (!finalDefaults['source']) {
-          finalDefaults['source'] = 'Ink CRM';
-        }
+        finalDefaults['source'] = loggedInCreatorName;
       }
       
       reset(finalDefaults);
@@ -353,6 +355,11 @@ export default function RecordForm() {
       if (!recordValues.currency) {
         recordValues.currency = 'INR';
       }
+
+      // Preserve permanent Lead Creator Source on existing leads
+      const creatorSource = recordValues.source || recordValues.creatorName || (recordRes.data.createdBy as any)?.name || 'Super Admin';
+      setOriginalCreatorSource(creatorSource);
+      recordValues.source = creatorSource;
       
       reset(recordValues);
       setDocuments(docRes.data || []);
@@ -477,14 +484,21 @@ export default function RecordForm() {
     try {
       const data = { ...formData };
 
-      // Fixed Lead Creator Name: source is always locked to creator name
+      // Fixed Lead Creator Name: source is permanently locked to whoever created the lead
       const loggedInCreatorName = user 
-        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
         : 'Super Admin';
 
       if (apiPath === 'leads') {
-        data.source = loggedInCreatorName;
-        data.creatorName = loggedInCreatorName;
+        if (!id) {
+          // New lead being created: permanently set source & creatorName to the logged in creator
+          data.source = loggedInCreatorName;
+          data.creatorName = loggedInCreatorName;
+        } else {
+          // Existing lead being edited: NEVER overwrite original creator! It remains fixed forever!
+          data.source = originalCreatorSource || formData.source || loggedInCreatorName;
+          data.creatorName = originalCreatorSource || formData.creatorName || loggedInCreatorName;
+        }
       }
 
       // Auto-sync fullName, customerName, location, and currency
@@ -1734,16 +1748,27 @@ export default function RecordForm() {
                   )}
                 </div>
 
-                {/* 8. Source */}
+                {/* 8. Source (Permanently locked to Lead Creator) */}
                 <div className="space-y-1.5 text-left">
-                  <label className={labelClass}>Source</label>
-                  <input
-                    type="text"
-                    {...register('source')}
-                    defaultValue="Ink CRM"
-                    placeholder="Source"
-                    className={inputClass}
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className={labelClass}>Source</label>
+                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200/80 dark:border-indigo-800 flex items-center gap-1">
+                      <Icons.Lock className="w-2.5 h-2.5" />
+                      Lead Creator
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      {...register('source')}
+                      value={id ? (watch('source') || originalCreatorSource || loggedInCreatorName) : loggedInCreatorName}
+                      readOnly
+                      title="Source is permanently fixed to the creator who created this lead and will never change."
+                      placeholder="Lead Creator"
+                      className={`${inputClass} bg-slate-50/90 dark:bg-slate-800/80 font-bold text-slate-800 dark:text-slate-100 cursor-not-allowed pr-9 select-none`}
+                    />
+                    <Icons.Lock className="w-4 h-4 text-slate-400 absolute right-3 pointer-events-none" />
+                  </div>
                   {errors.source && (
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.source?.message as string)}</p>
                   )}

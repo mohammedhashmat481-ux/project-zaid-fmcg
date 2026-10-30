@@ -69,6 +69,29 @@ const startServer = async () => {
       logger.warn(`[Migration Warning] Could not verify BankingPartner schema: ${migErr.message}`);
     }
 
+    // Ensure Lead module definition removes hardcoded Ink CRM defaultValue for source
+    try {
+      const leadModules = await ModuleDefinition.find({ apiPath: 'leads' });
+      for (const lm of leadModules) {
+        let changed = false;
+        const updatedFields = (lm.fields || []).map((f: any) => {
+          if (f.name === 'source' && f.defaultValue) {
+            changed = true;
+            const { defaultValue, ...rest } = f;
+            return rest;
+          }
+          return f;
+        });
+        if (changed) {
+          logger.info('[Migration] Cleaning up source defaultValue from Leads module definition...');
+          await ModuleDefinition.findByIdAndUpdate(lm._id || lm.id, { fields: updatedFields });
+          logger.info('[Migration] Leads module definition cleaned up successfully.');
+        }
+      }
+    } catch (leadMigErr: any) {
+      logger.warn(`[Migration Warning] Could not clean Leads source schema: ${leadMigErr.message}`);
+    }
+
     server = app.listen(PORT, () => {
       logger.info(`=================================`);
       logger.info(` inkCRM Backend API Server Running`);

@@ -97,7 +97,7 @@ async function seedNewTenantData(organizationId, adminUserId) {
             { name: 'notes', label: 'Remarks', type: 'textarea', required: false },
             { name: 'budget', label: 'Loan Amount', type: 'currency', required: true },
             { name: 'assignedTo', label: 'Assign To Agent', type: 'dropdown', required: true },
-            { name: 'source', label: 'Source', type: 'text', required: false, defaultValue: 'Ink CRM' },
+            { name: 'source', label: 'Source', type: 'text', required: false },
             { name: 'businessPartner', label: 'Business Partners', type: 'dropdown', required: true },
             { name: 'psm', label: 'PSM', type: 'text', required: true },
             { name: 'assignToTeam', label: 'Assign To Team', type: 'dropdown', required: false },
