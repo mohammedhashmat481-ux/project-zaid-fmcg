@@ -206,10 +206,11 @@ export default function Dashboard() {
   });
 
   const { data: myCampaignsData } = useQuery({
-    queryKey: ['dashboard-my-campaigns'],
+    queryKey: ['my-campaigns-list'],
     queryFn: async () => {
       const res = await api.get('/records/campaigns/my-campaigns');
-      return res.data?.campaigns || [];
+      const data = res.data?.campaigns || res.data;
+      return Array.isArray(data) ? data : [];
     },
     staleTime: 60000,
     gcTime: 15 * 60 * 1000,
@@ -590,7 +591,7 @@ export default function Dashboard() {
 
       {/* 3. CAMPAIGN STATUS & EXECUTION TELEMETRY */}
       {(() => {
-        const campaignsList: any[] = Array.isArray(myCampaignsData) ? myCampaignsData : (myCampaignsData?.campaigns || []);
+        const campaignsList: any[] = Array.isArray(myCampaignsData) ? myCampaignsData : ((myCampaignsData as any)?.campaigns || []);
         const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : 21;
         const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && c.totalAssigned > 0).length || 0;
         const inProgressCampaigns = campaignsList.filter((c: any) => c.yetToDial > 0 || c.dialed > 0).length || totalCampaigns;

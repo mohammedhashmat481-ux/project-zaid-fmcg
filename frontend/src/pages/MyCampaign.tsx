@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import api from '../services/api';
@@ -61,20 +61,27 @@ export default function MyCampaign() {
   const { user } = useAuthStore();
   // React Query for campaigns with 60s cache and instantaneous cache hydration
   const {
-    data: campaigns = [],
+    data: rawCampaignsData,
     isLoading: loading,
     error: queryError,
     refetch: refetchCampaigns
-  } = useQuery<CampaignStats[]>({
-    queryKey: ['dashboard-my-campaigns'],
+  } = useQuery({
+    queryKey: ['my-campaigns-list'],
     queryFn: async () => {
       const res = await api.get('/records/campaigns/my-campaigns');
-      return res.data?.campaigns || [];
+      const data = res.data?.campaigns || res.data;
+      return Array.isArray(data) ? data : [];
     },
     staleTime: 60000,
     gcTime: 15 * 60 * 1000,
     placeholderData: keepPreviousData
   });
+
+  const campaigns: CampaignStats[] = useMemo(() => {
+    if (Array.isArray(rawCampaignsData)) return rawCampaignsData;
+    if (rawCampaignsData && Array.isArray((rawCampaignsData as any).campaigns)) return (rawCampaignsData as any).campaigns;
+    return [];
+  }, [rawCampaignsData]);
 
   const campaignError = queryError ? (queryError as any).message || 'Failed to load campaigns.' : null;
 

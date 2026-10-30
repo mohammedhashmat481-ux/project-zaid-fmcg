@@ -89,8 +89,12 @@ export const SidebarItem = ({
         }
       } else if (to === '/my-campaign') {
         queryClient.prefetchQuery({
-          queryKey: ['dashboard-my-campaigns'],
-          queryFn: async () => (await api.get('/records/campaigns/my-campaigns')).data?.campaigns || [],
+          queryKey: ['my-campaigns-list'],
+          queryFn: async () => {
+            const res = await api.get('/records/campaigns/my-campaigns');
+            const data = res.data?.campaigns || res.data;
+            return Array.isArray(data) ? data : [];
+          },
           staleTime: 60000
         });
       } else if (to === '/modules/leads/new') {
