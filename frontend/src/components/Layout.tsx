@@ -336,7 +336,12 @@ export default function Layout({ children }: LayoutProps) {
                 const IconComp = (Icons as any)[st.icon] || Icons.Circle;
                 const statusTokens = getStatusTokens(st);
                 const upperName = (st.name || '').toUpperCase();
-                const count = metricsData?.statusCounts?.[upperName] || metricsData?.statusCounts?.[st.name];
+                let count = metricsData?.statusCounts?.[upperName] ?? metricsData?.statusCounts?.[st.name];
+                if (count === undefined) {
+                  if (upperName.includes('HOT')) count = metricsData?.statusCounts?.['HOT LEADS'];
+                  else if (upperName.includes('WARM')) count = metricsData?.statusCounts?.['WARM LEADS'];
+                }
+                const numCount = Number(count || 0);
                 return (
                   <SidebarItem 
                     key={st._id || st.name}
@@ -345,7 +350,7 @@ export default function Layout({ children }: LayoutProps) {
                     icon={IconComp} 
                     colorClass={statusTokens.iconTextClass}
                     indent 
-                    badge={count > 0 ? count : undefined}
+                    badge={numCount > 0 ? numCount : undefined}
                     isCollapsed={collapsed}
                   />
                 );

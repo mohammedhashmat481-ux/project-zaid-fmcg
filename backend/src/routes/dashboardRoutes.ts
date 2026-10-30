@@ -181,14 +181,35 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
 
       const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\s*WORLDWIDE)$/i;
 
+      const canonicalizeStatus = (st: string): string => {
+        const u = st.trim().toUpperCase();
+        if (u === 'HOT' || u === 'HOT LEAD' || u === 'HOT LEADS') return 'HOT LEADS';
+        if (u === 'WARM' || u === 'WARM LEAD' || u === 'WARM LEADS') return 'WARM LEADS';
+        if (u.includes('CEBIL') || u.includes('CEDIL')) return 'CEBIL PENDING';
+        if (u.includes('DOCUMENT') || u === 'DOC PENDING' || u === 'DOCUMENTS PENDING') return 'DOCUMENT PENDING';
+        if (u.includes('APPROVAL') && !u.includes('APPROVED')) return 'APPROVAL PENDING';
+        if (u.includes('APPROVED') && (u.includes('DISBU') || u.includes('NOT'))) return 'APPROVED BUT NOT DISBUSE';
+        if (u === 'DISBUSED' || u === 'DISBURSED') return 'DISBUSED';
+        if (u === 'REJECT' || u === 'REJECTED') return 'REJECTED';
+        if (u.includes('FOLLOW')) return 'FOLLOWUP';
+        if (u === 'DROP' || u === 'DROPPED' || u === 'NOT INTERESTED') return 'DROPPED';
+        if (u === 'PENDING' || u.includes('INKWORLDWIDE')) return 'PENDING';
+        return u;
+      };
+
       let totalPipelineLeads = 0;
       leadAgg.forEach((item: any) => {
         if (item._id) {
           const rawName = item._id.toString().trim();
           const upper = rawName.toUpperCase();
+          const canonical = canonicalizeStatus(rawName);
           const count = Number(item.count || 0);
-          statusCounts[upper] = (statusCounts[upper] || 0) + count;
-          if (rawName !== upper) {
+
+          statusCounts[canonical] = (statusCounts[canonical] || 0) + count;
+          if (upper !== canonical) {
+            statusCounts[upper] = (statusCounts[upper] || 0) + count;
+          }
+          if (rawName !== upper && rawName !== canonical) {
             statusCounts[rawName] = count;
           }
           if (pipelineRegex.test(upper)) {

@@ -232,8 +232,9 @@ export default function MyCampaign() {
       const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
 
       try {
+        const normalizedStatus = newStatus === 'Hot Lead' ? 'HOT LEADS' : (newStatus === 'Warm Lead' ? 'WARM LEADS' : newStatus);
         const payload = {
-          status: newStatus,
+          status: normalizedStatus,
           dialStatus: newStatus,
           dialedAt: new Date(),
           callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
@@ -266,7 +267,7 @@ export default function MyCampaign() {
             company: lead.data?.company || lead.data?.firm_name || lead.data?.firmName || '',
             city: lead.data?.city || lead.data?.location || '',
             dataCode: lead.data?.dataCode || lead.data?.data_code || '',
-            status: newStatus.toUpperCase().includes('HOT') ? 'HOT LEAD' : 'WARM LEAD',
+            status: newStatus.toUpperCase().includes('HOT') ? 'HOT LEADS' : 'WARM LEADS',
             notes: currentRemarks,
             caseDetails: currentCaseDetails,
             leadCategory: currentLeadCategory,

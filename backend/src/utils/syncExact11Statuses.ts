@@ -36,11 +36,17 @@ async function main() {
   // 2. Map existing lead records to match these exact 11 statuses
   const statusMapping: Record<string, string> = {
     'Hot': 'HOT LEADS',
+    'Hot Lead': 'HOT LEADS',
     'Hot Leads': 'HOT LEADS',
     'HOT': 'HOT LEADS',
+    'HOT LEAD': 'HOT LEADS',
+    'HOT LEADS': 'HOT LEADS',
     'Warm': 'WARM LEADS',
+    'Warm Lead': 'WARM LEADS',
     'Warm Leads': 'WARM LEADS',
     'WARM': 'WARM LEADS',
+    'WARM LEAD': 'WARM LEADS',
+    'WARM LEADS': 'WARM LEADS',
     'Cedil Pending': 'CEBIL PENDING',
     'CEDIL PENDING': 'CEBIL PENDING',
     'Cebil Pending': 'CEBIL PENDING',
