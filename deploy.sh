@@ -49,6 +49,14 @@ echo "Building React frontend production package..."
 npx vite build
 cd ..
 
+# Auto-sync built frontend to Nginx root locations if configured elsewhere
+for web_root in "/var/www/inkcrm/frontend/dist" "/var/www/inkCRM/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist" "/usr/share/nginx/html"; do
+  if [ -d "$web_root" ] && [ "$web_root" != "$(pwd)/frontend/dist" ]; then
+    echo "Syncing frontend dist to $web_root..."
+    cp -r frontend/dist/* "$web_root/" || true
+  fi
+done
+
 # 5. Verify build success and run pre-deployment checks
 echo "Running Pre-deployment Validation Checks..."
 node predeploy.js

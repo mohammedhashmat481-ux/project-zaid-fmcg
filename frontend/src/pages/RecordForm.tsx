@@ -317,6 +317,12 @@ export default function RecordForm() {
       // SOURCE is PERMANENTLY fixed to the user who creates the lead!
       if (apiPath === 'leads') {
         finalDefaults['source'] = loggedInCreatorName;
+        // Brand new lead creation MUST NOT inherit call attempts or dial timestamps!
+        if (!id) {
+          delete finalDefaults.dialedAt;
+          delete finalDefaults.callAttempts;
+          finalDefaults.dialStatus = 'Yet To Call';
+        }
       }
       
       reset(finalDefaults);

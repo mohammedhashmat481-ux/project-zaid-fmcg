@@ -1282,6 +1282,15 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
         recordData.source = creatorName;
       }
       recordData.creatorName = recordData.source;
+
+      // Brand new lead creation must start with 0 calls and Yet To Call unless explicitly dialed
+      if (recordData.callAttempts === undefined || !recordData.dialedAt) {
+        recordData.callAttempts = 0;
+        delete recordData.dialedAt;
+        if (!recordData.dialStatus) {
+          recordData.dialStatus = 'Yet To Call';
+        }
+      }
     }
 
     // Check RBAC permissions

@@ -202,7 +202,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       let rawDate: any = null;
 
       if (metricType === 'callsMade' || metricType === 'leadsCalled') {
-        rawDate = d.dialedAt || lead.updatedAt || lead.createdAt;
+        rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
       } else if (metricType === 'hotLeads') {
         rawDate = d.hotDate || lead.updatedAt || lead.createdAt;
       } else if (metricType === 'logins') {
@@ -212,26 +212,39 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       } else if (metricType === 'disbursed') {
         rawDate = d.disbursalDate || lead.updatedAt || lead.createdAt;
       } else {
-        rawDate = d.dialedAt || lead.updatedAt || lead.createdAt;
+        rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
       }
 
       if (!rawDate) return null;
       const dateObj = new Date(rawDate);
       if (isNaN(dateObj.getTime())) return null;
 
-      // Guard against future timestamps due to clock skew or future scheduled dates
-      const nowMs = Date.now();
-      const eventMs = Math.min(dateObj.getTime(), nowMs);
+      // Cap at current time to never project events into future days beyond today (IST)
+      const now = new Date();
+      const validDateObj = dateObj.getTime() > now.getTime() ? now : dateObj;
 
-      // Convert to Indian Standard Time (UTC + 5:30)
-      const istMs = eventMs + (5.5 * 60 * 60 * 1000);
-      const ist = new Date(istMs);
-
-      return {
-        day: ist.getUTCDate(), // 1 to 31
-        month: ist.getUTCMonth(), // 0 to 11
-        year: ist.getUTCFullYear()
-      };
+      try {
+        const istFormatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const parts = istFormatter.format(validDateObj).split('-');
+        return {
+          year: parseInt(parts[0], 10),
+          month: parseInt(parts[1], 10) - 1, // 0 to 11
+          day: parseInt(parts[2], 10) // 1 to 31
+        };
+      } catch (_) {
+        const istMs = validDateObj.getTime() + (5.5 * 60 * 60 * 1000);
+        const ist = new Date(istMs);
+        return {
+          day: ist.getUTCDate(),
+          month: ist.getUTCMonth(),
+          year: ist.getUTCFullYear()
+        };
+      }
     };
 
     // Helper to check if lead matches a metric
