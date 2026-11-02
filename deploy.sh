@@ -10,9 +10,12 @@ echo " Time: $(date)"
 echo " Memory Limit: $NODE_OPTIONS"
 echo "========================================================="
 
-# 1. Pull latest code
-echo "Checking git status..."
-git status
+# 1. Pull latest code from origin main with hard reset to prevent merge blocks
+echo "Fetching and syncing latest code from origin main..."
+git fetch origin main || true
+git reset --hard origin/main || git pull origin main || true
+CURRENT_COMMIT=$(git rev-parse --short HEAD)
+echo "Deploying commit: $CURRENT_COMMIT - $(git log -1 --pretty=%B | head -n 1)"
 
 # 2. Verify environment files exist
 if [ ! -f "backend/.env" ]; then
@@ -91,10 +94,13 @@ pm2 start ecosystem.config.cjs --env production
 # Save PM2 process list to persist across OS reboots
 pm2 save
 
-# 8. Reload Nginx web server automatically
-echo "Reloading Nginx web server..."
+# 8. Clear Nginx cache and reload Nginx web server automatically
+echo "Clearing web cache and reloading Nginx web server..."
+rm -rf /var/cache/nginx/* 2>/dev/null || true
 systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
 
 echo "========================================================="
 echo " inkCRM Production Deployment Completed Successfully! 🎉"
+echo " Deployed Commit: $CURRENT_COMMIT"
+echo " Time: $(date)"
 echo "========================================================="
