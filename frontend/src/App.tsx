@@ -1,6 +1,8 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useThemeStore } from './store/themeStore';
+import { updateAppFavicon } from './utils/favicon';
 
 // Layout shell
 import Layout from './components/Layout';
@@ -81,9 +83,12 @@ function DashboardGuard() {
 }
 
 export default function App() {
+  const branding = useThemeStore((s) => s.branding);
+
   React.useEffect(() => {
     document.title = 'novaleadnexa';
-  }, []);
+    updateAppFavicon(branding?.logoUrl || branding?.faviconUrl);
+  }, [branding?.logoUrl, branding?.faviconUrl]);
 
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

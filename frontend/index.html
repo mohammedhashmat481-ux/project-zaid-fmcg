@@ -3,6 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="shortcut icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <script>
+      (function() {
+        try {
+          var cachedLogo = localStorage.getItem('tenantLogoUrl');
+          if (cachedLogo) {
+            var links = document.querySelectorAll("link[rel*='icon']");
+            for (var i = 0; i < links.length; i++) {
+              links[i].href = cachedLogo;
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FAFAF9" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0F19" media="(prefers-color-scheme: dark)" />

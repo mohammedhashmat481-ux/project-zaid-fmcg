@@ -432,7 +432,7 @@ export default function Login() {
         <div className="flex items-center justify-center mb-8">
           <img 
             src={resolveFileUrl(branding?.logoUrl) || loginLogo} 
-            alt={branding?.name || "inkCRM"} 
+            alt={branding?.name || "novaleadnexa"} 
             className="h-16 md:h-20 w-auto max-w-[240px] object-contain" 
             onError={(e) => {
               e.currentTarget.src = loginLogo;

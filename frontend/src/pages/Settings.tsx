@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useThemeStore, ThemeSettings } from '../store/themeStore';
 import { useModuleStore, FieldDefinition } from '../store/moduleStore';
 import api, { FILE_BASE_URL, resolveFileUrl } from '../services/api';
+import { updateAppFavicon } from '../utils/favicon';
 import * as Icons from 'lucide-react';
 import FaceEnrollment from '../components/FaceEnrollment';
 import { useAuthStore } from '../store/authStore';
@@ -432,6 +433,7 @@ export default function Settings() {
       await api.put('/tenants/branding', {
         name: companyName,
         logoUrl,
+        faviconUrl: logoUrl,
         themeSettings,
 
         companyCode,
@@ -463,6 +465,7 @@ export default function Settings() {
       });
 
       await fetchBranding();
+      updateAppFavicon(logoUrl);
       showAlertModal({
         title: 'Saved Successfully',
         message: 'Company settings and branding configuration have been saved successfully.',

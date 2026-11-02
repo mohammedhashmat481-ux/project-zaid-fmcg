@@ -1,10 +1,19 @@
 import { create } from 'zustand';
 import api from '../services/api';
 import { applyBrandScaleToDOM } from '../utils/themeGenerator';
+import { updateAppFavicon } from '../utils/favicon';
 
-// Apply brand scale immediately on script load to eliminate any styling flash
+// Apply brand scale and cached favicon immediately on script load to eliminate any styling/branding flash
 if (typeof document !== 'undefined') {
   applyBrandScaleToDOM();
+  try {
+    const cachedLogo = localStorage.getItem('tenantLogoUrl');
+    if (cachedLogo) {
+      updateAppFavicon(cachedLogo);
+    }
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 export interface ThemeSettings {
@@ -84,6 +93,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       localStorage.setItem('tenantSubdomain', branding.subdomain);
       
       get().applyTheme(branding.themeSettings);
+      if (typeof document !== 'undefined') {
+        updateAppFavicon(branding.logoUrl || branding.faviconUrl);
+      }
       return branding;
     } catch (err) {
       console.error('Failed to load branding:', err);

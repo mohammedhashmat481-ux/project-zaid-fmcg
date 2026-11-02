@@ -501,7 +501,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
             <div className="hidden sm:flex flex-col text-left min-w-0">
               <span className="text-[15.5px] font-extrabold text-white tracking-[-0.015em] leading-tight line-clamp-1 group-hover:text-white/95 transition-colors">
-                {branding?.name || 'inkSales Enterprises'}
+                {branding?.name || 'novaleadnexa'}
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)] flex-shrink-0" />
@@ -796,7 +796,7 @@ export default function Layout({ children }: LayoutProps) {
                       <img src={resolveFileUrl(branding?.logoUrl) || loginLogo} alt="Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]" />
                     </div>
                     <div className="flex flex-col text-left min-w-0">
-                      <span className="text-sm font-extrabold truncate text-white leading-tight">{branding?.name || 'inkSales Enterprises'}</span>
+                      <span className="text-sm font-extrabold truncate text-white leading-tight">{branding?.name || 'novaleadnexa'}</span>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)] flex-shrink-0" />
                         <span className="text-[9.5px] font-bold text-sky-300 tracking-wider uppercase">Loan & Lending CRM</span>
