@@ -106,9 +106,28 @@ export default function MyCampaign() {
   // Track inputs for each lead ID
   const [leadStates, setLeadStates] = useState<Record<string, LeadState>>({});
 
-  // Pagination states for instant rendering without DOM freezing
+  // Pagination states - defaults to 10 for instant loading & snappy telecalling
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [serverTotalLeads, setServerTotalLeads] = useState<number>(0);
+  const [serverTotalPages, setServerTotalPages] = useState<number>(1);
+  const [campaignStats, setCampaignStats] = useState<{ totalAllocated: number; dialed: number; yetToDial: number }>({
+    totalAllocated: 0,
+    dialed: 0,
+    yetToDial: 0
+  });
+
+  // Campaign list pagination (10 campaigns per page)
+  const [campaignPage, setCampaignPage] = useState<number>(1);
+  const CAMPAIGNS_PER_PAGE = 10;
+
+  // In-memory cache for instant page flipping & background prefetching
+  const pageCacheRef = React.useRef<Record<string, {
+    leads: LeadRecord[];
+    total: number;
+    totalPages: number;
+    stats: { totalAllocated: number; dialed: number; yetToDial: number };
+  }>>({});
 
   // Modal & Navigation States for Lead Save Confirmation
   const [saveSuccessModal, setSaveSuccessModal] = useState<SaveSuccessModalData | null>(null);
@@ -132,26 +151,113 @@ export default function MyCampaign() {
     return `${clean.slice(0, prefixLen)}${'*'.repeat(Math.max(4, clean.length - prefixLen))}`;
   };
 
-  // Fetch lead details for active campaign (optimized with projection)
-  const fetchLeadDetails = async (campaignName: string) => {
+  // Fetch lead details for active campaign with instant pagination & background prefetching
+  const fetchLeadDetails = async (
+    campaignName: string,
+    targetPage: number = 1,
+    targetLimit: number = pageSize,
+    targetTab: 'yetToDial' | 'dialed' | 'all' = filterTab,
+    targetSearch: string = searchQuery,
+    isSilent: boolean = false
+  ) => {
+    const cacheKey = `${campaignName}:${targetTab}:${targetSearch.trim()}:${targetLimit}:${targetPage}`;
+    if (pageCacheRef.current[cacheKey]) {
+      const cached = pageCacheRef.current[cacheKey];
+      setLeads(cached.leads);
+      setServerTotalLeads(cached.total);
+      setServerTotalPages(cached.totalPages);
+      setCampaignStats(cached.stats);
+      setCurrentPage(targetPage);
+      if (!isSilent) setLoadingLeads(false);
+      return;
+    }
+
+    if (!isSilent) setLoadingLeads(true);
+
     try {
-      setLoadingLeads(true);
-      setCurrentPage(1);
-      setLeadStates({}); // Reset modified states
-      const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`);
-      setLeads(res.data.leads || []);
+      const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`, {
+        params: {
+          page: targetPage,
+          limit: targetLimit,
+          tab: targetTab,
+          search: targetSearch.trim() || undefined
+        }
+      });
+
+      const fetchedLeads = res.data.leads || [];
+      const total = typeof res.data.total === 'number' ? res.data.total : fetchedLeads.length;
+      const totalPages = typeof res.data.totalPages === 'number' ? res.data.totalPages : Math.max(1, Math.ceil(total / targetLimit));
+      const stats = {
+        totalAllocated: res.data.totalAllocated ?? activeCampaign?.totalAssigned ?? total,
+        dialed: res.data.dialed ?? activeCampaign?.dialed ?? 0,
+        yetToDial: res.data.yetToDial ?? activeCampaign?.yetToDial ?? Math.max(0, total - (res.data.dialed || 0))
+      };
+
+      setLeads(fetchedLeads);
+      setServerTotalLeads(total);
+      setServerTotalPages(totalPages);
+      setCampaignStats(stats);
+      setCurrentPage(targetPage);
+
+      // Save to fast in-memory cache
+      pageCacheRef.current[cacheKey] = {
+        leads: fetchedLeads,
+        total,
+        totalPages,
+        stats
+      };
+
+      // Trigger background prefetching for the next page so clicking 'Next' is instant
+      if (targetPage < totalPages) {
+        const nextKey = `${campaignName}:${targetTab}:${targetSearch.trim()}:${targetLimit}:${targetPage + 1}`;
+        if (!pageCacheRef.current[nextKey]) {
+          setTimeout(async () => {
+            try {
+              const bgRes = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`, {
+                params: {
+                  page: targetPage + 1,
+                  limit: targetLimit,
+                  tab: targetTab,
+                  search: targetSearch.trim() || undefined
+                }
+              });
+              if (bgRes.data?.leads) {
+                pageCacheRef.current[nextKey] = {
+                  leads: bgRes.data.leads,
+                  total: bgRes.data.total ?? bgRes.data.leads.length,
+                  totalPages: bgRes.data.totalPages ?? totalPages,
+                  stats
+                };
+              }
+            } catch (e) {
+              // Ignore background prefetch errors
+            }
+          }, 300);
+        }
+      }
     } catch (err: any) {
       console.error(err);
       showToast('Failed to load campaign leads.', 'error');
     } finally {
-      setLoadingLeads(false);
+      if (!isSilent) setLoadingLeads(false);
     }
   };
 
   const handleViewDetails = (campaign: CampaignStats) => {
     setActiveCampaign(campaign);
+    setCampaignStats({
+      totalAllocated: campaign.totalAssigned,
+      dialed: campaign.dialed,
+      yetToDial: campaign.yetToDial
+    });
+    setServerTotalLeads(campaign.yetToDial);
+    setServerTotalPages(Math.max(1, Math.ceil(campaign.yetToDial / 10)));
     setCurrentPage(1);
-    fetchLeadDetails(campaign.campaignName);
+    setPageSize(10);
+    setFilterTab('yetToDial');
+    setSearchQuery('');
+    setLeadStates({});
+    fetchLeadDetails(campaign.campaignName, 1, 10, 'yetToDial', '');
   };
 
   const handleBack = () => {
@@ -159,18 +265,48 @@ export default function MyCampaign() {
     setLeads([]);
     setLeadStates({});
     setCurrentPage(1);
+    pageCacheRef.current = {};
     refetchCampaigns();
   };
 
-  const handleDownloadCampaign = async (campaignName: string, campaignLeads?: LeadRecord[]) => {
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > serverTotalPages || newPage === currentPage) return;
+    setCurrentPage(newPage);
+    if (activeCampaign) {
+      fetchLeadDetails(activeCampaign.campaignName, newPage, pageSize, filterTab, searchQuery);
+    }
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+    if (activeCampaign) {
+      fetchLeadDetails(activeCampaign.campaignName, 1, newSize, filterTab, searchQuery);
+    }
+  };
+
+  const handleTabChange = (newTab: 'yetToDial' | 'dialed' | 'all') => {
+    if (filterTab === newTab) return;
+    setFilterTab(newTab);
+    setCurrentPage(1);
+    if (activeCampaign) {
+      fetchLeadDetails(activeCampaign.campaignName, 1, pageSize, newTab, searchQuery);
+    }
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+    if (activeCampaign) {
+      fetchLeadDetails(activeCampaign.campaignName, 1, pageSize, filterTab, query);
+    }
+  };
+
+  const handleDownloadCampaign = async (campaignName: string) => {
     try {
       showToast('Exporting campaign CSV report...', 'info');
-      let targetLeads = campaignLeads && campaignLeads.length > 0 ? campaignLeads : undefined;
-      
-      if (!targetLeads) {
-        const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`);
-        targetLeads = res.data.leads || [];
-      }
+      const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}?all=true`);
+      const targetLeads: LeadRecord[] = res.data.leads || [];
 
       if (!targetLeads || targetLeads.length === 0) {
         showToast('No leads available to export.', 'warning');
@@ -329,58 +465,29 @@ export default function MyCampaign() {
     return Boolean(isDialedStatus || hasCalls);
   };
 
-  const totalAllocatedCount = leads.length > 0 ? leads.length : (activeCampaign?.totalAssigned || 0);
-  const dialedCount = leads.length > 0 ? leads.filter(l => isLeadDialed(l)).length : (activeCampaign?.dialed || 0);
-  const yetToDialCount = Math.max(0, totalAllocatedCount - dialedCount);
+  const totalAllocatedCount = campaignStats.totalAllocated || (activeCampaign?.totalAssigned || 0);
+  const dialedCount = campaignStats.dialed || (activeCampaign?.dialed || 0);
+  const yetToDialCount = campaignStats.yetToDial || Math.max(0, totalAllocatedCount - dialedCount);
 
-  const filteredLeads = React.useMemo(() => {
-    if (!leads || leads.length === 0) return [];
-    return leads.filter(lead => {
-      const isDialed = isLeadDialed(lead);
-      
-      if (filterTab === 'yetToDial' && isDialed) return false;
-      if (filterTab === 'dialed' && !isDialed) return false;
-      
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''} ${lead.data?.customerName || ''} ${lead.data?.customer || ''}`.toLowerCase();
-        const firm = (lead.data?.company || lead.data?.firmName || lead.data?.firm_name || '').toLowerCase();
-        const dataCode = (lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '').toLowerCase();
-        const phone = (lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '').toLowerCase();
-        const location = (lead.data?.city || lead.data?.location || '').toLowerCase();
-        const remarks = (leadStates[lead._id]?.remarks || lead.data?.notes || '').toLowerCase();
-        const caseDetails = (leadStates[lead._id]?.caseDetails || lead.data?.caseDetails || '').toLowerCase();
-        const leadCat = (leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.loanType || '').toLowerCase();
-        
-        return customer.includes(q) || firm.includes(q) || dataCode.includes(q) || phone.includes(q) || location.includes(q) || remarks.includes(q) || caseDetails.includes(q) || leadCat.includes(q);
-      }
-      
-      return true;
-    });
-  }, [leads, leadStates, filterTab, searchQuery]);
-
-  // Instant pagination: slices data for instantaneous DOM rendering (<10ms)
-  const totalPages = Math.ceil(filteredLeads.length / pageSize) || 1;
+  // Since backend filters and paginates, filteredLeads and paginatedLeads are the current page's leads
+  const filteredLeads = leads;
+  const paginatedLeads = leads;
+  const totalPages = serverTotalPages || Math.max(1, Math.ceil(serverTotalLeads / pageSize));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
   const startIndex = (safeCurrentPage - 1) * pageSize;
-  const paginatedLeads = filteredLeads.slice(startIndex, startIndex + pageSize);
 
   const handleGoToNextLead = (targetNextId?: string) => {
     const nextId = targetNextId || saveSuccessModal?.nextLeadId;
     setSaveSuccessModal(null);
 
     if (!nextId) {
+      if (currentPage < totalPages && activeCampaign) {
+        showToast('Advancing to next page...', 'info');
+        handlePageChange(currentPage + 1);
+        return;
+      }
       showToast('You have reached the last lead in this list!', 'info');
       return;
-    }
-
-    // Calculate target page if next lead is on another page
-    const nextIndex = filteredLeads.findIndex(l => l._id === nextId);
-    if (nextIndex !== -1) {
-      const targetPage = Math.floor(nextIndex / pageSize) + 1;
-      if (targetPage !== currentPage) {
-        setCurrentPage(targetPage);
-      }
     }
 
     // Set highlight ring
@@ -418,7 +525,7 @@ export default function MyCampaign() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [saveSuccessModal, filteredLeads, pageSize, currentPage]);
+  }, [saveSuccessModal, filteredLeads, pageSize, currentPage, totalPages]);
 
   const handleSaveLead = async (leadId: string) => {
     try {
@@ -431,11 +538,12 @@ export default function MyCampaign() {
       const currentCaseDetails = state?.caseDetails ?? (lead.data?.caseDetails || '');
       const currentLeadCategory = state?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
 
-      const currentIndex = filteredLeads.findIndex(l => l._id === leadId);
-      const slNo = currentIndex >= 0 ? currentIndex + 1 : 1;
-      const nextLead = currentIndex >= 0 && currentIndex + 1 < filteredLeads.length ? filteredLeads[currentIndex + 1] : null;
+      const currentIndex = leads.findIndex(l => l._id === leadId);
+      const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
+      const nextLead = currentIndex >= 0 && currentIndex + 1 < leads.length ? leads[currentIndex + 1] : null;
       const nextLeadId = nextLead?._id;
-      const nextSlNo = nextLead ? currentIndex + 2 : undefined;
+      const nextSlNo = nextLead ? slNo + 1 : (currentPage < totalPages ? slNo + 1 : undefined);
+      const hasNext = Boolean(nextLead) || currentPage < totalPages;
 
       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : 'N/A');
 
@@ -451,8 +559,18 @@ export default function MyCampaign() {
 
       await api.put(`/records/leads/${leadId}`, payload);
 
-      // Update lead in memory so counts & UI update immediately without re-fetching 3,000 leads
+      // Update lead in memory so counts & UI update immediately
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
+
+      // Update in-memory counts if lead was marked dialed
+      const isNowDialed = currentStatus && currentStatus !== 'Yet To Call' && currentStatus !== 'Not Called';
+      if (isNowDialed && !isLeadDialed(lead)) {
+        setCampaignStats(prev => ({
+          ...prev,
+          dialed: prev.dialed + 1,
+          yetToDial: Math.max(0, prev.yetToDial - 1)
+        }));
+      }
 
       // Open proper popup matching user's exact design
       setSaveSuccessModal({
@@ -462,8 +580,11 @@ export default function MyCampaign() {
         dataCode,
         nextLeadId,
         nextSlNo,
-        hasNext: Boolean(nextLead)
+        hasNext
       });
+
+      // Clear cache so future tab visits reflect saved status
+      pageCacheRef.current = {};
 
       // Refresh campaigns listing in background
       refetchCampaigns().then(res => {
@@ -542,6 +663,9 @@ export default function MyCampaign() {
               ? c.campaignName.toLowerCase().includes(searchQuery.trim().toLowerCase())
               : false
           );
+          const totalCampaignPages = Math.ceil(filteredCampaigns.length / CAMPAIGNS_PER_PAGE) || 1;
+          const safeCampaignPage = Math.min(Math.max(1, campaignPage), totalCampaignPages);
+          const paginatedCampaigns = filteredCampaigns.slice((safeCampaignPage - 1) * CAMPAIGNS_PER_PAGE, safeCampaignPage * CAMPAIGNS_PER_PAGE);
 
           return (
             <div className="space-y-4">
@@ -640,7 +764,7 @@ export default function MyCampaign() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredCampaigns.map((campaign) => {
+                  {paginatedCampaigns.map((campaign) => {
                     const pct = campaign.totalAssigned > 0 
                       ? Math.round((campaign.dialed / campaign.totalAssigned) * 100)
                       : 0;
@@ -744,6 +868,41 @@ export default function MyCampaign() {
                   })}
                 </div>
               )}
+
+              {/* Campaigns List Pagination (10 per page) */}
+              {filteredCampaigns.length > CAMPAIGNS_PER_PAGE && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 rounded-xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+                  <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Showing <span className="font-bold text-slate-800 dark:text-slate-200">{(safeCampaignPage - 1) * CAMPAIGNS_PER_PAGE + 1}</span> to{' '}
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {Math.min(safeCampaignPage * CAMPAIGNS_PER_PAGE, filteredCampaigns.length)}
+                    </span>{' '}
+                    of <span className="font-bold text-indigo-600 dark:text-indigo-400">{filteredCampaigns.length}</span> campaigns
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setCampaignPage(prev => Math.max(1, prev - 1))}
+                      disabled={safeCampaignPage === 1}
+                      className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Icons.ChevronLeft className="w-4 h-4" />
+                      <span>Prev</span>
+                    </button>
+                    <span className="px-3 text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Page <strong className="text-indigo-600 dark:text-indigo-400 font-black">{safeCampaignPage}</strong> of{' '}
+                      <strong>{totalCampaignPages}</strong>
+                    </span>
+                    <button
+                      onClick={() => setCampaignPage(prev => Math.min(totalCampaignPages, prev + 1))}
+                      disabled={safeCampaignPage === totalCampaignPages}
+                      className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Next</span>
+                      <Icons.ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()
@@ -803,7 +962,7 @@ export default function MyCampaign() {
               </div>
 
               <button
-                onClick={() => handleDownloadCampaign(activeCampaign.campaignName, leads)}
+                onClick={() => handleDownloadCampaign(activeCampaign.campaignName)}
                 className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase tracking-wider active:scale-95"
               >
                 <Icons.Download className="w-3.5 h-3.5" />
@@ -836,7 +995,7 @@ export default function MyCampaign() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {/* 1. TOTAL YET TO DIAL */}
                   <div 
-                    onClick={() => { setFilterTab('yetToDial'); setCurrentPage(1); }}
+                    onClick={() => handleTabChange('yetToDial')}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'yetToDial'
                         ? 'bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-400 dark:border-amber-500 shadow-xs'
@@ -865,7 +1024,7 @@ export default function MyCampaign() {
 
                   {/* 2. TOTAL DIALED */}
                   <div 
-                    onClick={() => { setFilterTab('dialed'); setCurrentPage(1); }}
+                    onClick={() => handleTabChange('dialed')}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'dialed'
                         ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-2 border-emerald-400 dark:border-emerald-500 shadow-xs'
@@ -894,7 +1053,7 @@ export default function MyCampaign() {
 
                   {/* 3. TOTAL ALLOCATED */}
                   <div 
-                    onClick={() => { setFilterTab('all'); setCurrentPage(1); }}
+                    onClick={() => handleTabChange('all')}
                     className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'all'
                         ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-2 border-indigo-400 dark:border-indigo-500 shadow-xs'
@@ -930,19 +1089,13 @@ export default function MyCampaign() {
                     <input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setCurrentPage(1);
-                      }}
+                      onChange={(e) => handleSearchChange(e.target.value)}
                       placeholder="Search leads by customer, firm, data code, mobile..."
                       className="w-full h-11 pl-10 pr-9 text-xs sm:text-sm bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                     />
                     {searchQuery && (
                       <button
-                        onClick={() => {
-                          setSearchQuery('');
-                          setCurrentPage(1);
-                        }}
+                        onClick={() => handleSearchChange('')}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
                         title="Clear search"
                       >
@@ -954,7 +1107,7 @@ export default function MyCampaign() {
                   {/* Filter Tabs */}
                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
                     <button
-                      onClick={() => { setFilterTab('yetToDial'); setCurrentPage(1); }}
+                      onClick={() => handleTabChange('yetToDial')}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'yetToDial'
                           ? 'bg-amber-500 text-white shadow-xs'
@@ -971,7 +1124,7 @@ export default function MyCampaign() {
                     </button>
 
                     <button
-                      onClick={() => { setFilterTab('dialed'); setCurrentPage(1); }}
+                      onClick={() => handleTabChange('dialed')}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'dialed'
                           ? 'bg-emerald-600 text-white shadow-xs'
@@ -988,7 +1141,7 @@ export default function MyCampaign() {
                     </button>
 
                     <button
-                      onClick={() => { setFilterTab('all'); setCurrentPage(1); }}
+                      onClick={() => handleTabChange('all')}
                       className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                         filterTab === 'all'
                           ? 'bg-indigo-600 text-white shadow-xs'
@@ -1352,15 +1505,15 @@ export default function MyCampaign() {
                 )}
 
                 {/* BOTTOM PAGINATION CONTROLS BAR */}
-                {filteredLeads.length > 0 && (
+                {(filteredLeads.length > 0 || serverTotalLeads > 0) && (
                   <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 px-5 py-3.5 rounded-2xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
                     {/* Left: Summary text */}
                     <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      Showing <span className="font-bold text-slate-800 dark:text-slate-200">{startIndex + 1}</span> to{' '}
+                      Showing <span className="font-bold text-slate-800 dark:text-slate-200">{leads.length > 0 ? startIndex + 1 : 0}</span> to{' '}
                       <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {Math.min(startIndex + pageSize, filteredLeads.length)}
+                        {Math.min(startIndex + leads.length, serverTotalLeads || leads.length)}
                       </span>{' '}
-                      of <span className="font-bold text-indigo-600 dark:text-indigo-400">{filteredLeads.length}</span> leads
+                      of <span className="font-bold text-indigo-600 dark:text-indigo-400">{serverTotalLeads || leads.length}</span> leads
                     </div>
 
                     {/* Center: Per Page selector */}
@@ -1368,55 +1521,52 @@ export default function MyCampaign() {
                       <span>Rows per page:</span>
                       <select
                         value={pageSize}
-                        onChange={(e) => {
-                          setPageSize(Number(e.target.value));
-                          setCurrentPage(1);
-                        }}
+                        onChange={(e) => handlePageSizeChange(Number(e.target.value))}
                         className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
                       >
+                        <option value={10}>10</option>
                         <option value={25}>25</option>
                         <option value={50}>50</option>
                         <option value={100}>100</option>
-                        <option value={200}>200</option>
                       </select>
                     </div>
 
                     {/* Right: Page navigation buttons */}
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => setCurrentPage(1)}
-                        disabled={safeCurrentPage === 1}
-                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        onClick={() => handlePageChange(1)}
+                        disabled={currentPage === 1}
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
                         title="First Page"
                       >
                         <Icons.ChevronsLeft className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                        disabled={safeCurrentPage === 1}
-                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <Icons.ChevronLeft className="w-4 h-4" />
                         <span>Prev</span>
                       </button>
 
                       <span className="px-3 text-xs font-bold text-slate-700 dark:text-slate-200">
-                        Page <strong className="text-indigo-600 dark:text-indigo-400 font-black">{safeCurrentPage}</strong> of{' '}
+                        Page <strong className="text-indigo-600 dark:text-indigo-400 font-black">{currentPage}</strong> of{' '}
                         <strong>{totalPages}</strong>
                       </span>
 
                       <button
-                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={safeCurrentPage === totalPages}
-                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage >= totalPages}
+                        className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <span>Next</span>
                         <Icons.ChevronRight className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => setCurrentPage(totalPages)}
-                        disabled={safeCurrentPage === totalPages}
-                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1"
+                        onClick={() => handlePageChange(totalPages)}
+                        disabled={currentPage >= totalPages}
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1 cursor-pointer"
                         title="Last Page"
                       >
                         <Icons.ChevronsRight className="w-4 h-4" />
