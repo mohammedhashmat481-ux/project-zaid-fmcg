@@ -63,13 +63,13 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     const slNo = idx + 1;
     const createdDate = formatDateShort(lead.createdAt || data.createdAt || data.createddate);
 
-    // Guaranteed distinct data code for each record
-    const dataCode = String(
-      data.dataCode ||
-      data.data_code ||
-      data.code ||
-      `DC-${String(lead.id || lead._id || (idx + 101)).slice(-6).toUpperCase()}`
-    ).trim();
+    // Guaranteed distinct data code from campaign assignment
+    const campName = data.campaignName || data.campaign || (data.source && data.source.includes('DEMO') ? data.source : '');
+    const cleanCamp = campName ? String(campName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-') : '';
+    const rawDc = String(data.dataCode || data.data_code || data.code || '').trim();
+    const dataCode = (rawDc && !rawDc.startsWith('DC-') && !rawDc.startsWith('LND-'))
+      ? rawDc
+      : (cleanCamp ? `${cleanCamp}-DATA-${idx + 1}` : 'N/A');
 
     const location = String(data.location || data.city || data.presentAddress || 'N/A').trim();
 

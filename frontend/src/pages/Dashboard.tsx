@@ -836,7 +836,10 @@ export default function Dashboard() {
             }
 
             return activeList.map((rec: any, idx: number) => {
-              const leadNo = rec._id.slice(-6).toUpperCase();
+              const leadSerial = idx + 1;
+              const leadNo = rec.data?.leadNo || rec.data?.leadNumber
+                ? String(rec.data.leadNo || rec.data.leadNumber).padStart(2, '0')
+                : String(leadSerial).padStart(2, '0');
               const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || rec.data?.leadName || 'N/A';
               const leadLocation = rec.data?.location || [rec.data?.city, rec.data?.state].filter(Boolean).join(', ') || rec.data?.city || rec.data?.presentAddress || rec.data?.address || 'N/A';
               const amountVal = rec.data?.budget ?? rec.data?.loanAmount ?? rec.data?.amount;
@@ -907,8 +910,8 @@ export default function Dashboard() {
 
                       <div className="leading-snug flex items-center gap-1.5">
                         <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.: </span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-semibold border border-slate-200/60 dark:border-slate-600/60">
-                          LND-{leadNo}
+                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                          {leadNo}
                         </span>
                       </div>
 

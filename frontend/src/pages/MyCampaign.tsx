@@ -327,9 +327,13 @@ export default function MyCampaign() {
 
       // Generate CSV rows
       const headers = ['Sl No', 'Data Code', 'Location', 'Customer', 'Firm Name', 'Contact Number', 'Case Details', 'Lead Category', 'Remarks', 'Agent Assigned To', 'Dial Status', 'Created At'];
-      const rows = targetLeads.map((lead, idx) => [
-        idx + 1,
-        lead.data?.dataCode || lead.data?.data_code || `LND-${lead._id.slice(-6).toUpperCase()}`,
+      const rows = targetLeads.map((lead, idx) => {
+        const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
+          .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+        const leadDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${idx + 1}`;
+        return [
+          idx + 1,
+          leadDataCode,
         lead.data?.city || lead.data?.location || 'N/A',
         `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A',
         lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A',
@@ -340,7 +344,8 @@ export default function MyCampaign() {
         lead.data?.assignedTo || (lead as any).assignedToName || 'Unassigned',
         leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call',
         new Date(lead.createdAt).toLocaleDateString()
-      ]);
+      ];
+    });
 
       const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n');
       const encodedUri = encodeURI(csvContent);
@@ -1304,7 +1309,9 @@ export default function MyCampaign() {
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
                           {paginatedLeads.map((lead, localIdx) => {
                             const idx = startIndex + localIdx;
-                            const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `LND-${lead._id.slice(-6).toUpperCase()}` : 'N/A');
+                            const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
+                              .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+                            const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${idx + 1}`;
                             const location = lead.data?.city || lead.data?.location || 'N/A';
                             const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
                             const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';

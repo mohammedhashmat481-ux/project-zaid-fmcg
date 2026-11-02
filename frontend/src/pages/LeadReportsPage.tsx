@@ -487,7 +487,15 @@ export default function LeadReportsPage() {
                   
                   const slNo = idx + 1;
                   const createdDate = formatDateShort(item.createdAt || data.createdAt);
-                  const dataCode = data.dataCode || data.data_code || data.code || `DC-${String(item._id || item.id || (idx + 101)).slice(-6).toUpperCase()}`;
+                  const campName = data.campaignName || data.campaign || (data.source && data.source.includes('DEMO') ? data.source : '');
+                  const cleanCamp = campName ? String(campName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-') : '';
+                  const dataCode = (data.dataCode && !data.dataCode.startsWith('DC-') && !data.dataCode.startsWith('LND-'))
+                    ? data.dataCode
+                    : (data.data_code && !data.data_code.startsWith('DC-') && !data.data_code.startsWith('LND-'))
+                    ? data.data_code
+                    : (data.code && !data.code.startsWith('DC-') && !data.code.startsWith('LND-'))
+                    ? data.code
+                    : (cleanCamp ? `${cleanCamp}-DATA-${idx + 1}` : 'N/A');
                   const location = data.location || data.city || data.presentAddress || 'N/A';
                   
                   const customerName = data.customerName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.fullName || data.customer || data.name || 'N/A';

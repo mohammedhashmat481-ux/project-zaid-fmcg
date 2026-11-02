@@ -1543,6 +1543,32 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
           recordData.dialStatus = 'Yet To Call';
         }
       }
+
+      // Auto-generate serial unique Lead Number: 01, 02, 03... (distinct from Data Code)
+      if (!recordData.leadNo && !recordData.leadNumber) {
+        const leadCount = await CustomRecord.countDocuments({
+          organizationId: req.organizationId,
+          moduleId: moduleDef._id
+        });
+        const serialNo = leadCount + 1;
+        const formattedLeadNo = String(serialNo).padStart(2, '0');
+        recordData.leadNo = formattedLeadNo;
+        recordData.leadNumber = formattedLeadNo;
+      }
+
+      // Data Code is strictly from campaign assignment, completely separate from Lead Number
+      const incomingDataCode = (recordData.dataCode || recordData.data_code || recordData.code || '').toString().trim();
+      if (incomingDataCode && !incomingDataCode.startsWith('LND-') && !incomingDataCode.startsWith('DC-')) {
+        recordData.dataCode = incomingDataCode;
+        recordData.data_code = incomingDataCode;
+      } else if (recordData.campaignName || recordData.campaign) {
+        const camp = String(recordData.campaignName || recordData.campaign).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+        recordData.dataCode = `${camp}-DATA-${recordData.leadNo || '01'}`;
+        recordData.data_code = recordData.dataCode;
+      } else {
+        recordData.dataCode = 'N/A';
+        recordData.data_code = 'N/A';
+      }
     }
 
     // Check RBAC permissions
