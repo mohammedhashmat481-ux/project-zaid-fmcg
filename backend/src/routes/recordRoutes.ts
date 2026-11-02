@@ -536,6 +536,47 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
         lName = parts.slice(1).join(' ');
       }
 
+      // Extract dataCode from any possible column naming variation or derive from campaign
+      const rawDataCode = (
+        lead.dataCode ||
+        lead.data_code ||
+        lead['Data Code'] ||
+        lead['data code'] ||
+        lead['DATA CODE'] ||
+        lead.datacode ||
+        lead.DataCode ||
+        lead.DATA_CODE ||
+        lead.leadCode ||
+        lead.lead_code ||
+        lead['Lead Code'] ||
+        lead['lead code'] ||
+        lead.code ||
+        lead.Code ||
+        lead.CODE ||
+        ''
+      )?.toString().trim();
+
+      const cleanCampPrefix = campaignName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+      const finalDataCode = rawDataCode || `${cleanCampPrefix}-DATA-${idx + 1}`;
+
+      // Extract leadCategory / loanType from any possible column naming variation
+      const rawCategory = (
+        lead.leadCategory ||
+        lead.lead_category ||
+        lead['Lead Category'] ||
+        lead['lead category'] ||
+        lead['LEAD CATEGORY'] ||
+        lead.category ||
+        lead.Category ||
+        lead.CATEGORY ||
+        lead.loanType ||
+        lead['Loan Type'] ||
+        lead['loan type'] ||
+        lead.product ||
+        lead.Product ||
+        'PERSONAL LOAN'
+      )?.toString().trim();
+
       recordsToCreate.push({
         organizationId: orgId,
         moduleId: leadModule._id,
@@ -546,15 +587,18 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
           lastName: lName,
           phone: lead.phone || lead.mobile || lead.name_contact_num || lead.contact_num || lead.contact || '',
           email: lead.email || '',
-          loanType: lead.loanType || lead.lead_category || lead.category || '',
+          loanType: rawCategory,
+          leadCategory: rawCategory,
+          lead_category: rawCategory,
           budget: lead.budget || lead.amount || '',
           company: lead.company || lead.firm_name || lead.firmName || lead.firm || '',
           salary: lead.salary || '',
           city: lead.city || lead.location || '',
           state: lead.state || '',
-          dataCode: lead.dataCode || lead.data_code || '',
-          caseDetails: lead.caseDetails || lead.case_status || lead.case_details || '',
-          notes: lead.notes || lead.remarks || lead.remark || '',
+          dataCode: finalDataCode,
+          data_code: finalDataCode,
+          caseDetails: lead.caseDetails || lead.case_status || lead.case_details || lead['Case Details'] || lead['case details'] || '',
+          notes: lead.notes || lead.remarks || lead.remark || lead['Remarks'] || lead['remarks'] || '',
           status: lead.status || 'New',
           dialStatus: 'Yet To Call',
           source: campaignName, // Set source as campaign name

@@ -317,8 +317,10 @@ export default function RecordForm() {
       // SOURCE is PERMANENTLY fixed to the user who creates the lead!
       if (apiPath === 'leads') {
         // 1. Data Code: preserve exactly from card
-        if (!finalDefaults.dataCode && (passedData.dataCode || passedData.data_code || passedData.code)) {
-          finalDefaults.dataCode = passedData.dataCode || passedData.data_code || passedData.code;
+        const passedCode = passedData.dataCode || passedData.data_code || passedData.code;
+        if (passedCode) {
+          finalDefaults.dataCode = passedCode;
+          finalDefaults.data_code = passedCode;
         }
 
         // 2. Firm Name / Company
@@ -629,6 +631,19 @@ export default function RecordForm() {
       }
       if (!data.location && (data.city || data.presentAddress || data.state)) {
         data.location = [data.city, data.state].filter(Boolean).join(', ') || data.city || data.presentAddress || '';
+      }
+      if (data.dataCode) {
+        data.data_code = data.dataCode;
+      } else if (data.data_code) {
+        data.dataCode = data.data_code;
+      }
+      if (data.leadCategory) {
+        data.lead_category = data.leadCategory;
+        if (!data.loanType) data.loanType = data.leadCategory;
+      }
+      if (data.loanType && !data.leadCategory) {
+        data.leadCategory = data.loanType;
+        data.lead_category = data.loanType;
       }
       if (!data.currency) {
         data.currency = 'INR';

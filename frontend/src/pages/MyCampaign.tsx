@@ -413,7 +413,9 @@ export default function MyCampaign() {
         const currentIndex = leads.findIndex(l => l._id === lead._id);
         const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
         
-        const displayedDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : '');
+        const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
+          .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+        const displayedDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${slNo}`;
         const displayedFirmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || lead.data?.companyName || '';
         const rawCustomer = lead.data?.firstName || lead.data?.customerName || lead.data?.customer || lead.data?.name || lead.data?.fullName || '';
         const custParts = String(rawCustomer).trim().split(' ');
@@ -1443,7 +1445,9 @@ export default function MyCampaign() {
                   <div className="space-y-5">
                     {paginatedLeads.map((lead, localIdx) => {
                       const idx = startIndex + localIdx;
-                      const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${idx + 1}` : 'N/A');
+                      const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
+                        .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+                      const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${idx + 1}`;
                       const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
                       const location = lead.data?.city || lead.data?.location || 'BLORE';
                       const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';

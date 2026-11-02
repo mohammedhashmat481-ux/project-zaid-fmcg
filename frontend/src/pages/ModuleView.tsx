@@ -2162,15 +2162,23 @@ export default function ModuleView() {
                             <div className="leading-snug flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-slate-800 dark:text-slate-100">Data Code: </span>
                               <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
-                                {rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (leadNo ? `LND-${leadNo}` : 'N/A')}
+                                {rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (rec.data?.campaignName ? `${String(rec.data.campaignName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-')}-DATA-${(page - 1) * 10 + idx + 1}` : (leadNo ? `LND-${leadNo}` : 'N/A'))}
                               </span>
                             </div>
 
-                            {/* Row 4: Product */}
+                            {/* Row 4: Lead Category */}
+                            <div className="leading-snug">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Lead Category: </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.leadCategory || rec.data?.lead_category || rec.data?.loanType || 'PERSONAL LOAN'}>
+                                {rec.data?.leadCategory || rec.data?.lead_category || rec.data?.loanType || 'PERSONAL LOAN'}
+                              </span>
+                            </div>
+
+                            {/* Row 5: Product */}
                             <div className="leading-snug">
                               <span className="font-bold text-slate-800 dark:text-slate-100">Product: </span>
-                              <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || 'N/A'}>
-                                {rec.data?.loanType || 'N/A'}
+                              <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}>
+                                {rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}
                               </span>
                             </div>
 
