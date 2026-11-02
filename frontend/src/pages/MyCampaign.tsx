@@ -376,6 +376,11 @@ export default function MyCampaign() {
     const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
     const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
 
+    // Current caller / creator identity
+    const loggedInCreatorName = user 
+      ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+      : 'Super Admin';
+
     // 2. ONLY for Hot Lead or Warm Lead: Auto-save status and immediately open Create Lead
     if (isHotOrWarm) {
       try {
@@ -384,6 +389,8 @@ export default function MyCampaign() {
           status: normalizedStatus,
           dialStatus: newStatus,
           dialedAt: new Date(),
+          dialedBy: loggedInCreatorName,
+          callerName: loggedInCreatorName,
           callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
           notes: currentRemarks,
           caseDetails: currentCaseDetails,
@@ -399,13 +406,9 @@ export default function MyCampaign() {
         queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
         queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+        queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
         showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
-
-        // Lead Creator name: MUST be the currently logged-in user who clicked it
-        const loggedInCreatorName = user 
-          ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
-          : 'Super Admin';
 
         const currentIndex = leads.findIndex(l => l._id === lead._id);
         const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
@@ -470,6 +473,8 @@ export default function MyCampaign() {
           status: finalStatusToSave,
           dialStatus: finalStatusToSave,
           dialedAt: new Date(),
+          dialedBy: loggedInCreatorName,
+          callerName: loggedInCreatorName,
           callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
           notes: currentRemarks,
           caseDetails: currentCaseDetails,
@@ -490,10 +495,11 @@ export default function MyCampaign() {
           }));
         }
 
-        // Invalidate queries so Dashboard and leads sync instantly
+        // Invalidate queries so Dashboard, leads, and Reports sync instantly
         queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
         queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+        queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
         showToast(`Status updated to ${newStatus}.`, 'success');
       } catch (err: any) {
@@ -526,12 +532,20 @@ export default function MyCampaign() {
     const leadName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.fullName || lead.data?.customerName || lead.data?.name || 'Lead';
     showToast(`Calling ${leadName} (${cleanPhone})...`, 'info');
 
-    // Track dial activity
+    const loggedInCaller = user 
+      ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+      : 'Super Admin';
+
+    // Track dial activity with explicit dialedBy attribution
     try {
       await api.put(`/records/leads/${lead._id}`, {
         dialedAt: new Date(),
+        dialedBy: loggedInCaller,
+        callerName: loggedInCaller,
         callAttempts: ((lead.data?.callAttempts as number) || 0) + 1
       });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
     } catch (e) {}
 
     window.location.href = `tel:${cleanPhone}`;
@@ -628,11 +642,16 @@ export default function MyCampaign() {
       const hasNext = Boolean(nextLead) || currentPage < totalPages;
 
       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : 'N/A');
+      const loggedInSaverName = user 
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        : 'Super Admin';
 
       const payload: Record<string, any> = {
         status: finalStatusToSave,
         dialStatus: finalStatusToSave,
         dialedAt: new Date(),
+        dialedBy: loggedInSaverName,
+        callerName: loggedInSaverName,
         callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
         notes: currentRemarks,
         caseDetails: currentCaseDetails,
@@ -641,10 +660,11 @@ export default function MyCampaign() {
 
       await api.put(`/records/leads/${leadId}`, payload);
 
-      // Invalidate queries so Dashboard and leads counts sync immediately
+      // Invalidate queries so Dashboard, leads, and Reports counts sync immediately
       queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
       // Update lead in memory so counts & UI update immediately
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));

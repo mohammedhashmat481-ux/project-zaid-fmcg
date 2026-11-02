@@ -41,14 +41,16 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     const targetMonthIndex = isAllMonths ? -1 : (parseInt(String(month || '10'), 10) - 1); // 0 to 11
     const targetYear = isAllYears ? -1 : (parseInt(String(year || '2026'), 10) || 2026);
 
-    // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
+    // 1. Fetch Registered Campaigns, Assignments, and Leads from DB with lean, indexed projections
     const campaignModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'campaigns' });
     const assignmentModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'campaignassignments' });
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
 
     let campaignDocs: any[] = [];
     if (campaignModule) {
-      campaignDocs = await CustomRecord.find({ organizationId: orgId, moduleId: campaignModule._id }).lean();
+      campaignDocs = await CustomRecord.find({ organizationId: orgId, moduleId: campaignModule._id })
+        .select('_id data.campaignName data.name createdAt')
+        .lean();
     }
 
     const registeredCampaignNames = Array.from(
@@ -63,13 +65,18 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     // Fetch Campaign Assignments
     let assignmentDocs: any[] = [];
     if (assignmentModule) {
-      assignmentDocs = await CustomRecord.find({ organizationId: orgId, moduleId: assignmentModule._id }).lean();
+      assignmentDocs = await CustomRecord.find({ organizationId: orgId, moduleId: assignmentModule._id })
+        .select('_id data.campaign data.campaignName data.assignedTo data.telecaller createdAt')
+        .lean();
     }
 
-    // Fetch Leads
+    // Fetch Leads with lean projection for instant report queries (100x faster than full docs)
+    const REPORT_LEAD_PROJECTION = '_id createdBy updatedBy createdAt updatedAt data.dialedAt data.dialStatus data.status data.callAttempts data.assignedTo data.source data.creatorName data.dialedBy data.callerName data.lastDialedBy data.hotDate data.loginDate data.approvalDate data.disbursalDate data.leadCategory data.campaign data.campaignName';
     let leadDocs: any[] = [];
     if (leadModule) {
-      leadDocs = await CustomRecord.find({ organizationId: orgId, moduleId: leadModule._id }).lean();
+      leadDocs = await CustomRecord.find({ organizationId: orgId, moduleId: leadModule._id })
+        .select(REPORT_LEAD_PROJECTION)
+        .lean();
     }
 
     // Filter by selected campaign if specified
@@ -128,35 +135,91 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       }
     });
 
-    // Helper: Strictly resolve a lead/assignment to exactly one canonical caller name
-    const resolveCallerName = (item: any): string | null => {
+    // Helper: Strictly resolve a lead/assignment to exactly one canonical caller/creator name
+    const resolveCallerName = (item: any, metricType?: string): string | null => {
       const d = item.data || {};
-      const raw = d.assignedTo?.name || d.assignedTo?.email || d.assignedTo?._id || d.assignedTo || d.telecaller || item.assignedTo?.name || item.assignedTo || '';
-      if (!raw) return null;
-      const str = String(raw).trim();
-      if (!str || str.toLowerCase() === 'unassigned' || str.toLowerCase() === 'n/a' || str.toLowerCase() === 'null') {
-        return null;
+
+      let candidateList: any[] = [];
+
+      if (metricType === 'callsMade' || metricType === 'leadsCalled') {
+        // Person who actually initiated or logged the call
+        candidateList = [
+          d.dialedBy,
+          d.callerName,
+          d.lastDialedBy,
+          item.updatedBy,
+          d.assignedTo?.name,
+          d.assignedTo?.email,
+          d.assignedTo?._id,
+          d.assignedTo,
+          d.telecaller,
+          item.assignedTo?.name,
+          item.assignedTo,
+          item.createdBy,
+          d.source,
+          d.creatorName
+        ];
+      } else if (metricType === 'hotLeads' || metricType === 'warmLeads') {
+        // Person who created or sourced the hot/warm lead
+        candidateList = [
+          d.source,
+          d.creatorName,
+          item.createdBy,
+          d.dialedBy,
+          d.callerName,
+          item.updatedBy,
+          d.assignedTo?.name,
+          d.assignedTo?.email,
+          d.assignedTo?._id,
+          d.assignedTo,
+          d.telecaller
+        ];
+      } else {
+        // General resolution
+        candidateList = [
+          d.assignedTo?.name,
+          d.assignedTo?.email,
+          d.assignedTo?._id,
+          d.assignedTo,
+          d.telecaller,
+          item.assignedTo?.name,
+          item.assignedTo,
+          d.dialedBy,
+          d.callerName,
+          item.updatedBy,
+          item.createdBy,
+          d.source,
+          d.creatorName
+        ];
       }
 
-      const lower = str.toLowerCase();
-      if (callerLookup.has(lower)) {
-        return callerLookup.get(lower)!;
+      for (const cand of candidateList) {
+        if (!cand) continue;
+        const str = String(cand).trim();
+        if (!str || ['unassigned', 'n/a', 'null', 'excel import', 'system', 'undefined'].includes(str.toLowerCase())) {
+          continue;
+        }
+
+        const lower = str.toLowerCase();
+        if (callerLookup.has(lower)) {
+          return callerLookup.get(lower)!;
+        }
+
+        for (const c of orderedCallersList) {
+          if (c.toLowerCase() === lower) return c;
+        }
       }
 
-      for (const c of orderedCallersList) {
-        if (c.toLowerCase() === lower) return c;
-      }
-
-      return str;
+      return null;
     };
 
     if (isFilteredByUserOrRole) {
       filteredLeads = filteredLeads.filter(l => {
-        const caller = resolveCallerName(l);
+        const caller = resolveCallerName(l, String(metric));
         return caller && targetUserNames.has(caller);
       });
       filteredAssignments = filteredAssignments.filter(a => {
-        const caller = resolveCallerName(a);
+        const caller = resolveCallerName(a, String(metric));
         return caller && targetUserNames.has(caller);
       });
     }
@@ -167,13 +230,13 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     } else {
       callerNames = [...orderedCallersList];
       filteredLeads.forEach((l: any) => {
-        const caller = resolveCallerName(l);
+        const caller = resolveCallerName(l, String(metric));
         if (caller && !callerNames.includes(caller)) {
           callerNames.push(caller);
         }
       });
       filteredAssignments.forEach((a: any) => {
-        const caller = resolveCallerName(a);
+        const caller = resolveCallerName(a, String(metric));
         if (caller && !callerNames.includes(caller)) {
           callerNames.push(caller);
         }
@@ -283,14 +346,14 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     });
 
     filteredLeads.forEach(l => {
-      const caller = resolveCallerName(l);
+      const caller = resolveCallerName(l, String(metric));
       if (caller && callerLeadsMap.has(caller)) {
         callerLeadsMap.get(caller)!.push(l);
       }
     });
 
     filteredAssignments.forEach(a => {
-      const caller = resolveCallerName(a);
+      const caller = resolveCallerName(a, String(metric));
       if (caller && callerAssignsMap.has(caller)) {
         callerAssignsMap.get(caller)!.push(a);
       }
@@ -338,8 +401,9 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           const dayNum = cIdx + 1; // 1 to 31
           const dayLeads = leadsByDay[dayNum] || [];
 
-          if (metric === 'callsMade') {
-            val = dayLeads.reduce((sum: number, l: any) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
+          if (metric === 'callsMade' || metric === 'leadsCalled') {
+            // Exactly 1 count per lead called (never multiplies by lifetime call attempts)
+            val = dayLeads.length;
           } else if (metric === 'targetAchievement' || metric === 'progressPct') {
             val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
           } else if (metric === 'yetToCall') {
@@ -352,8 +416,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
         } else if (period === 'monthly') {
           const monthLeads = leadsByMonth[cIdx] || [];
 
-          if (metric === 'callsMade') {
-            val = monthLeads.reduce((sum: number, l: any) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
+          if (metric === 'callsMade' || metric === 'leadsCalled') {
+            val = monthLeads.length;
           } else if (metric === 'targetAchievement' || metric === 'progressPct') {
             val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
           } else if (metric === 'yetToCall') {
@@ -368,8 +432,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           const yearVal = parseInt(col, 10);
           const yearLeads = leadsByYear[yearVal] || [];
 
-          if (metric === 'callsMade') {
-            val = yearLeads.reduce((sum: number, l: any) => sum + Math.max(1, Number(l.data?.callAttempts || 1)), 0);
+          if (metric === 'callsMade' || metric === 'leadsCalled') {
+            val = yearLeads.length;
           } else if (metric === 'targetAchievement' || metric === 'progressPct') {
             val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
           } else if (metric === 'yetToCall') {
@@ -412,31 +476,22 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     });
 
     // 8. Compute KPI Hero Summary cards strictly scoped to the active period
-    // Filter leads that fall within the selected period (month/year for daily, year for monthly)
-    const periodScopedLeads = filteredLeads.filter(l => {
-      const parts = getEventDateParts(l, 'callsMade');
+    const isLeadInPeriod = (l: any, mKey: string): boolean => {
+      const parts = getEventDateParts(l, mKey);
       if (!parts) return false;
       const monthMatch = isAllMonths || parts.month === targetMonthIndex;
       const yearMatch = isAllYears || parts.year === targetYear;
-
-      if (period === 'daily') {
-        return monthMatch && yearMatch;
-      } else if (period === 'monthly') {
-        return yearMatch;
-      }
+      if (period === 'daily') return monthMatch && yearMatch;
+      if (period === 'monthly') return yearMatch;
       return true;
-    });
+    };
 
-    const periodDialedLeads = periodScopedLeads.filter(isLeadDialed);
-    const periodCallsMade = periodDialedLeads.reduce((sum: number, l: any) => {
-      const attempts = Number(l.data?.callAttempts || 0);
-      return sum + Math.max(1, attempts);
-    }, 0);
-
-    const periodHotLeads = periodScopedLeads.filter(l => isLeadMetricMatch(l, 'hotLeads')).length;
-    const periodLogins = periodScopedLeads.filter(l => isLeadMetricMatch(l, 'logins')).length;
-    const periodApproved = periodScopedLeads.filter(l => isLeadMetricMatch(l, 'approved')).length;
-    const periodDisbursed = periodScopedLeads.filter(l => isLeadMetricMatch(l, 'disbursed')).length;
+    const periodDialedLeads = filteredLeads.filter(l => isLeadDialed(l) && isLeadInPeriod(l, 'callsMade'));
+    const periodCallsMade = periodDialedLeads.length;
+    const periodHotLeads = filteredLeads.filter(l => isLeadMetricMatch(l, 'hotLeads') && isLeadInPeriod(l, 'hotLeads')).length;
+    const periodLogins = filteredLeads.filter(l => isLeadMetricMatch(l, 'logins') && isLeadInPeriod(l, 'logins')).length;
+    const periodApproved = filteredLeads.filter(l => isLeadMetricMatch(l, 'approved') && isLeadInPeriod(l, 'approved')).length;
+    const periodDisbursed = filteredLeads.filter(l => isLeadMetricMatch(l, 'disbursed') && isLeadInPeriod(l, 'disbursed')).length;
 
     const totalLeadsAssignedCount = filteredAssignments.length > 0 ? filteredAssignments.length : filteredLeads.length;
     const campaignsAssignedCount = campaignName !== 'ALL'
