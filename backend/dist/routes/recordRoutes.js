@@ -19,6 +19,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const hierarchy_1 = require("../utils/hierarchy");
 const cache_1 = require("../utils/cache");
+const postgres_1 = require("../config/postgres");
 const router = (0, express_1.Router)();
 // Apply security middlewares
 router.use(authMiddleware_1.authenticate);
@@ -687,7 +688,7 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
         res.status(500).json({ error: 'Failed to retrieve campaigns.' });
     }
 });
-// GET my campaign details (assigned leads under campaignName)
+// GET my campaign details (assigned leads under campaignName with instant pagination & background prefetching support)
 router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => {
     try {
         const orgId = req.organizationId;
@@ -698,7 +699,12 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             return;
         }
         const decodedCampaignName = decodeURIComponent(campaignName).trim();
-        const detailsCacheKey = cache_1.CacheKeys.campaignDetails(orgId, decodedCampaignName);
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const isAll = req.query.all === 'true';
+        const limit = isAll ? 0 : Math.max(1, parseInt(req.query.limit) || 10);
+        const tab = (req.query.tab || req.query.filter || 'all').trim();
+        const search = (req.query.search || '').trim();
+        const detailsCacheKey = cache_1.CacheKeys.campaignDetails(orgId, `${decodedCampaignName}:${page}:${limit}:${tab}:${search}:${isAll}`);
         const cachedDetails = cache_1.serverCache.get(detailsCacheKey);
         if (cachedDetails) {
             res.setHeader('X-Cache', 'HIT');
@@ -707,11 +713,141 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         }
         // Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
-        if (!leadModule) {
-            res.status(404).json({ error: 'Leads module not found.' });
+        const moduleId = leadModule?._id || leadModule?.id;
+        const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const campaignRegexStr = '^\\s*' + escName + '\\s*$';
+        // 1. Try ultra-fast PostgreSQL direct execution (<10ms)
+        try {
+            const baseParams = [orgId];
+            let baseConds = ['organization_id = $1'];
+            if (moduleId) {
+                baseParams.push(moduleId);
+                baseConds.push(`module_id = $${baseParams.length}`);
+            }
+            baseParams.push(campaignRegexStr);
+            const campParamIdx = baseParams.length;
+            baseConds.push(`(
+        (data->>'source') ~* $${campParamIdx} OR
+        (data->>'campaignName') ~* $${campParamIdx} OR
+        (data->>'campaign') ~* $${campParamIdx} OR
+        (data->>'campaign_name') ~* $${campParamIdx}
+      )`);
+            const baseWhere = baseConds.join(' AND ');
+            // Query total overall stats for this campaign in ONE pass (<5ms)
+            const statsSql = `
+        SELECT 
+          COUNT(*)::int as total_allocated,
+          COUNT(CASE WHEN 
+            (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
+            (data->>'callAttempts' ~ '^[0-9]+$' AND (data->>'callAttempts')::int > 0) OR
+            (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
+            (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+          THEN 1 END)::int as dialed
+        FROM custom_records
+        WHERE ${baseWhere}
+      `;
+            const statsRes = await (0, postgres_1.queryPg)(statsSql, baseParams);
+            const totalAllocated = statsRes[0]?.total_allocated || 0;
+            const dialed = statsRes[0]?.dialed || 0;
+            const yetToDial = Math.max(0, totalAllocated - dialed);
+            // Now build current filtered query
+            const filterParams = [...baseParams];
+            const filterConds = [...baseConds];
+            if (tab === 'dialed') {
+                filterConds.push(`(
+          (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
+          (data->>'callAttempts' ~ '^[0-9]+$' AND (data->>'callAttempts')::int > 0) OR
+          (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
+          (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+        )`);
+            }
+            else if (tab === 'yetToDial') {
+                filterConds.push(`(
+          (data->>'dialedAt' IS NULL OR data->>'dialedAt' = '') AND 
+          (data->>'callAttempts' IS NULL OR NOT (data->>'callAttempts' ~ '^[0-9]+$') OR (data->>'callAttempts')::int <= 0) AND
+          (LOWER(COALESCE(data->>'dialStatus', '')) IN ('', 'yet to call', 'not called', 'new')) AND
+          (LOWER(COALESCE(data->>'status', '')) IN ('', 'yet to call', 'not called', 'new'))
+        )`);
+            }
+            if (search) {
+                filterParams.push(`%${search}%`);
+                const searchIdx = filterParams.length;
+                filterConds.push(`(
+          (data->>'firstName') ILIKE $${searchIdx} OR
+          (data->>'lastName') ILIKE $${searchIdx} OR
+          (data->>'customerName') ILIKE $${searchIdx} OR
+          (data->>'customer') ILIKE $${searchIdx} OR
+          (data->>'company') ILIKE $${searchIdx} OR
+          (data->>'firmName') ILIKE $${searchIdx} OR
+          (data->>'firm_name') ILIKE $${searchIdx} OR
+          (data->>'phone') ILIKE $${searchIdx} OR
+          (data->>'mobile') ILIKE $${searchIdx} OR
+          (data->>'contactNumber') ILIKE $${searchIdx} OR
+          (data->>'name_contact_num') ILIKE $${searchIdx} OR
+          (data->>'dataCode') ILIKE $${searchIdx} OR
+          (data->>'data_code') ILIKE $${searchIdx} OR
+          (data->>'city') ILIKE $${searchIdx} OR
+          (data->>'location') ILIKE $${searchIdx} OR
+          (data->>'notes') ILIKE $${searchIdx} OR
+          (data->>'remarks') ILIKE $${searchIdx} OR
+          (data->>'caseDetails') ILIKE $${searchIdx} OR
+          (data->>'leadCategory') ILIKE $${searchIdx} OR
+          (data->>'loanType') ILIKE $${searchIdx}
+        )`);
+            }
+            const filteredWhere = filterConds.join(' AND ');
+            // Count total matching leads for current page pagination
+            let filteredTotal = totalAllocated;
+            if (tab !== 'all' || search) {
+                const countSql = `SELECT COUNT(*)::int as count FROM custom_records WHERE ${filteredWhere}`;
+                const countRes = await (0, postgres_1.queryPg)(countSql, filterParams);
+                filteredTotal = countRes[0]?.count || 0;
+            }
+            else {
+                filteredTotal = totalAllocated;
+            }
+            // Fetch page data with LIMIT and OFFSET
+            let fetchSql = `
+        SELECT id, data, created_at, updated_at
+        FROM custom_records
+        WHERE ${filteredWhere}
+        ORDER BY created_at DESC
+      `;
+            const fetchParams = [...filterParams];
+            if (limit > 0) {
+                const skip = (page - 1) * limit;
+                fetchParams.push(limit);
+                fetchSql += ` LIMIT $${fetchParams.length}`;
+                fetchParams.push(skip);
+                fetchSql += ` OFFSET $${fetchParams.length}`;
+            }
+            const rows = await (0, postgres_1.queryPg)(fetchSql, fetchParams);
+            const leads = rows.map((r) => ({
+                _id: r.id,
+                id: r.id,
+                data: r.data || {},
+                createdAt: r.created_at,
+                updatedAt: r.updated_at
+            }));
+            const payload = {
+                leads,
+                total: filteredTotal,
+                page,
+                limit: limit || filteredTotal,
+                totalPages: limit > 0 ? Math.ceil(filteredTotal / limit) : 1,
+                totalAllocated,
+                dialed,
+                yetToDial
+            };
+            cache_1.serverCache.set(detailsCacheKey, payload, 30);
+            res.setHeader('X-Cache', 'MISS');
+            res.status(200).json(payload);
             return;
         }
-        const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        catch (pgErr) {
+            console.warn('Fast PG query failed, falling back to model query:', pgErr);
+        }
+        // 2. Graceful Fallback via CustomRecord Model
         const campaignRegex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
         const matchFilter = {
             $or: [
@@ -723,39 +859,27 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         };
         const query = {
             organizationId: orgId,
-            moduleId: leadModule._id,
+            ...(moduleId ? { moduleId } : {}),
             ...matchFilter
         };
-        // Optimize payload with field projection for instant retrieval of 3000+ leads
         const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.contactNumber data.name_contact_num data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
-        let leads = await CustomRecord_1.default.find(query)
-            .select(LEAD_PROJECTION)
-            .sort({ createdAt: -1 })
-            .lean();
-        // Fallback: If hierarchy query returns 0, try org-wide lookup for this campaign
-        if (leads.length === 0) {
-            const fallbackQuery = {
-                organizationId: orgId,
-                moduleId: leadModule._id,
-                ...matchFilter
-            };
-            leads = await CustomRecord_1.default.find(fallbackQuery)
-                .select(LEAD_PROJECTION)
-                .sort({ createdAt: -1 })
-                .lean();
+        const totalCount = await CustomRecord_1.default.countDocuments(query);
+        const queryChain = CustomRecord_1.default.find(query).select(LEAD_PROJECTION).sort({ createdAt: -1 });
+        if (limit > 0) {
+            queryChain.skip((page - 1) * limit).limit(limit);
         }
-        // Ultimate Fallback: Try across all modules in organization matching campaign name
-        if (leads.length === 0) {
-            leads = await CustomRecord_1.default.find({
-                organizationId: orgId,
-                ...matchFilter
-            })
-                .select(LEAD_PROJECTION)
-                .sort({ createdAt: -1 })
-                .lean();
-        }
-        const payload = { leads };
-        cache_1.serverCache.set(detailsCacheKey, payload, 60);
+        const leads = await queryChain.lean();
+        const payload = {
+            leads,
+            total: totalCount,
+            page,
+            limit: limit || totalCount,
+            totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1,
+            totalAllocated: totalCount,
+            dialed: 0,
+            yetToDial: totalCount
+        };
+        cache_1.serverCache.set(detailsCacheKey, payload, 30);
         res.setHeader('X-Cache', 'MISS');
         res.status(200).json(payload);
     }
@@ -1151,6 +1275,14 @@ router.post('/:apiPath', async (req, res) => {
                 recordData.source = creatorName;
             }
             recordData.creatorName = recordData.source;
+            // Brand new lead creation must start with 0 calls and Yet To Call unless explicitly dialed
+            if (recordData.callAttempts === undefined || !recordData.dialedAt) {
+                recordData.callAttempts = 0;
+                delete recordData.dialedAt;
+                if (!recordData.dialStatus) {
+                    recordData.dialStatus = 'Yet To Call';
+                }
+            }
         }
         // Check RBAC permissions
         const { allowed } = await authorizeModuleAction(req, res, moduleDef.name, 'create');

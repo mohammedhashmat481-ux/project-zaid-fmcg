@@ -177,7 +177,7 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/statuses').catch(() => ({ data: [] }));
       return Array.isArray(res.data) ? res.data : [];
     },
-    staleTime: 10 * 60 * 1000
+    staleTime: 30 * 1000
   });
 
   const fallbackLeadStatuses = [
@@ -335,8 +335,15 @@ export default function Layout({ children }: LayoutProps) {
               {leadStatusesToRender.map((st: any) => {
                 const IconComp = (Icons as any)[st.icon] || Icons.Circle;
                 const statusTokens = getStatusTokens(st);
-                const upperName = (st.name || '').toUpperCase();
-                const count = Number(metricsData?.statusCounts?.[upperName] ?? metricsData?.statusCounts?.[st.name] ?? 0);
+                const upperName = (st.name || '').toUpperCase().trim();
+                const counts = metricsData?.statusCounts || {};
+                let count = Number(counts[upperName] ?? counts[st.name] ?? 0);
+                if (count === 0) {
+                  const noS = upperName.endsWith('S') ? upperName.slice(0, -1) : upperName;
+                  const withS = upperName.endsWith('S') ? upperName : `${upperName}S`;
+                  const stripped = upperName.replace(/\s+LEADS?$/i, '').trim();
+                  count = Number(counts[noS] ?? counts[withS] ?? counts[stripped] ?? counts[`${stripped} LEAD`] ?? counts[`${stripped} LEADS`] ?? 0);
+                }
                 return (
                   <SidebarItem 
                     key={st._id || st.name}

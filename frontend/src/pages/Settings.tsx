@@ -577,6 +577,10 @@ export default function Settings() {
       setStatusEditing(false);
       loadSettingsData();
       queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
+      queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
     } catch (err: any) {
@@ -613,6 +617,10 @@ export default function Settings() {
           });
           loadSettingsData();
           queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
+          queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+          queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
         } catch (err) {

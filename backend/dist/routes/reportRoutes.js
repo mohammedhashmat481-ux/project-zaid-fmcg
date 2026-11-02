@@ -19,16 +19,18 @@ router.use(tenantMiddleware_1.requireTenant);
 router.get('/campaign-matrix', async (req, res) => {
     try {
         const orgId = req.organizationId;
-        const { campaignName = 'ALL', month = '10', year = '2026', period = 'daily', metric = 'callsMade' } = req.query;
-        const cacheKey = cache_1.CacheKeys.campaignMatrix(orgId, `${period}:${metric}:${campaignName}:${month}:${year}`);
+        const { campaignName = 'ALL', month = '10', year = '2026', period = 'daily', metric = 'callsMade', userId = 'ALL', roleId = 'ALL' } = req.query;
+        const cacheKey = cache_1.CacheKeys.campaignMatrix(orgId, `${period}:${metric}:${campaignName}:${month}:${year}:${userId}:${roleId}`);
         const cached = cache_1.serverCache.get(cacheKey);
         if (cached) {
             res.setHeader('X-Cache', 'HIT');
             res.status(200).json(cached);
             return;
         }
-        const targetMonthIndex = parseInt(String(month || '10'), 10) - 1; // 0 to 11
-        const targetYear = parseInt(String(year || '2026'), 10) || 2026;
+        const isAllMonths = String(month).toUpperCase() === 'ALL' || String(month).toLowerCase().includes('all');
+        const isAllYears = String(year).toUpperCase() === 'ALL' || String(year).toLowerCase().includes('all');
+        const targetMonthIndex = isAllMonths ? -1 : (parseInt(String(month || '10'), 10) - 1); // 0 to 11
+        const targetYear = isAllYears ? -1 : (parseInt(String(year || '2026'), 10) || 2026);
         // 1. Fetch Registered Campaigns, Assignments, and Leads from DB
         const campaignModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' });
         const assignmentModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaignassignments' });
@@ -67,10 +69,20 @@ router.get('/campaign-matrix', async (req, res) => {
         }
         // 2. Fetch Real Users from Organization and build strict canonical lookup
         const users = await User_1.default.find({ organizationId: orgId })
-            .select('_id firstName lastName name username email')
+            .select('_id firstName lastName name username email roleId')
             .lean();
         const callerLookup = new Map();
         const orderedCallersList = [];
+        // Filter users if roleId or userId filter is active
+        let targetUsers = users;
+        if (roleId && roleId !== 'ALL') {
+            targetUsers = targetUsers.filter((u) => String(u.roleId || '') === String(roleId));
+        }
+        if (userId && userId !== 'ALL') {
+            targetUsers = targetUsers.filter((u) => String(u._id || '') === String(userId) || String(u.id || '') === String(userId));
+        }
+        const isFilteredByUserOrRole = (roleId && roleId !== 'ALL') || (userId && userId !== 'ALL');
+        const targetUserNames = new Set();
         users.forEach((u) => {
             const full = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
             if (full && !orderedCallersList.includes(full)) {
@@ -86,6 +98,12 @@ router.get('/campaign-matrix', async (req, res) => {
                 callerLookup.set(u.email.toLowerCase().trim(), full);
             if (u.username)
                 callerLookup.set(u.username.toLowerCase().trim(), full);
+        });
+        targetUsers.forEach((u) => {
+            const full = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+            if (full) {
+                targetUserNames.add(full);
+            }
         });
         // Helper: Strictly resolve a lead/assignment to exactly one canonical caller name
         const resolveCallerName = (item) => {
@@ -107,20 +125,38 @@ router.get('/campaign-matrix', async (req, res) => {
             }
             return str;
         };
-        // Ensure all callers who have assigned leads appear in the list
-        filteredLeads.forEach((l) => {
-            const caller = resolveCallerName(l);
-            if (caller && !orderedCallersList.includes(caller)) {
-                orderedCallersList.push(caller);
-            }
-        });
-        filteredAssignments.forEach((a) => {
-            const caller = resolveCallerName(a);
-            if (caller && !orderedCallersList.includes(caller)) {
-                orderedCallersList.push(caller);
-            }
-        });
-        const callerNames = orderedCallersList.length > 0 ? orderedCallersList : ['Super Admin', 'Telecaller'];
+        if (isFilteredByUserOrRole) {
+            filteredLeads = filteredLeads.filter(l => {
+                const caller = resolveCallerName(l);
+                return caller && targetUserNames.has(caller);
+            });
+            filteredAssignments = filteredAssignments.filter(a => {
+                const caller = resolveCallerName(a);
+                return caller && targetUserNames.has(caller);
+            });
+        }
+        let callerNames = [];
+        if (isFilteredByUserOrRole) {
+            callerNames = Array.from(targetUserNames);
+        }
+        else {
+            callerNames = [...orderedCallersList];
+            filteredLeads.forEach((l) => {
+                const caller = resolveCallerName(l);
+                if (caller && !callerNames.includes(caller)) {
+                    callerNames.push(caller);
+                }
+            });
+            filteredAssignments.forEach((a) => {
+                const caller = resolveCallerName(a);
+                if (caller && !callerNames.includes(caller)) {
+                    callerNames.push(caller);
+                }
+            });
+        }
+        if (callerNames.length === 0) {
+            callerNames = isFilteredByUserOrRole ? ['Selected User'] : ['Super Admin', 'Telecaller'];
+        }
         // Helper: Determine if a lead has ACTUALLY been dialed / called
         // (A newly created lead in form without a call made is NOT dialed!)
         const isLeadDialed = (lead) => {
@@ -141,7 +177,7 @@ router.get('/campaign-matrix', async (req, res) => {
             const d = lead.data || {};
             let rawDate = null;
             if (metricType === 'callsMade' || metricType === 'leadsCalled') {
-                rawDate = d.dialedAt || lead.updatedAt || lead.createdAt;
+                rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
             }
             else if (metricType === 'hotLeads') {
                 rawDate = d.hotDate || lead.updatedAt || lead.createdAt;
@@ -156,24 +192,39 @@ router.get('/campaign-matrix', async (req, res) => {
                 rawDate = d.disbursalDate || lead.updatedAt || lead.createdAt;
             }
             else {
-                rawDate = d.dialedAt || lead.updatedAt || lead.createdAt;
+                rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
             }
             if (!rawDate)
                 return null;
             const dateObj = new Date(rawDate);
             if (isNaN(dateObj.getTime()))
                 return null;
-            // Guard against future timestamps due to clock skew or future scheduled dates
-            const nowMs = Date.now();
-            const eventMs = Math.min(dateObj.getTime(), nowMs);
-            // Convert to Indian Standard Time (UTC + 5:30)
-            const istMs = eventMs + (5.5 * 60 * 60 * 1000);
-            const ist = new Date(istMs);
-            return {
-                day: ist.getUTCDate(), // 1 to 31
-                month: ist.getUTCMonth(), // 0 to 11
-                year: ist.getUTCFullYear()
-            };
+            // Cap at current time to never project events into future days beyond today (IST)
+            const now = new Date();
+            const validDateObj = dateObj.getTime() > now.getTime() ? now : dateObj;
+            try {
+                const istFormatter = new Intl.DateTimeFormat('en-CA', {
+                    timeZone: 'Asia/Kolkata',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                });
+                const parts = istFormatter.format(validDateObj).split('-');
+                return {
+                    year: parseInt(parts[0], 10),
+                    month: parseInt(parts[1], 10) - 1, // 0 to 11
+                    day: parseInt(parts[2], 10) // 1 to 31
+                };
+            }
+            catch (_) {
+                const istMs = validDateObj.getTime() + (5.5 * 60 * 60 * 1000);
+                const ist = new Date(istMs);
+                return {
+                    day: ist.getUTCDate(),
+                    month: ist.getUTCMonth(),
+                    year: ist.getUTCFullYear()
+                };
+            }
         };
         // Helper to check if lead matches a metric
         const isLeadMetricMatch = (l, m) => {
@@ -199,7 +250,7 @@ router.get('/campaign-matrix', async (req, res) => {
         // 4. Generate Columns based on Period
         let columns = [];
         if (period === 'daily') {
-            const daysInMonth = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+            const daysInMonth = (isAllMonths || isAllYears) ? 31 : new Date(targetYear, targetMonthIndex + 1, 0).getDate();
             columns = Array.from({ length: daysInMonth }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
         }
         else if (period === 'monthly') {
@@ -240,12 +291,14 @@ router.get('/campaign-matrix', async (req, res) => {
             relevantLeads.forEach(l => {
                 const parts = getEventDateParts(l, String(metric));
                 if (parts) {
-                    if (parts.month === targetMonthIndex && parts.year === targetYear) {
+                    const monthMatch = isAllMonths || parts.month === targetMonthIndex;
+                    const yearMatch = isAllYears || parts.year === targetYear;
+                    if (monthMatch && yearMatch) {
                         if (!leadsByDay[parts.day])
                             leadsByDay[parts.day] = [];
                         leadsByDay[parts.day].push(l);
                     }
-                    if (parts.year === targetYear) {
+                    if (yearMatch) {
                         if (!leadsByMonth[parts.month])
                             leadsByMonth[parts.month] = [];
                         leadsByMonth[parts.month].push(l);
@@ -349,11 +402,13 @@ router.get('/campaign-matrix', async (req, res) => {
             const parts = getEventDateParts(l, 'callsMade');
             if (!parts)
                 return false;
+            const monthMatch = isAllMonths || parts.month === targetMonthIndex;
+            const yearMatch = isAllYears || parts.year === targetYear;
             if (period === 'daily') {
-                return parts.month === targetMonthIndex && parts.year === targetYear;
+                return monthMatch && yearMatch;
             }
             else if (period === 'monthly') {
-                return parts.year === targetYear;
+                return yearMatch;
             }
             return true;
         });

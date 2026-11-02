@@ -8,6 +8,7 @@ const DashboardLayout_1 = __importDefault(require("../models/DashboardLayout"));
 const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition"));
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const Activity_1 = __importDefault(require("../models/Activity"));
+const Status_1 = __importDefault(require("../models/Status"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const hierarchy_1 = require("../utils/hierarchy");
@@ -157,7 +158,10 @@ router.get('/metrics', async (req, res) => {
                     .sort({ createdAt: -1 })
                     .limit(10)
             ]);
-            const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\s*WORLDWIDE)$/i;
+            // Retrieve all configured status names for this organization to guarantee dynamic statuses count
+            const configuredStatusRecords = await Status_1.default.find({ organizationId: orgId }).select('name').lean();
+            const configuredStatusNames = new Set(configuredStatusRecords.map((s) => (s.name || '').trim().toUpperCase()).filter(Boolean));
+            const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|COOL(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\s+PENDING)?|PROPOSAL|APPROVALS?(\s+PENDING)?|NEGOTIATION|APPROVED(\s+BUT\s+NOT\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|CALL(\s+REJECTED)?|NOT(\s+CONNECTED|\s+REACHABLE|\s+INTESTED|\s+INTERESTED|\s+EXISTS)?|NO(\s+ANSWER|\s+BUSINESS)?|WRONG(\s+NUMBER)?|REPEATED(\s+NUMBER)?|INK\s*WORLDWIDE)$/i;
             let totalPipelineLeads = 0;
             leadAgg.forEach((item) => {
                 if (item._id) {
@@ -166,9 +170,26 @@ router.get('/metrics', async (req, res) => {
                     const count = Number(item.count || 0);
                     statusCounts[upper] = (statusCounts[upper] || 0) + count;
                     if (rawName !== upper) {
-                        statusCounts[rawName] = count;
+                        statusCounts[rawName] = (statusCounts[rawName] || 0) + count;
                     }
-                    if (pipelineRegex.test(upper)) {
+                    // Singular / Plural variation support (e.g. "COOL LEAD" <-> "COOL LEADS")
+                    const noS = upper.endsWith('S') ? upper.slice(0, -1) : upper;
+                    const withS = upper.endsWith('S') ? upper : `${upper}S`;
+                    statusCounts[noS] = (statusCounts[noS] || 0) + count;
+                    statusCounts[withS] = (statusCounts[withS] || 0) + count;
+                    // Strip "LEAD" / "LEADS" suffix variation support (e.g. "COOL" <-> "COOL LEAD")
+                    const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
+                    if (stripped) {
+                        statusCounts[stripped] = (statusCounts[stripped] || 0) + count;
+                        statusCounts[`${stripped} LEAD`] = (statusCounts[`${stripped} LEAD`] || 0) + count;
+                        statusCounts[`${stripped} LEADS`] = (statusCounts[`${stripped} LEADS`] || 0) + count;
+                    }
+                    if (pipelineRegex.test(upper) ||
+                        configuredStatusNames.has(upper) ||
+                        configuredStatusNames.has(rawName) ||
+                        configuredStatusNames.has(stripped) ||
+                        configuredStatusNames.has(noS) ||
+                        configuredStatusNames.has(withS)) {
                         totalPipelineLeads += count;
                     }
                 }
@@ -200,7 +221,7 @@ router.get('/metrics', async (req, res) => {
                 totalLeads: totalPipelineLeads,
                 recentActivities: recentActivitiesRes
             };
-            cache_1.serverCache.set(cacheKey, resultData, 180); // 3 minutes cache TTL (invalidated on every lead mutation)
+            cache_1.serverCache.set(cacheKey, resultData, 5); // 5 seconds cache TTL for instantaneous UI sync
             res.setHeader('X-Cache', 'MISS');
             res.status(200).json(resultData);
             return;

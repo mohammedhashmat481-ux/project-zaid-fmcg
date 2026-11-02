@@ -4,6 +4,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
+import { queryClient } from '../services/queryClient';
 import * as Icons from 'lucide-react';
 import { exportCampaignCSV } from '../utils/exportCampaignCSV';
 
@@ -95,6 +96,17 @@ export default function MyCampaign() {
     staleTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData
   });
+
+  // Merge built-in campaign statuses with any custom statuses created in Settings -> Status
+  const availableStatuses = useMemo(() => {
+    const list = [...CAMPAIGN_STATUSES];
+    statuses.forEach((s: string) => {
+      if (s && !list.some(existing => existing.trim().toUpperCase() === s.trim().toUpperCase())) {
+        list.push(s);
+      }
+    });
+    return list;
+  }, [statuses]);
 
   const [activeCampaign, setActiveCampaign] = useState<CampaignStats | null>(null);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
@@ -359,16 +371,15 @@ export default function MyCampaign() {
     // 1. Always update state locally so user sees the selected status immediately
     handleFieldChange(lead._id, 'status', newStatus);
 
-    const isHotOrWarm = newStatus === 'Hot Lead' || newStatus === 'Warm Lead';
+    const isHotOrWarm = /^(HOT|WARM)(\s+LEADS?)?$/i.test(newStatus);
+    const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
+    const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
+    const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
 
     // 2. ONLY for Hot Lead or Warm Lead: Auto-save status and immediately open Create Lead
     if (isHotOrWarm) {
-      const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
-      const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
-      const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
-
       try {
-        const normalizedStatus = newStatus === 'Hot Lead' ? 'HOT LEADS' : (newStatus === 'Warm Lead' ? 'WARM LEADS' : newStatus);
+        const normalizedStatus = newStatus.toUpperCase().includes('HOT') ? 'HOT LEADS' : 'WARM LEADS';
         const payload = {
           status: normalizedStatus,
           dialStatus: newStatus,
@@ -384,6 +395,10 @@ export default function MyCampaign() {
 
         // Update in-memory state so counters reflect immediately
         setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
+
+        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+        queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
 
         showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
 
@@ -428,7 +443,7 @@ export default function MyCampaign() {
             presentAddress: lead.data?.presentAddress || locationVal,
             assignedTo: assignedToVal,
             assignedToName: assignedToVal,
-            status: newStatus.toUpperCase().includes('HOT') ? 'HOT LEADS' : 'WARM LEADS',
+            status: normalizedStatus,
             notes: currentRemarks,
             remarks: currentRemarks,
             caseDetails: currentCaseDetails,
@@ -444,10 +459,47 @@ export default function MyCampaign() {
         showToast(err.response?.data?.error || 'Failed to update status.', 'error');
       }
     } else {
-      // 3. For ALL other statuses (Yet To Call, Call Rejected, Not Connected, etc.):
-      // DO NOT navigate away, DO NOT auto-save to DB yet!
-      // The status will only be saved when user clicks the "SAVE" button!
-      showToast(`Status changed to ${newStatus}. Click SAVE to persist.`, 'info');
+      // 3. For ALL other statuses (Cool Lead, Call Rejected, Not Connected, etc.):
+      // DO NOT navigate to Create Lead!
+      // Auto-save immediately to DB so Dashboard reflects +1 immediately!
+      const matchedStatus = statuses.find(s => s.trim().toUpperCase() === newStatus.trim().toUpperCase());
+      const finalStatusToSave = matchedStatus || newStatus;
+
+      try {
+        const payload = {
+          status: finalStatusToSave,
+          dialStatus: finalStatusToSave,
+          dialedAt: new Date(),
+          callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
+          notes: currentRemarks,
+          caseDetails: currentCaseDetails,
+          leadCategory: currentLeadCategory
+        };
+
+        // Persist to database
+        await api.put(`/records/leads/${lead._id}`, payload);
+
+        // Update in-memory state so counters and cards reflect immediately
+        setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
+
+        if (newStatus !== 'Yet To Call' && !isLeadDialed(lead)) {
+          setCampaignStats(prev => ({
+            ...prev,
+            dialed: prev.dialed + 1,
+            yetToDial: Math.max(0, prev.yetToDial - 1)
+          }));
+        }
+
+        // Invalidate queries so Dashboard and leads sync instantly
+        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+        queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+
+        showToast(`Status updated to ${newStatus}.`, 'success');
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.response?.data?.error || 'Failed to update status.', 'error');
+      }
     }
   };
 
@@ -561,6 +613,9 @@ export default function MyCampaign() {
 
       const state = leadStates[leadId];
       const currentStatus = state?.status || lead.data?.status || lead.data?.dialStatus || 'Yet To Call';
+      const matchedStatus = statuses.find(s => s.trim().toUpperCase() === currentStatus.trim().toUpperCase());
+      const finalStatusToSave = matchedStatus || currentStatus;
+
       const currentRemarks = state?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
       const currentCaseDetails = state?.caseDetails ?? (lead.data?.caseDetails || '');
       const currentLeadCategory = state?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
@@ -575,8 +630,8 @@ export default function MyCampaign() {
       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : 'N/A');
 
       const payload: Record<string, any> = {
-        status: currentStatus,
-        dialStatus: currentStatus,
+        status: finalStatusToSave,
+        dialStatus: finalStatusToSave,
         dialedAt: new Date(),
         callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
         notes: currentRemarks,
@@ -585,6 +640,11 @@ export default function MyCampaign() {
       };
 
       await api.put(`/records/leads/${leadId}`, payload);
+
+      // Invalidate queries so Dashboard and leads counts sync immediately
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
 
       // Update lead in memory so counts & UI update immediately
       setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
@@ -1335,7 +1395,7 @@ export default function MyCampaign() {
                                     onChange={(e) => handleStatusSelect(lead, e.target.value)}
                                     className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 dark:text-white cursor-pointer"
                                   >
-                                    {CAMPAIGN_STATUSES.map(statusOpt => (
+                                    {availableStatuses.map(statusOpt => (
                                       <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
                                     ))}
                                   </select>
@@ -1421,7 +1481,7 @@ export default function MyCampaign() {
                                   onChange={(e) => handleStatusSelect(lead, e.target.value)}
                                   className="w-full h-10 pl-3 pr-8 text-sm font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs cursor-pointer uppercase appearance-none"
                                 >
-                                  {CAMPAIGN_STATUSES.map(st => (
+                                  {availableStatuses.map(st => (
                                     <option key={st} value={st}>{st.toUpperCase()}</option>
                                   ))}
                                 </select>

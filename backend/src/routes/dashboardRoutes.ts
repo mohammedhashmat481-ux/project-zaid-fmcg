@@ -4,6 +4,7 @@ import ModuleDefinition from '../models/ModuleDefinition';
 import CustomRecord from '../models/CustomRecord';
 import Activity from '../models/Activity';
 import User from '../models/User';
+import Status from '../models/Status';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { HierarchyService } from '../utils/hierarchy';
@@ -179,7 +180,13 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
           .limit(10)
       ]);
 
-      const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\s*WORLDWIDE)$/i;
+      // Retrieve all configured status names for this organization to guarantee dynamic statuses count
+      const configuredStatusRecords = await Status.find({ organizationId: orgId }).select('name').lean();
+      const configuredStatusNames = new Set(
+        configuredStatusRecords.map((s: any) => (s.name || '').trim().toUpperCase()).filter(Boolean)
+      );
+
+      const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|COOL(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\s+PENDING)?|PROPOSAL|APPROVALS?(\s+PENDING)?|NEGOTIATION|APPROVED(\s+BUT\s+NOT\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|CALL(\s+REJECTED)?|NOT(\s+CONNECTED|\s+REACHABLE|\s+INTESTED|\s+INTERESTED|\s+EXISTS)?|NO(\s+ANSWER|\s+BUSINESS)?|WRONG(\s+NUMBER)?|REPEATED(\s+NUMBER)?|INK\s*WORLDWIDE)$/i;
 
       let totalPipelineLeads = 0;
       leadAgg.forEach((item: any) => {
@@ -190,9 +197,31 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
 
           statusCounts[upper] = (statusCounts[upper] || 0) + count;
           if (rawName !== upper) {
-            statusCounts[rawName] = count;
+            statusCounts[rawName] = (statusCounts[rawName] || 0) + count;
           }
-          if (pipelineRegex.test(upper)) {
+
+          // Singular / Plural variation support (e.g. "COOL LEAD" <-> "COOL LEADS")
+          const noS = upper.endsWith('S') ? upper.slice(0, -1) : upper;
+          const withS = upper.endsWith('S') ? upper : `${upper}S`;
+          statusCounts[noS] = (statusCounts[noS] || 0) + count;
+          statusCounts[withS] = (statusCounts[withS] || 0) + count;
+
+          // Strip "LEAD" / "LEADS" suffix variation support (e.g. "COOL" <-> "COOL LEAD")
+          const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
+          if (stripped) {
+            statusCounts[stripped] = (statusCounts[stripped] || 0) + count;
+            statusCounts[`${stripped} LEAD`] = (statusCounts[`${stripped} LEAD`] || 0) + count;
+            statusCounts[`${stripped} LEADS`] = (statusCounts[`${stripped} LEADS`] || 0) + count;
+          }
+
+          if (
+            pipelineRegex.test(upper) ||
+            configuredStatusNames.has(upper) ||
+            configuredStatusNames.has(rawName) ||
+            configuredStatusNames.has(stripped) ||
+            configuredStatusNames.has(noS) ||
+            configuredStatusNames.has(withS)
+          ) {
             totalPipelineLeads += count;
           }
         }

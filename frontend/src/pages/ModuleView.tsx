@@ -2126,7 +2126,7 @@ export default function ModuleView() {
 
                   const remarksText = rec.data?.notes 
                     ? rec.data.notes.replace(/<[^>]*>/g, '') 
-                    : (rec.data?.remarks || (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'N/A'));
+                    : (rec.data?.remarks || 'N/A');
 
                   return (
                     <div 
@@ -2158,7 +2158,15 @@ export default function ModuleView() {
                               </span>
                             </div>
 
-                            {/* Row 3: Product */}
+                            {/* Row 3: Data Code */}
+                            <div className="leading-snug flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">Data Code: </span>
+                              <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
+                                {rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (leadNo ? `LND-${leadNo}` : 'N/A')}
+                              </span>
+                            </div>
+
+                            {/* Row 4: Product */}
                             <div className="leading-snug">
                               <span className="font-bold text-slate-800 dark:text-slate-100">Product: </span>
                               <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || 'N/A'}>

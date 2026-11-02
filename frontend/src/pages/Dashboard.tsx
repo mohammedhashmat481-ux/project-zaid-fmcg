@@ -98,7 +98,7 @@ export default function Dashboard() {
       const res = await api.get('/statuses').catch(() => ({ data: [] }));
       return Array.isArray(res.data) ? res.data : [];
     },
-    staleTime: 10 * 60 * 1000, // 10 minutes master data
+    staleTime: 30 * 1000, // 30s fresh cache for dynamic responsiveness
     placeholderData: keepPreviousData
   });
 
@@ -261,12 +261,34 @@ export default function Dashboard() {
       return metricsData.todayFollowupsCount || 0;
     }
 
-    // Direct exact match to configured status name (matches Sidebar "Leads Process" exactly)
+    // 1. Direct exact match (matches exact or uppercase)
     if (metricsData.statusCounts[upper] !== undefined) {
       return Number(metricsData.statusCounts[upper]);
     }
     if (metricsData.statusCounts[raw] !== undefined) {
       return Number(metricsData.statusCounts[raw]);
+    }
+
+    // 2. Singular / Plural variation tolerance (e.g. "COOL LEAD" <-> "COOL LEADS")
+    const withoutS = upper.endsWith('S') ? upper.slice(0, -1) : upper;
+    const withS = upper.endsWith('S') ? upper : `${upper}S`;
+    if (metricsData.statusCounts[withoutS] !== undefined) {
+      return Number(metricsData.statusCounts[withoutS]);
+    }
+    if (metricsData.statusCounts[withS] !== undefined) {
+      return Number(metricsData.statusCounts[withS]);
+    }
+
+    // 3. LEAD / LEADS suffix variation tolerance (e.g. "COOL" <-> "COOL LEAD")
+    const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
+    if (stripped && metricsData.statusCounts[stripped] !== undefined) {
+      return Number(metricsData.statusCounts[stripped]);
+    }
+    if (stripped && metricsData.statusCounts[`${stripped} LEAD`] !== undefined) {
+      return Number(metricsData.statusCounts[`${stripped} LEAD`]);
+    }
+    if (stripped && metricsData.statusCounts[`${stripped} LEADS`] !== undefined) {
+      return Number(metricsData.statusCounts[`${stripped} LEADS`]);
     }
 
     return 0;
