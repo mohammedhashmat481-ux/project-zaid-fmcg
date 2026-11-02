@@ -574,16 +574,16 @@ export default function Dashboard() {
       {/* 3. CAMPAIGN STATUS & EXECUTION TELEMETRY */}
       {(() => {
         const campaignsList: any[] = Array.isArray(myCampaignsData) ? myCampaignsData : ((myCampaignsData as any)?.campaigns || []);
-        const totalCampaigns = campaignsList.length > 0 ? campaignsList.length : 21;
-        const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && c.totalAssigned > 0).length || 0;
-        const inProgressCampaigns = campaignsList.filter((c: any) => c.yetToDial > 0 || c.dialed > 0).length || totalCampaigns;
-        const yetToStartCampaigns = campaignsList.filter((c: any) => c.dialed === 0).length || 0;
+        const totalCampaigns = campaignsList.length;
+        const completedCampaigns = campaignsList.filter((c: any) => c.yetToDial === 0 && (c.totalAssigned > 0 || c.dialed > 0)).length;
+        const inProgressCampaigns = campaignsList.filter((c: any) => c.yetToDial > 0 && c.dialed > 0).length;
+        const yetToStartCampaigns = campaignsList.filter((c: any) => c.dialed === 0 && c.totalAssigned > 0).length;
 
-        const totalLeadsDialed = campaignsList.reduce((acc: number, c: any) => acc + (c.dialed || 0), 0) || 44586;
-        const totalLeadsAllocated = campaignsList.reduce((acc: number, c: any) => acc + (c.totalAssigned || 0), 0) || 110735;
-        const remainingLeads = Math.max(0, totalLeadsAllocated - totalLeadsDialed) || 66149;
-        const dialedPercentage = totalLeadsAllocated > 0 ? Math.round((totalLeadsDialed / totalLeadsAllocated) * 100) : 40;
-        const activeCampaignName = campaignsList[0]?.campaignName || "Active Telephony Drive";
+        const totalLeadsDialed = campaignsList.reduce((acc: number, c: any) => acc + (Number(c.dialed) || 0), 0);
+        const totalLeadsAllocated = campaignsList.reduce((acc: number, c: any) => acc + (Number(c.totalAssigned) || 0), 0);
+        const remainingLeads = Math.max(0, totalLeadsAllocated - totalLeadsDialed);
+        const dialedPercentage = totalLeadsAllocated > 0 ? Math.round((totalLeadsDialed / totalLeadsAllocated) * 100) : 0;
+        const activeCampaignName = campaignsList[0]?.campaignName || (totalCampaigns > 0 ? "Active Telephony Drive" : "No active campaigns assigned");
 
         return (
           <div id="campaign-section" className="w-full">
@@ -725,7 +725,7 @@ export default function Dashboard() {
                   <div 
                     className="h-full rounded-full transition-all duration-700 ease-out relative" 
                     style={{ 
-                      width: `${Math.max(dialedPercentage, 4)}%`,
+                      width: `${totalLeadsAllocated > 0 ? Math.max(dialedPercentage, 4) : 0}%`,
                       background: 'linear-gradient(90deg, #3B82F6 0%, #06B6D4 50%, #10B981 100%)'
                     }} 
                   />

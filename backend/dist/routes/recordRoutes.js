@@ -606,23 +606,43 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                 { 'data.campaign_name': { $exists: true, $ne: '' } }
             ]
         };
-        // Filter by reporting hierarchy
-        await hierarchy_1.HierarchyService.modifyRecordQuery(leadQuery, req.user, orgId);
-        const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
-        let leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
-        // Fallback: If hierarchy query found 0, fetch all leads for org
-        if (leads.length === 0) {
-            leads = await CustomRecord_1.default.find({
-                organizationId: orgId,
-                moduleId: leadModule._id,
-                $or: [
-                    { 'data.source': { $exists: true, $ne: '' } },
-                    { 'data.campaignName': { $exists: true, $ne: '' } },
-                    { 'data.campaign': { $exists: true, $ne: '' } },
-                    { 'data.campaign_name': { $exists: true, $ne: '' } }
-                ]
-            }).select(LEAD_CAMPAIGN_PROJECTION).lean();
+        // Reporting managers see only their own campaigns, NOT their subordinates' campaigns!
+        // Subordinates' leads are visible in Leads Process, but NOT in Campaigns.
+        // Super admins see all campaigns across the organization.
+        const isSuper = await hierarchy_1.HierarchyService.isSuperAdmin(req.user?.roleId);
+        if (!isSuper) {
+            const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
+            const userFilters = [
+                { createdBy: userId },
+                { 'data.assignedTo': userId.toString() }
+            ];
+            if (currentUser) {
+                const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
+                if (fullName) {
+                    const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escName + '\\s*$', 'i') });
+                }
+                if (currentUser.firstName) {
+                    const escFirst = currentUser.firstName.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escFirst + '\\s*$', 'i') });
+                }
+                if (currentUser.email) {
+                    const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escEmail + '\\s*$', 'i') });
+                }
+                if (currentUser.userCode) {
+                    const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escCode + '\\s*$', 'i') });
+                }
+            }
+            leadQuery.$and = [
+                { $or: leadQuery.$or },
+                { $or: userFilters }
+            ];
+            delete leadQuery.$or;
         }
+        const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
+        const leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
         // Group leads by campaign name — only include actual campaigns!
         const campaignGroups = {};
         leads.forEach((lead) => {
@@ -704,13 +724,15 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         const limit = isAll ? 0 : Math.max(1, parseInt(req.query.limit) || 10);
         const tab = (req.query.tab || req.query.filter || 'all').trim();
         const search = (req.query.search || '').trim();
-        const detailsCacheKey = cache_1.CacheKeys.campaignDetails(orgId, `${decodedCampaignName}:${page}:${limit}:${tab}:${search}:${isAll}`);
+        const detailsCacheKey = cache_1.CacheKeys.campaignDetails(orgId, `${userId}:${decodedCampaignName}:${page}:${limit}:${tab}:${search}:${isAll}`);
         const cachedDetails = cache_1.serverCache.get(detailsCacheKey);
         if (cachedDetails) {
             res.setHeader('X-Cache', 'HIT');
             res.status(200).json(cachedDetails);
             return;
         }
+        const isSuper = await hierarchy_1.HierarchyService.isSuperAdmin(req.user?.roleId);
+        const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
         // Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         const moduleId = leadModule?._id || leadModule?.id;
@@ -732,6 +754,24 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         (data->>'campaign') ~* $${campParamIdx} OR
         (data->>'campaign_name') ~* $${campParamIdx}
       )`);
+            // Reporting managers see only their own assigned campaign records, not subordinates'
+            if (!isSuper) {
+                const userTerms = [
+                    userId.toString(),
+                    currentUser?.userCode,
+                    currentUser?.email,
+                    `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
+                    currentUser?.firstName
+                ].filter(Boolean);
+                const userConds = [];
+                userTerms.forEach(term => {
+                    baseParams.push(term);
+                    userConds.push(`LOWER(data->>'assignedTo') = LOWER($${baseParams.length})`);
+                });
+                baseParams.push(userId.toString());
+                userConds.push(`created_by = $${baseParams.length}`);
+                baseConds.push(`(${userConds.join(' OR ')})`);
+            }
             const baseWhere = baseConds.join(' AND ');
             // Query total overall stats for this campaign in ONE pass (<5ms)
             const statsSql = `
@@ -862,6 +902,32 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             ...(moduleId ? { moduleId } : {}),
             ...matchFilter
         };
+        if (!isSuper) {
+            const userFilters = [
+                { createdBy: userId },
+                { 'data.assignedTo': userId.toString() }
+            ];
+            if (currentUser) {
+                const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
+                if (fullName) {
+                    const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escName + '\\s*$', 'i') });
+                }
+                if (currentUser.firstName) {
+                    const escFirst = currentUser.firstName.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escFirst + '\\s*$', 'i') });
+                }
+                if (currentUser.email) {
+                    const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escEmail + '\\s*$', 'i') });
+                }
+                if (currentUser.userCode) {
+                    const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escCode + '\\s*$', 'i') });
+                }
+            }
+            query.$and = [{ $or: userFilters }];
+        }
         const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.contactNumber data.name_contact_num data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
         const totalCount = await CustomRecord_1.default.countDocuments(query);
         const queryChain = CustomRecord_1.default.find(query).select(LEAD_PROJECTION).sort({ createdAt: -1 });

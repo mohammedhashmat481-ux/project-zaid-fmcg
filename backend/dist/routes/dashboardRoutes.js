@@ -162,37 +162,57 @@ router.get('/metrics', async (req, res) => {
             const configuredStatusRecords = await Status_1.default.find({ organizationId: orgId }).select('name').lean();
             const configuredStatusNames = new Set(configuredStatusRecords.map((s) => (s.name || '').trim().toUpperCase()).filter(Boolean));
             const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|COOL(\s+LEADS?)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\s+PENDING)?|PROPOSAL|APPROVALS?(\s+PENDING)?|NEGOTIATION|APPROVED(\s+BUT\s+NOT\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|CALL(\s+REJECTED)?|NOT(\s+CONNECTED|\s+REACHABLE|\s+INTESTED|\s+INTERESTED|\s+EXISTS)?|NO(\s+ANSWER|\s+BUSINESS)?|WRONG(\s+NUMBER)?|REPEATED(\s+NUMBER)?|INK\s*WORLDWIDE)$/i;
+            // Group into canonical status buckets without double-counting
+            const canonicalMap = {};
             let totalPipelineLeads = 0;
             leadAgg.forEach((item) => {
                 if (item._id) {
                     const rawName = item._id.toString().trim();
                     const upper = rawName.toUpperCase();
                     const count = Number(item.count || 0);
-                    statusCounts[upper] = (statusCounts[upper] || 0) + count;
-                    if (rawName !== upper) {
-                        statusCounts[rawName] = (statusCounts[rawName] || 0) + count;
+                    // Canonicalize status: "HOT LEAD" and "HOT LEADS" -> "HOT LEADS"
+                    let canonical = upper;
+                    if (upper === 'HOT' || upper === 'HOT LEAD' || upper === 'HOT LEADS') {
+                        canonical = 'HOT LEADS';
                     }
-                    // Singular / Plural variation support (e.g. "COOL LEAD" <-> "COOL LEADS")
-                    const noS = upper.endsWith('S') ? upper.slice(0, -1) : upper;
-                    const withS = upper.endsWith('S') ? upper : `${upper}S`;
-                    statusCounts[noS] = (statusCounts[noS] || 0) + count;
-                    statusCounts[withS] = (statusCounts[withS] || 0) + count;
-                    // Strip "LEAD" / "LEADS" suffix variation support (e.g. "COOL" <-> "COOL LEAD")
-                    const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
-                    if (stripped) {
-                        statusCounts[stripped] = (statusCounts[stripped] || 0) + count;
-                        statusCounts[`${stripped} LEAD`] = (statusCounts[`${stripped} LEAD`] || 0) + count;
-                        statusCounts[`${stripped} LEADS`] = (statusCounts[`${stripped} LEADS`] || 0) + count;
+                    else if (upper === 'WARM' || upper === 'WARM LEAD' || upper === 'WARM LEADS') {
+                        canonical = 'WARM LEADS';
+                    }
+                    else if (upper === 'COOL' || upper === 'COOL LEAD' || upper === 'COOL LEADS') {
+                        canonical = 'COOL LEADS';
+                    }
+                    else if (upper === 'CEDIL PENDING' || upper === 'CEBIL PENDING' || upper === 'CEDIL' || upper === 'CEBIL') {
+                        canonical = 'CEBIL PENDING';
+                    }
+                    canonicalMap[canonical] = (canonicalMap[canonical] || 0) + count;
+                    if (rawName !== canonical) {
+                        statusCounts[rawName] = count;
                     }
                     if (pipelineRegex.test(upper) ||
                         configuredStatusNames.has(upper) ||
-                        configuredStatusNames.has(rawName) ||
-                        configuredStatusNames.has(stripped) ||
-                        configuredStatusNames.has(noS) ||
-                        configuredStatusNames.has(withS)) {
+                        configuredStatusNames.has(rawName)) {
                         totalPipelineLeads += count;
                     }
                 }
+            });
+            // Populate statusCounts from canonical buckets: each bucket distributes to its synonyms
+            Object.entries(canonicalMap).forEach(([canonical, count]) => {
+                statusCounts[canonical] = count;
+                const stripped = canonical.replace(/\s+LEADS?$/i, '').trim();
+                if (stripped) {
+                    if (statusCounts[stripped] === undefined)
+                        statusCounts[stripped] = count;
+                    if (statusCounts[`${stripped} LEAD`] === undefined)
+                        statusCounts[`${stripped} LEAD`] = count;
+                    if (statusCounts[`${stripped} LEADS`] === undefined)
+                        statusCounts[`${stripped} LEADS`] = count;
+                }
+                const noS = canonical.endsWith('S') ? canonical.slice(0, -1) : canonical;
+                const withS = canonical.endsWith('S') ? canonical : `${canonical}S`;
+                if (statusCounts[noS] === undefined)
+                    statusCounts[noS] = count;
+                if (statusCounts[withS] === undefined)
+                    statusCounts[withS] = count;
             });
             todayFollowupsCount = todayFollowupsCountRes;
             todayFollowupsList = todayFollowupsListRes;
