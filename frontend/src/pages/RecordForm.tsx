@@ -309,14 +309,94 @@ export default function RecordForm() {
       
       // Merge values passed from campaign calling card
       const passedData = location.state || {};
-      const finalDefaults = {
+      const finalDefaults: Record<string, any> = {
         ...defaults,
         ...passedData
       };
 
       // SOURCE is PERMANENTLY fixed to the user who creates the lead!
       if (apiPath === 'leads') {
+        // 1. Data Code: preserve exactly from card
+        if (!finalDefaults.dataCode && (passedData.dataCode || passedData.data_code || passedData.code)) {
+          finalDefaults.dataCode = passedData.dataCode || passedData.data_code || passedData.code;
+        }
+
+        // 2. Firm Name / Company
+        if (!finalDefaults.company) {
+          finalDefaults.company = passedData.company || passedData.firmName || passedData.firm_name || passedData.companyName || '';
+        }
+
+        // 3. Customer Name / First Name / Last Name
+        if (!finalDefaults.firstName && (passedData.firstName || passedData.customer || passedData.customerName || passedData.name || passedData.fullName)) {
+          const rawName = String(passedData.firstName || passedData.customer || passedData.customerName || passedData.name || passedData.fullName).trim();
+          const parts = rawName.split(' ');
+          finalDefaults.firstName = parts[0] || '';
+          if (!finalDefaults.lastName) {
+            finalDefaults.lastName = parts.slice(1).join(' ') || '';
+          }
+        }
+
+        // 4. Mobile / Phone
+        if (!finalDefaults.phone) {
+          finalDefaults.phone = passedData.phone || passedData.mobile || passedData.contactNumber || passedData.name_contact_num || passedData.mobileNo || '';
+        }
+
+        // 5. Location / City / Address
+        const loc = passedData.city || passedData.location || passedData.presentAddress || '';
+        if (!finalDefaults.city) finalDefaults.city = loc;
+        if (!finalDefaults.presentAddress) finalDefaults.presentAddress = passedData.presentAddress || loc;
+
+        // 6. Assigned Agent
+        if (!finalDefaults.assignedTo && (passedData.assignedTo || passedData.assignedToName)) {
+          finalDefaults.assignedTo = passedData.assignedTo || passedData.assignedToName;
+        }
+
+        // 7. Case Details
+        if (passedData.caseDetails) {
+          finalDefaults.caseDetails = passedData.caseDetails;
+        }
+
+        // 8. Remarks / Notes
+        if (!finalDefaults.notes && (passedData.notes || passedData.remarks)) {
+          finalDefaults.notes = passedData.notes || passedData.remarks;
+        }
+
+        // 9. Lead Category & Loan Type
+        if (passedData.leadCategory) {
+          finalDefaults.leadCategory = passedData.leadCategory;
+        }
+        const rawLt = (passedData.loanType || passedData.leadCategory || '').toString().trim().toLowerCase();
+        if (rawLt) {
+          const availableLoanTypes = allLoanTypes.length > 0 ? allLoanTypes : ['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP'];
+          const matchedLt = availableLoanTypes.find(lt => lt.trim().toLowerCase() === rawLt) ||
+            (rawLt.includes('personal') || rawLt === 'pl' || rawLt.includes('salaried') ? availableLoanTypes.find(lt => lt.toUpperCase().includes('PERSONAL') || lt.toUpperCase().includes('SALARIED')) : null) ||
+            (rawLt.includes('business') || rawLt === 'bl' ? availableLoanTypes.find(lt => lt.toUpperCase().includes('BUSINESS')) : null) ||
+            (rawLt.includes('home') || rawLt === 'hl' ? availableLoanTypes.find(lt => lt.toUpperCase().includes('HOME')) : null) ||
+            (rawLt.includes('lap') || rawLt.includes('property') ? availableLoanTypes.find(lt => lt.toUpperCase().includes('LAP')) : null);
+          if (matchedLt) {
+            finalDefaults.loanType = matchedLt;
+          }
+        }
+
+        // 10. Status: Match exact option in dropdown (HOT LEADS vs WARM LEADS)
+        if (passedData.status) {
+          const isHot = String(passedData.status).toUpperCase().includes('HOT');
+          const isWarm = String(passedData.status).toUpperCase().includes('WARM');
+          if (isHot) {
+            finalDefaults.status = dynamicStatuses.find(s => s.toUpperCase() === 'HOT LEADS') ||
+              dynamicStatuses.find(s => s.toUpperCase().includes('HOT')) ||
+              'HOT LEADS';
+          } else if (isWarm) {
+            finalDefaults.status = dynamicStatuses.find(s => s.toUpperCase() === 'WARM LEADS') ||
+              dynamicStatuses.find(s => s.toUpperCase().includes('WARM')) ||
+              'WARM LEADS';
+          } else {
+            finalDefaults.status = passedData.status;
+          }
+        }
+
         finalDefaults['source'] = loggedInCreatorName;
+
         // Brand new lead creation MUST NOT inherit call attempts or dial timestamps!
         if (!id) {
           delete finalDefaults.dialedAt;

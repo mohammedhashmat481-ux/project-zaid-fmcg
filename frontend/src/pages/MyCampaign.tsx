@@ -392,23 +392,50 @@ export default function MyCampaign() {
           ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
           : 'Super Admin';
 
-        const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || '';
+        const currentIndex = leads.findIndex(l => l._id === lead._id);
+        const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
         
+        const displayedDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || (lead._id ? `PL-DEMO-DATA-${slNo}` : '');
+        const displayedFirmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || lead.data?.companyName || '';
+        const rawCustomer = lead.data?.firstName || lead.data?.customerName || lead.data?.customer || lead.data?.name || lead.data?.fullName || '';
+        const custParts = String(rawCustomer).trim().split(' ');
+        const firstNameVal = lead.data?.firstName || custParts[0] || '';
+        const lastNameVal = lead.data?.lastName || custParts.slice(1).join(' ') || '';
+        const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || lead.data?.mobileNo || '';
+        const locationVal = lead.data?.city || lead.data?.location || lead.data?.presentAddress || 'BLORE';
+        const assignedToVal = lead.data?.assignedTo || (lead as any).assignedToName || '';
+
         navigate('/modules/leads/new', {
           state: {
             ...lead.data,
-            firstName: lead.data?.firstName || lead.data?.customer || lead.data?.customerName || '',
-            lastName: lead.data?.lastName || '',
+            dataCode: displayedDataCode,
+            data_code: displayedDataCode,
+            company: displayedFirmName,
+            firmName: displayedFirmName,
+            firm_name: displayedFirmName,
+            companyName: displayedFirmName,
+            firstName: firstNameVal,
+            lastName: lastNameVal,
+            customerName: rawCustomer,
+            customer: rawCustomer,
+            fullName: rawCustomer,
             phone: phoneVal,
-            company: lead.data?.company || lead.data?.firm_name || lead.data?.firmName || '',
-            city: lead.data?.city || lead.data?.location || '',
-            dataCode: lead.data?.dataCode || lead.data?.data_code || '',
+            mobile: phoneVal,
+            contactNumber: phoneVal,
+            name_contact_num: phoneVal,
+            city: locationVal,
+            location: locationVal,
+            presentAddress: lead.data?.presentAddress || locationVal,
+            assignedTo: assignedToVal,
+            assignedToName: assignedToVal,
             status: newStatus.toUpperCase().includes('HOT') ? 'HOT LEADS' : 'WARM LEADS',
             notes: currentRemarks,
+            remarks: currentRemarks,
             caseDetails: currentCaseDetails,
             leadCategory: currentLeadCategory,
             loanType: currentLeadCategory,
-            source: loggedInCreatorName, // FIXED: CREATOR'S NAME ONLY!
+            source: loggedInCreatorName,
+            campaignName: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
             fromCampaignLeadId: lead._id
           }
         });
