@@ -81,6 +81,10 @@ function DashboardGuard() {
 }
 
 export default function App() {
+  React.useEffect(() => {
+    document.title = 'novaleadnexa';
+  }, []);
+
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <TopProgressBar />
