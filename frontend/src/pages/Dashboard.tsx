@@ -884,9 +884,20 @@ export default function Dashboard() {
                 StatusBadgeIcon = Icons.PhoneCall;
               }
 
+              const dataCodeVal = rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (rec.data?.campaignName ? `${String(rec.data.campaignName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-')}-DATA-${leadSerial}` : 'N/A');
+              const leadCategoryVal = rec.data?.leadCategory || rec.data?.lead_category || rec.data?.loanType || 'PERSONAL LOAN';
+              const campaignVal = rec.data?.campaignName || rec.data?.campaign || 'N/A';
+              const sourceVal = rec.data?.source || rec.data?.leadSource || 'Direct';
+
               const remarksText = rec.data?.notes 
                 ? rec.data.notes.replace(/<[^>]*>/g, '') 
-                : (rec.data?.remarks || (rec.data?.dataCode ? `Data Code: ${rec.data.dataCode}` : 'N/A'));
+                : (rec.data?.remarks || 'N/A');
+
+              const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+              const isRevealed = !!revealedPhones[rec._id];
+              const displayedPhone = rawPhone && rawPhone !== 'N/A'
+                ? (isRevealed ? rawPhone : maskPhoneNumber(rawPhone, false))
+                : 'N/A';
 
               return (
                 <div 
@@ -899,166 +910,212 @@ export default function Dashboard() {
                     style={{ backgroundColor: statusTokens.accentHex }} 
                   />
                   
-                  {/* 4-Column CSS Grid matching Image 1 */}
+                  {/* 4-Column CSS Grid perfectly inline across all 4 columns */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
-                    {/* --- Column 1 --- */}
-                    <div className="space-y-3.5">
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.: </span>
-                        <span className="text-slate-700 dark:text-slate-300 font-normal">{idx + 1}</span>
-                      </div>
-
-                      <div className="leading-snug flex items-center gap-1.5">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.: </span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
-                          {leadNo}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Product: </span>
-                        <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={rec.data?.loanType || 'N/A'}>
-                          {rec.data?.loanType || 'N/A'}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Status: </span>
-                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
-                          {rec.data?.status || 'NEW'}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner: </span>
-                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px] align-bottom" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
-                          {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
-                        </span>
-                      </div>
+                    {/* ===== ROW 1 ===== */}
+                    {/* Col 1: Sl No. */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-normal">{idx + 1}</span>
                     </div>
 
-                    {/* --- Column 2 --- */}
-                    <div className="space-y-3.5">
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name: </span>
-                        <Link 
-                          to={`/modules/leads/${rec._id}`}
-                          className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px] align-bottom" 
-                          title={leadName}
-                        >
-                          {leadName}
-                        </Link>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Location: </span>
-                        <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px] align-bottom" title={leadLocation}>
-                          {leadLocation}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug flex items-center gap-1.5">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.: </span>
-                        <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
-                          {maskPhoneNumber(rec.data?.phone, !!revealedPhones[rec._id])}
-                          {rec.data?.phone && rec.data?.phone !== 'N/A' && (
-                            <button
-                              type="button"
-                              onClick={() => togglePhoneReveal(rec._id)}
-                              title={revealedPhones[rec._id] ? "Hide number" : "Show number"}
-                              className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                            >
-                              {revealedPhones[rec._id] ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Amount: </span>
-                        <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
-                          {formattedAmount}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Case Details: </span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.caseDetails || 'N/A'}>
-                          {rec.data?.caseDetails || 'N/A'}
-                        </span>
-                      </div>
+                    {/* Col 2: Lead Name */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name:&nbsp;</span>
+                      <Link 
+                        to={`/modules/leads/${rec._id}`}
+                        className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px]" 
+                        title={leadName}
+                      >
+                        {leadName}
+                      </Link>
                     </div>
 
-                    {/* --- Column 3 --- */}
-                    <div className="space-y-3.5">
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Created On: </span>
-                        <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">By: </span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={createdByName}>
-                          {createdByName}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date: </span>
-                        <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
-                          {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Pending at: </span>
-                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px] align-bottom" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
-                          {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
-                        </span>
-                      </div>
-
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">PSM: </span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={psmName}>
-                          {psmName}
-                        </span>
-                      </div>
+                    {/* Col 3: Created On */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Created On:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
                     </div>
 
-                    {/* --- Column 4 --- */}
-                    <div className="space-y-3.5">
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company: </span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={rec.data?.company || rec.data?.firm || 'N/A'}>
-                          {rec.data?.company || rec.data?.firm || 'N/A'}
-                        </span>
-                      </div>
+                    {/* Col 4: Firm/Company */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || 'N/A'}>
+                        {rec.data?.company || rec.data?.firm || 'N/A'}
+                      </span>
+                    </div>
 
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Modified On: </span>
-                        <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
-                      </div>
+                    {/* ===== ROW 2 ===== */}
+                    {/* Col 1: Lead No. */}
+                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.:&nbsp;</span>
+                      <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                        {leadNo}
+                      </span>
+                    </div>
 
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By: </span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px] align-bottom" title={assignedByName}>
-                          {assignedByName}
-                        </span>
-                      </div>
+                    {/* Col 2: Location */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Location:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={leadLocation}>
+                        {leadLocation}
+                      </span>
+                    </div>
 
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To: </span>
-                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px] align-bottom" title={assignedToName}>
-                          {assignedToName}
-                        </span>
-                      </div>
+                    {/* Col 3: By */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">By:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={createdByName}>
+                        {createdByName}
+                      </span>
+                    </div>
 
-                      <div className="leading-snug">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">Remarks: </span>
-                        <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px] align-bottom" title={remarksText}>
-                          {remarksText}
-                        </span>
-                      </div>
+                    {/* Col 4: Modified On */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Modified On:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
+                    </div>
+
+                    {/* ===== ROW 3 ===== */}
+                    {/* Col 1: Data Code */}
+                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Data Code:&nbsp;</span>
+                      <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
+                        {dataCodeVal}
+                      </span>
+                    </div>
+
+                    {/* Col 2: Mobile No. */}
+                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
+                        {displayedPhone}
+                        {rawPhone && rawPhone !== 'N/A' && (
+                          <button
+                            type="button"
+                            onClick={() => togglePhoneReveal(rec._id)}
+                            title={isRevealed ? "Hide number" : "Show number"}
+                            className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                          >
+                            {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Col 3: Followup Date */}
+                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date:&nbsp;</span>
+                      <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                        {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* Col 4: Assigned By */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={assignedByName}>
+                        {assignedByName}
+                      </span>
+                    </div>
+
+                    {/* ===== ROW 4 ===== */}
+                    {/* Col 1: Lead Category */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead Category:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[190px]" title={leadCategoryVal}>
+                        {leadCategoryVal}
+                      </span>
+                    </div>
+
+                    {/* Col 2: Amount */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Amount:&nbsp;</span>
+                      <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                        {formattedAmount}
+                      </span>
+                    </div>
+
+                    {/* Col 3: Pending at */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Pending at:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
+                        {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                      </span>
+                    </div>
+
+                    {/* Col 4: Assigned To */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To:&nbsp;</span>
+                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px]" title={assignedToName}>
+                        {assignedToName}
+                      </span>
+                    </div>
+
+                    {/* ===== ROW 5 ===== */}
+                    {/* Col 1: Product */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Product:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}>
+                        {rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* Col 2: Bank Partner */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
+                        {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
+                      </span>
+                    </div>
+
+                    {/* Col 3: PSM */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">PSM:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={psmName}>
+                        {psmName}
+                      </span>
+                    </div>
+
+                    {/* Col 4: Case Details */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Case Details:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.caseDetails || 'N/A'}>
+                        {rec.data?.caseDetails || 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* ===== ROW 6 ===== */}
+                    {/* Col 1: Status */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Status:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
+                        {rec.data?.status || 'NEW'}
+                      </span>
+                    </div>
+
+                    {/* Col 2: Campaign */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Campaign:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[170px]" title={campaignVal}>
+                        {campaignVal}
+                      </span>
+                    </div>
+
+                    {/* Col 3: Source */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Source:&nbsp;</span>
+                      <span className="text-slate-700 dark:text-slate-300 capitalize truncate inline-block max-w-[180px]" title={sourceVal}>
+                        {sourceVal}
+                      </span>
+                    </div>
+
+                    {/* Col 4: Remarks */}
+                    <div className="leading-snug min-h-[24px] flex items-center">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Remarks:&nbsp;</span>
+                      <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px]" title={remarksText}>
+                        {remarksText}
+                      </span>
                     </div>
                   </div>
 
