@@ -121,8 +121,9 @@ const validateFields = (fields: any[], data: Record<string, any>, oldValues?: Re
 router.get('/campaigns/allocation-stats', async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
+    const targetCampaign = (req.query.campaign || req.query.campaignName || '').toString().trim().toLowerCase();
     
-    const cacheKey = `campaigns:alloc-stats:${orgId}`;
+    const cacheKey = `campaigns:alloc-stats:${orgId}:${targetCampaign || '__all__'}`;
     const cached = serverCache.get(cacheKey);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
@@ -133,12 +134,12 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
     // Find Lead Module Definition
     const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
     if (!leadModule) {
-      serverCache.set(cacheKey, { stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {} }, 60);
-      res.status(200).json({ stats: {}, dialedStats: {} });
+      serverCache.set(cacheKey, { stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {}, campaignAgentStats: {} }, 60);
+      res.status(200).json({ stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {}, campaignAgentStats: {} });
       return;
     }
 
-    // Aggregate count of leads grouped by assignedTo
+    // Aggregate count of leads grouped by assignedTo (all campaigns)
     const stats = await CustomRecord.aggregate([
       { $match: { organizationId: orgId, moduleId: leadModule._id } },
       { $group: { _id: '$data.assignedTo', count: { $sum: 1 } } }
@@ -191,7 +192,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
       }).filter(Boolean)
     );
 
-    const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt';
+    const LEAD_CAMPAIGN_PROJECTION = '_id data.assignedTo data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt';
     const allLeads = await CustomRecord.find({
       organizationId: orgId,
       moduleId: leadModule._id,
@@ -205,6 +206,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
 
     const campaignAllocatedStats: Record<string, number> = {};
     const campaignDialedStats: Record<string, number> = {};
+    const campaignAgentStats: Record<string, Record<string, number>> = {};
 
     allLeads.forEach((lead: any) => {
       const d = lead.data || {};
@@ -215,6 +217,8 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
         d.source
       )?.toString().trim();
 
+      const assigned = (d.assignedTo || '').toString().trim();
+
       if (campName) {
         const lower = campName.toLowerCase();
         const genericSources = ['website', 'referral', 'cold call', 'social media', 'google ads', 'facebook ads', 'walk-in', 'direct'];
@@ -222,6 +226,13 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
         
         if (isRegistered && (registeredCampaignNames.has(lower) || !genericSources.includes(lower))) {
           campaignAllocatedStats[lower] = (campaignAllocatedStats[lower] || 0) + 1;
+
+          if (assigned) {
+            if (!campaignAgentStats[lower]) {
+              campaignAgentStats[lower] = {};
+            }
+            campaignAgentStats[lower][assigned] = (campaignAgentStats[lower][assigned] || 0) + 1;
+          }
 
           const dialSt = (d.dialStatus || '').toString().trim().toLowerCase();
           const st = (d.status || '').toString().trim().toLowerCase();
@@ -236,14 +247,21 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
       }
     });
 
+    // If a specific campaign was queried, stats reflects ONLY that specific campaign's agent allocations!
+    const effectiveStatsMap = targetCampaign 
+      ? (campaignAgentStats[targetCampaign] || {})
+      : statsMap;
+
     const payload = {
-      stats: statsMap,
+      stats: effectiveStatsMap,
+      globalStats: statsMap,
       dialedStats: dialedMap,
       campaignAllocatedStats,
-      campaignDialedStats
+      campaignDialedStats,
+      campaignAgentStats
     };
 
-    serverCache.set(cacheKey, payload, 60);
+    serverCache.set(cacheKey, payload, 30);
     res.setHeader('X-Cache', 'MISS');
     res.status(200).json(payload);
   } catch (error) {
@@ -487,7 +505,7 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
   try {
     const orgId = req.organizationId;
     const userId = req.user?.id;
-    const { campaignName, agentNames, leads } = req.body;
+    const { campaignName, agentNames, leads, startIndex = 0 } = req.body;
 
     if (!campaignName || !agentNames || !Array.isArray(agentNames) || agentNames.length === 0 || !Array.isArray(leads) || leads.length === 0) {
       res.status(400).json({ error: 'campaignName, agentNames, and leads array are required.' });
@@ -522,9 +540,11 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
 
     // Distribute leads among agents
     const recordsToCreate: any[] = [];
+    const globalOffset = Number(startIndex || 0);
+
     leads.forEach((lead: any, idx: number) => {
-      // Balanced round-robin: for N leads and M agents, each gets Math.floor(N/M) + (idx < remainder ? 1 : 0)
-      const assignedAgent = cleanAgents[idx % numAgents];
+      // Balanced round-robin with offset
+      const assignedAgent = cleanAgents[(globalOffset + idx) % numAgents];
       agentCounts[assignedAgent] = (agentCounts[assignedAgent] || 0) + 1;
       
       // Parse names — support multiple column name formats
@@ -557,7 +577,7 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
       )?.toString().trim();
 
       const cleanCampPrefix = campaignName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
-      const finalDataCode = rawDataCode || `${cleanCampPrefix}-DATA-${idx + 1}`;
+      const finalDataCode = rawDataCode || `${cleanCampPrefix}-DATA-${globalOffset + idx + 1}`;
 
       // Extract leadCategory / loanType from any possible column naming variation
       const rawCategory = (
@@ -613,6 +633,9 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
 
     // Bulk insert custom records
     const result = await CustomRecord.insertMany(recordsToCreate);
+
+    // Invalidate allocation stats cache so counts refresh instantly
+    serverCache.invalidatePattern(`campaigns:alloc-stats:${orgId}`);
 
     // Create Audit Log
     await AuditLog.create({

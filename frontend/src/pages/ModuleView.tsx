@@ -194,9 +194,11 @@ export default function ModuleView() {
   const [caParsedLeads, setCaParsedLeads] = useState<any[]>([]);
   const [campaignFilterTab, setCampaignFilterTab] = useState<'all' | 'in_progress' | 'completed'>('all');
   const [caAllocatedStats, setCaAllocatedStats] = useState<Record<string, number>>({});
+  const [caCampaignAgentStats, setCaCampaignAgentStats] = useState<Record<string, Record<string, number>>>({});
   const [caDialedStats, setCaDialedStats] = useState<Record<string, number>>({});
   const [caLoadingStats, setCaLoadingStats] = useState(false);
   const [caAssigning, setCaAssigning] = useState(false);
+  const [caAssignProgress, setCaAssignProgress] = useState('');
   const [caLoadingAgents, setCaLoadingAgents] = useState(false);
 
   useEffect(() => {
@@ -205,22 +207,31 @@ export default function ModuleView() {
     }
   }, [apiPath]);
 
-  const loadCampaignAssignmentsData = async () => {
+  const loadCampaignAssignmentsData = async (specificCamp?: string) => {
     try {
       setCaLoadingStats(true);
+      const campToQuery = specificCamp !== undefined ? specificCamp : caSelectedCampaign;
+      const statsUrl = campToQuery 
+        ? `/records/campaigns/allocation-stats?campaign=${encodeURIComponent(campToQuery)}`
+        : '/records/campaigns/allocation-stats';
+
       const [campaignsRes, rolesRes, statsRes, usersRes] = await Promise.allSettled([
         api.get('/records/campaigns?limit=100'),
         api.get('/auth/roles'),
-        api.get('/records/campaigns/allocation-stats'),
+        api.get(statsUrl),
         api.get('/auth/users?purpose=dropdown')
       ]);
 
+      let loadedCampaigns = caCampaigns;
+      let activeCampaign = campToQuery;
       if (campaignsRes.status === 'fulfilled') {
         const records = campaignsRes.value.data?.records || [];
+        loadedCampaigns = records;
         setCaCampaigns(records);
-        if (records.length > 0) {
+        if (records.length > 0 && !activeCampaign) {
           const firstCamp = records[0].data?.campaignName || records[0].data?.name || records[0].name || '';
-          setCaSelectedCampaign((prev: string) => prev || firstCamp);
+          activeCampaign = firstCamp;
+          setCaSelectedCampaign(firstCamp);
         }
       }
 
@@ -229,8 +240,19 @@ export default function ModuleView() {
       }
 
       if (statsRes.status === 'fulfilled') {
-        setCaAllocatedStats(statsRes.value.data?.stats || {});
-        setCaDialedStats(statsRes.value.data?.dialedStats || {});
+        const data = statsRes.value.data || {};
+        const agentStatsByCamp = data.campaignAgentStats || {};
+        setCaCampaignAgentStats(agentStatsByCamp);
+        setCaDialedStats(data.dialedStats || {});
+
+        const campLower = (activeCampaign || '').trim().toLowerCase();
+        if (campLower && agentStatsByCamp[campLower]) {
+          setCaAllocatedStats(agentStatsByCamp[campLower]);
+        } else if (campLower && data.stats) {
+          setCaAllocatedStats(data.stats);
+        } else {
+          setCaAllocatedStats({});
+        }
       }
 
       if (usersRes.status === 'fulfilled') {
@@ -243,6 +265,23 @@ export default function ModuleView() {
       console.error('Failed to load campaign assignments metadata:', err);
     } finally {
       setCaLoadingStats(false);
+    }
+  };
+
+  const handleCampaignChange = (newCamp: string) => {
+    setCaSelectedCampaign(newCamp);
+    const campLower = (newCamp || '').trim().toLowerCase();
+    if (campLower && caCampaignAgentStats[campLower]) {
+      setCaAllocatedStats(caCampaignAgentStats[campLower]);
+    } else {
+      setCaAllocatedStats({});
+    }
+    if (campLower) {
+      api.get(`/records/campaigns/allocation-stats?campaign=${encodeURIComponent(newCamp)}`).then(res => {
+        if (res.data?.stats) {
+          setCaAllocatedStats(res.data.stats);
+        }
+      }).catch(() => {});
     }
   };
 
@@ -406,6 +445,7 @@ export default function ModuleView() {
     }
 
     setCaAssigning(true);
+    setCaAssignProgress('Preparing lead distribution...');
     try {
       let leadsToSend = caParsedLeads;
       if (!leadsToSend || leadsToSend.length === 0) {
@@ -423,6 +463,7 @@ export default function ModuleView() {
       if (!leadsToSend || leadsToSend.length === 0) {
         showToast('The uploaded file is empty or invalid.', 'warning');
         setCaAssigning(false);
+        setCaAssignProgress('');
         return;
       }
 
@@ -430,28 +471,52 @@ export default function ModuleView() {
         .filter((a: any) => caSelectedAgents.includes(a._id))
         .map((a: any) => `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.name || 'Agent');
 
-      const res = await api.post('/records/campaigns/bulk-assign', {
-        campaignName: caSelectedCampaign,
-        agentNames,
-        leads: leadsToSend
-      });
+      // High-performance batch allocation:
+      // Chunk into batches of 25,000 for ultra-fast response and zero timeouts on 50k - 150k+ datasets
+      const BATCH_SIZE = 25000;
+      const totalLeads = leadsToSend.length;
+      const totalBatches = Math.ceil(totalLeads / BATCH_SIZE);
+      let totalAssigned = 0;
+
+      for (let b = 0; b < totalBatches; b++) {
+        const start = b * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, totalLeads);
+        const batchLeads = leadsToSend.slice(start, end);
+
+        if (totalBatches > 1) {
+          setCaAssignProgress(`Allocating batch ${b + 1} of ${totalBatches} (${start.toLocaleString('en-IN')} - ${end.toLocaleString('en-IN')} of ${totalLeads.toLocaleString('en-IN')} leads)...`);
+        } else {
+          setCaAssignProgress(`Allocating ${totalLeads.toLocaleString('en-IN')} leads...`);
+        }
+
+        const res = await api.post('/records/campaigns/bulk-assign', {
+          campaignName: caSelectedCampaign,
+          agentNames,
+          leads: batchLeads,
+          startIndex: start
+        });
+
+        totalAssigned += (res.data?.totalAssigned || batchLeads.length);
+      }
 
       showAlertModal({
         title: 'Leads Allocated Successfully',
-        message: res.data?.message || `Successfully assigned ${leadsToSend.length} leads equally among ${agentNames.length} agents.`,
+        message: `Successfully assigned ${totalLeads.toLocaleString('en-IN')} leads equally among ${agentNames.length} agents for campaign '${caSelectedCampaign}'.`,
         type: 'success'
       });
       
       setCaFile(null);
       setCaParsedLeads([]);
+      setCaAssignProgress('');
       
       queryClient.invalidateQueries({ queryKey: ['records', 'leads'] });
-      loadCampaignAssignmentsData();
+      loadCampaignAssignmentsData(caSelectedCampaign);
     } catch (err: any) {
       console.error(err);
       showToast(err.response?.data?.error || 'Failed to process bulk assignment.', 'error');
     } finally {
       setCaAssigning(false);
+      setCaAssignProgress('');
     }
   };
   const renderCampaignAssignments = () => {
@@ -581,7 +646,7 @@ export default function ModuleView() {
               </label>
               <select 
                 value={caSelectedCampaign} 
-                onChange={e => setCaSelectedCampaign(e.target.value)} 
+                onChange={e => handleCampaignChange(e.target.value)} 
                 className="w-full h-11 px-4 text-xs font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all cursor-pointer shadow-inner-sm"
               >
                 <option value="">Select Campaign</option>
@@ -706,7 +771,10 @@ export default function ModuleView() {
                 disabled={caAssigning || !caFile}
               >
                 {caAssigning ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-xs font-bold">{caAssignProgress || 'Assigning Data...'}</span>
+                  </div>
                 ) : (
                   <>
                     <Icons.CheckCircle2 className="w-4.5 h-4.5" /> Assign Data

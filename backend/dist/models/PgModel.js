@@ -384,10 +384,89 @@ class PgModel {
     async insertMany(docs) {
         if (!Array.isArray(docs) || docs.length === 0)
             return [];
+        // For 1-3 docs, individual create is fine
+        if (docs.length <= 3) {
+            const results = [];
+            for (const d of docs) {
+                const created = await this.create(d);
+                results.push(created);
+            }
+            return results;
+        }
+        // High-performance batch multi-row INSERT in chunks
+        const preparedDocs = [];
+        const allColSet = new Set();
+        for (let i = 0; i < docs.length; i++) {
+            const d = docs[i];
+            const doc = { ...d };
+            if (!doc._id && !doc.id) {
+                doc._id = new PgObjectId().toString();
+            }
+            else {
+                doc._id = String(doc._id || doc.id);
+            }
+            if (!doc.createdAt)
+                doc.createdAt = new Date();
+            if (!doc.updatedAt)
+                doc.updatedAt = new Date();
+            const dbObj = mapJsToDbRow(this.tableName, this.mappings, doc);
+            Object.keys(dbObj).forEach(k => allColSet.add(k));
+            preparedDocs.push(dbObj);
+        }
+        const cols = Array.from(allColSet);
+        const colNames = cols.join(', ');
+        const numCols = cols.length;
+        // PostgreSQL parameter limit is 65,535.
+        // Safe chunk size: 500 rows (e.g. 500 * 8 = 4,000 params)
+        const CHUNK_SIZE = 500;
         const results = [];
-        for (const d of docs) {
-            const created = await this.create(d);
-            results.push(created);
+        // Use transaction for ultra-fast bulk execution if multiple chunks
+        const useTx = preparedDocs.length > CHUNK_SIZE;
+        if (useTx) {
+            await (0, postgres_1.execPg)('BEGIN');
+        }
+        try {
+            for (let i = 0; i < preparedDocs.length; i += CHUNK_SIZE) {
+                const chunk = preparedDocs.slice(i, i + CHUNK_SIZE);
+                const vals = [];
+                const valueRowClauses = [];
+                for (let rowIdx = 0; rowIdx < chunk.length; rowIdx++) {
+                    const dbObj = chunk[rowIdx];
+                    const rowPlaceholders = [];
+                    for (let colIdx = 0; colIdx < numCols; colIdx++) {
+                        const col = cols[colIdx];
+                        const paramIdx = rowIdx * numCols + colIdx + 1;
+                        rowPlaceholders.push(`$${paramIdx}`);
+                        vals.push(dbObj[col] !== undefined ? dbObj[col] : null);
+                    }
+                    valueRowClauses.push(`(${rowPlaceholders.join(', ')})`);
+                }
+                const sql = `INSERT INTO ${this.tableName} (${colNames}) VALUES ${valueRowClauses.join(', ')} RETURNING id`;
+                const rows = await (0, postgres_1.queryPg)(sql, vals);
+                if (rows && rows.length > 0) {
+                    if (preparedDocs.length <= 5000) {
+                        rows.forEach((r) => results.push({ _id: r.id, id: r.id }));
+                    }
+                    else {
+                        // For massive sets (>5k), push minimal id objects to keep memory footprint tiny
+                        for (let r = 0; r < rows.length; r++) {
+                            results.push({ _id: rows[r].id, id: rows[r].id });
+                        }
+                    }
+                }
+            }
+            if (useTx) {
+                await (0, postgres_1.execPg)('COMMIT');
+            }
+        }
+        catch (err) {
+            if (useTx) {
+                try {
+                    await (0, postgres_1.execPg)('ROLLBACK');
+                }
+                catch { }
+            }
+            throw err;
         }
         return results;
     }
