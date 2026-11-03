@@ -151,6 +151,31 @@ export default function MyCampaign() {
     setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const extractLeadPhone = (obj: any): string => {
+    if (!obj || typeof obj !== 'object') return '';
+    const direct = obj.phone || obj.mobile || obj.contactNumber || obj.mobileNo || obj.name_contact_num || obj.contact_num || obj.contactNum || obj.contact || obj.phoneNumber || obj.phone_number || obj.mobile_no || obj.contact_number;
+    if (direct && String(direct).trim() !== '' && String(direct).trim() !== 'N/A') {
+      return String(direct).trim();
+    }
+    for (const key of Object.keys(obj)) {
+      const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (
+        cleanKey.includes('phone') ||
+        cleanKey.includes('mobile') ||
+        cleanKey.includes('contact') ||
+        cleanKey.includes('cell') ||
+        cleanKey === 'mob' ||
+        cleanKey === 'tel'
+      ) {
+        const val = obj[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== 'N/A') {
+          return String(val).trim();
+        }
+      }
+    }
+    return '';
+  };
+
   const maskPhoneNumber = (phone?: string, isRevealed: boolean = false) => {
     if (!phone || phone === 'N/A' || phone === 'XXXXXXXXXX') return 'N/A';
     const clean = String(phone).trim();
@@ -426,7 +451,7 @@ export default function MyCampaign() {
         const custParts = String(rawCustomer).trim().split(' ');
         const firstNameVal = lead.data?.firstName || custParts[0] || '';
         const lastNameVal = lead.data?.lastName || custParts.slice(1).join(' ') || '';
-        const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || lead.data?.mobileNo || '';
+        const phoneVal = extractLeadPhone(lead.data) || extractLeadPhone(lead) || '';
         const locationVal = lead.data?.city || lead.data?.location || lead.data?.presentAddress || 'BLORE';
         const assignedToVal = lead.data?.assignedTo || (lead as any).assignedToName || '';
 
@@ -448,6 +473,7 @@ export default function MyCampaign() {
             mobile: phoneVal,
             contactNumber: phoneVal,
             name_contact_num: phoneVal,
+            mobileNo: phoneVal,
             city: locationVal,
             location: locationVal,
             presentAddress: lead.data?.presentAddress || locationVal,
@@ -457,8 +483,9 @@ export default function MyCampaign() {
             notes: currentRemarks,
             remarks: currentRemarks,
             caseDetails: currentCaseDetails,
-            leadCategory: currentLeadCategory,
-            loanType: currentLeadCategory,
+            leadCategory: '', // Completely empty by default; user types custom category
+            lead_category: '',
+            loanType: lead.data?.loanType || lead.data?.product || '',
             source: loggedInCreatorName,
             campaignName: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
             fromCampaignLeadId: lead._id
@@ -517,7 +544,7 @@ export default function MyCampaign() {
   };
 
   const handleWhatsAppChat = (lead: LeadRecord) => {
-    const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.contactNum || lead.data?.mobileNo || lead.data?.contact_num || '';
+    const rawPhone = extractLeadPhone(lead.data) || extractLeadPhone(lead) || '';
     let cleanPhone = String(rawPhone).replace(/\D/g, '').trim();
     if (!cleanPhone) {
       showToast('No phone number available for this lead.', 'warning');
@@ -530,7 +557,7 @@ export default function MyCampaign() {
   };
 
   const handleInitiateCall = async (lead: LeadRecord) => {
-    const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.contactNum || lead.data?.mobileNo || lead.data?.contact_num || '';
+    const rawPhone = extractLeadPhone(lead.data) || extractLeadPhone(lead) || '';
     const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
     if (!cleanPhone) {
       showToast('No phone number available for this lead.', 'warning');
@@ -1315,8 +1342,8 @@ export default function MyCampaign() {
                             const location = lead.data?.city || lead.data?.location || 'N/A';
                             const customer = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
                             const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
-                            const phoneVal = lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || 'N/A';
-                            const leadCategory = leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || 'N/A';
+                            const phoneVal = extractLeadPhone(lead.data) || 'N/A';
+                            const leadCategory = leadStates[lead._id]?.leadCategory || lead.data?.leadCategory || lead.data?.lead_category || 'N/A';
                             const agentAssigned = lead.data?.assignedTo || (lead as any).assignedToName || 'Unassigned';
                             
                             const dialStatus = leadStates[lead._id]?.status || lead.data?.status || 'Not Called';
@@ -1458,7 +1485,7 @@ export default function MyCampaign() {
                       const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
                       const location = lead.data?.city || lead.data?.location || 'BLORE';
                       const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
-                      const rawPhone = lead.data?.phone || lead.data?.mobile || lead.data?.contactNumber || lead.data?.name_contact_num || '';
+                      const rawPhone = extractLeadPhone(lead.data) || '';
                       const phoneDisplay = rawPhone ? rawPhone : 'XXXXXXXXXX';
                       const assignedTo = lead.data?.assignedTo || (lead as any).assignedToName || 'Pavitra P';
                       const createdDateStr = lead.data?.createdDate || lead.data?.created_at || (lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-GB') : 'N/A');

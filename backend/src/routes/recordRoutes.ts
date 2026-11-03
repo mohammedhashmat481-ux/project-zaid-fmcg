@@ -579,7 +579,41 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
       const cleanCampPrefix = campaignName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
       const finalDataCode = rawDataCode || `${cleanCampPrefix}-DATA-${globalOffset + idx + 1}`;
 
-      // Extract leadCategory / loanType from any possible column naming variation
+      // Universal phone / mobile extractor from any possible column name in Excel
+      let phoneVal = '';
+      for (const [k, v] of Object.entries(lead)) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (
+          cleanK.includes('phone') ||
+          cleanK.includes('mobile') ||
+          cleanK.includes('contact') ||
+          cleanK.includes('cell') ||
+          cleanK === 'mob' ||
+          cleanK === 'tel'
+        ) {
+          if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== 'N/A') {
+            phoneVal = String(v).trim();
+            break;
+          }
+        }
+      }
+      if (!phoneVal) {
+        phoneVal = String(lead.phone || lead.mobile || lead.contactNumber || lead.name_contact_num || lead.contact_num || lead.contact || lead.mobileNo || '').trim();
+      }
+
+      // Extract loanType / product separately
+      const rawLoanType = (
+        lead.loanType ||
+        lead['Loan Type'] ||
+        lead['loan type'] ||
+        lead['LOAN TYPE'] ||
+        lead.product ||
+        lead.Product ||
+        lead.PRODUCT ||
+        ''
+      )?.toString().trim();
+
+      // Lead category should be strictly what is explicitly in a Lead Category column, or empty (NEVER defaulted to PERSONAL LOAN)
       const rawCategory = (
         lead.leadCategory ||
         lead.lead_category ||
@@ -589,12 +623,7 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
         lead.category ||
         lead.Category ||
         lead.CATEGORY ||
-        lead.loanType ||
-        lead['Loan Type'] ||
-        lead['loan type'] ||
-        lead.product ||
-        lead.Product ||
-        'PERSONAL LOAN'
+        ''
       )?.toString().trim();
 
       recordsToCreate.push({
@@ -603,11 +632,16 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
         createdBy: userId,
         updatedBy: userId,
         data: {
+          ...lead,
           firstName: fName,
           lastName: lName,
-          phone: lead.phone || lead.mobile || lead.name_contact_num || lead.contact_num || lead.contact || '',
+          phone: phoneVal,
+          mobile: phoneVal,
+          contactNumber: phoneVal,
+          name_contact_num: phoneVal,
+          mobileNo: phoneVal,
           email: lead.email || '',
-          loanType: rawCategory,
+          loanType: rawLoanType,
           leadCategory: rawCategory,
           lead_category: rawCategory,
           budget: lead.budget || lead.amount || '',
@@ -1102,7 +1136,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       query.$and = [{ $or: userFilters }];
     }
 
-    const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.contactNumber data.name_contact_num data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
+    const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.mobileNo data.contactNumber data.name_contact_num data.contactNum data.contact_num data.phoneNumber data.phone_number data.contact data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.businessPartner data.bank data.bankName data.budget data.amount data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
 
     const totalCount = await CustomRecord.countDocuments(query);
     const queryChain = CustomRecord.find(query).select(LEAD_PROJECTION).sort({ createdAt: -1 });

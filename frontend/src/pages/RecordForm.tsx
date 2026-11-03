@@ -19,6 +19,32 @@ const normalizeBankForSubmit = (bankName: string): string => {
   return name;
 };
 
+// Universal phone / mobile extractor from any possible object shape
+function extractLeadPhone(obj: any): string {
+  if (!obj || typeof obj !== 'object') return '';
+  const direct = obj.phone || obj.mobile || obj.contactNumber || obj.mobileNo || obj.name_contact_num || obj.contact_num || obj.contactNum || obj.contact || obj.phoneNumber || obj.phone_number || obj.mobile_no || obj.contact_number;
+  if (direct && String(direct).trim() !== '' && String(direct).trim() !== 'N/A') {
+    return String(direct).trim();
+  }
+  for (const key of Object.keys(obj)) {
+    const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (
+      cleanKey.includes('phone') ||
+      cleanKey.includes('mobile') ||
+      cleanKey.includes('contact') ||
+      cleanKey.includes('cell') ||
+      cleanKey === 'mob' ||
+      cleanKey === 'tel'
+    ) {
+      const val = obj[key];
+      if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== 'N/A') {
+        return String(val).trim();
+      }
+    }
+  }
+  return '';
+}
+
 // Normalization helper for loan types
 const normalizeLoanForSubmit = (loanType: string): string => {
   if (!loanType) return '';
@@ -305,6 +331,7 @@ export default function RecordForm() {
           defaults['status'] = dynamicStatuses.includes('HOT LEAD') ? 'HOT LEAD' : (dynamicStatuses.includes('HOT LEADS') ? 'HOT LEADS' : 'HOT LEAD');
         }
         defaults['loanType'] = '';
+        defaults['leadCategory'] = '';
       }
       
       // Merge values passed from campaign calling card
@@ -313,6 +340,8 @@ export default function RecordForm() {
         ...defaults,
         ...passedData
       };
+
+      let passedPhoneVal = '';
 
       // SOURCE is PERMANENTLY fixed to the user who creates the lead!
       if (apiPath === 'leads') {
@@ -338,9 +367,12 @@ export default function RecordForm() {
           }
         }
 
-        // 4. Mobile / Phone
-        if (!finalDefaults.phone) {
-          finalDefaults.phone = passedData.phone || passedData.mobile || passedData.contactNumber || passedData.name_contact_num || passedData.mobileNo || '';
+        // 4. Mobile / Phone - Universal Extractor
+        passedPhoneVal = extractLeadPhone(passedData) || extractLeadPhone(location.state) || extractLeadPhone(finalDefaults) || '';
+        if (passedPhoneVal) {
+          finalDefaults.phone = passedPhoneVal;
+          finalDefaults.mobile = passedPhoneVal;
+          finalDefaults.contactNumber = passedPhoneVal;
         }
 
         // 5. Location / City / Address
@@ -363,11 +395,12 @@ export default function RecordForm() {
           finalDefaults.notes = passedData.notes || passedData.remarks;
         }
 
-        // 9. Lead Category & Loan Type
-        if (passedData.leadCategory) {
-          finalDefaults.leadCategory = passedData.leadCategory;
-        }
-        const rawLt = (passedData.loanType || passedData.leadCategory || '').toString().trim().toLowerCase();
+        // 9. Lead Category: MUST BE COMPLETELY EMPTY by default when creating a lead!
+        // User will type whatever custom category they want and save.
+        finalDefaults.leadCategory = '';
+        finalDefaults.lead_category = '';
+
+        const rawLt = (passedData.loanType || '').toString().trim().toLowerCase();
         if (rawLt) {
           const availableLoanTypes = allLoanTypes.length > 0 ? allLoanTypes : ['SALARIED PERSONAL LOAN', 'BUSINESS LOAN', 'HOME LOAN', 'LAP'];
           const matchedLt = availableLoanTypes.find(lt => lt.trim().toLowerCase() === rawLt) ||
@@ -408,6 +441,13 @@ export default function RecordForm() {
       }
       
       reset(finalDefaults);
+      if (passedPhoneVal) {
+        setValue('phone', passedPhoneVal);
+        setValue('mobile', passedPhoneVal);
+      }
+      if (!id) {
+        setValue('leadCategory', '');
+      }
       setLoading(false);
     }
   }, [activeModule, id, apiPath, user, location, dynamicStatuses, allLoanTypes]);
@@ -448,7 +488,12 @@ export default function RecordForm() {
       // Auto-populate aliases if not set
       if (!recordValues.budget && recordValues.loanAmount) recordValues.budget = recordValues.loanAmount;
       if (!recordValues.company && (recordValues.companyName || recordValues.firmName)) recordValues.company = recordValues.companyName || recordValues.firmName;
-      if (!recordValues.phone && recordValues.mobile) recordValues.phone = recordValues.mobile;
+      const loadedPhone = extractLeadPhone(recordValues);
+      if (loadedPhone) {
+        recordValues.phone = loadedPhone;
+        recordValues.mobile = loadedPhone;
+        recordValues.contactNumber = loadedPhone;
+      }
       if (!recordValues.notes && recordValues.remarks) recordValues.notes = recordValues.remarks;
       if (!recordValues.businessPartner && (recordValues.bank || recordValues.bankName)) recordValues.businessPartner = recordValues.bank || recordValues.bankName;
 
@@ -616,8 +661,11 @@ export default function RecordForm() {
         data.companyName = data.company;
         data.firmName = data.company;
       }
-      if (data.phone) {
-        data.mobile = data.phone;
+      const formPhone = extractLeadPhone(data);
+      if (formPhone) {
+        data.phone = formPhone;
+        data.mobile = formPhone;
+        data.contactNumber = formPhone;
       }
       if (data.notes) {
         data.remarks = data.notes;
@@ -637,13 +685,8 @@ export default function RecordForm() {
       } else if (data.data_code) {
         data.dataCode = data.data_code;
       }
-      if (data.leadCategory) {
+      if (data.leadCategory !== undefined && data.leadCategory !== null) {
         data.lead_category = data.leadCategory;
-        if (!data.loanType) data.loanType = data.leadCategory;
-      }
-      if (data.loanType && !data.leadCategory) {
-        data.leadCategory = data.loanType;
-        data.lead_category = data.loanType;
       }
       if (!data.currency) {
         data.currency = 'INR';

@@ -56,6 +56,31 @@ export default function ModuleView() {
     setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const extractLeadPhone = (obj: any): string => {
+    if (!obj || typeof obj !== 'object') return '';
+    const direct = obj.phone || obj.mobile || obj.contactNumber || obj.mobileNo || obj.name_contact_num || obj.contact_num || obj.contactNum || obj.contact || obj.phoneNumber || obj.phone_number || obj.mobile_no || obj.contact_number;
+    if (direct && String(direct).trim() !== '' && String(direct).trim() !== 'N/A') {
+      return String(direct).trim();
+    }
+    for (const key of Object.keys(obj)) {
+      const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (
+        cleanKey.includes('phone') ||
+        cleanKey.includes('mobile') ||
+        cleanKey.includes('contact') ||
+        cleanKey.includes('cell') ||
+        cleanKey === 'mob' ||
+        cleanKey === 'tel'
+      ) {
+        const val = obj[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== 'N/A') {
+          return String(val).trim();
+        }
+      }
+    }
+    return '';
+  };
+
   const maskPhoneNumber = (phone?: string, isRevealed: boolean = false) => {
     if (!phone || phone === 'N/A') return 'N/A';
     const clean = String(phone).trim();
@@ -2163,7 +2188,7 @@ export default function ModuleView() {
                         : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'System Router'));
                   const psmName = rec.data?.psmName || resolveUserDisplayName(rec.data?.psm || rec.data?.assignedTo || 'Unassigned');
 
-                  const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                  const rawPhone = extractLeadPhone(rec.data) || '';
                   const isRevealed = !!revealedPhones[rec._id];
                   const displayedPhone = maskPhoneNumber(rawPhone, isRevealed);
                   const statusTokens = getStatusTokens(rec.data?.status || 'HOT');
@@ -2197,7 +2222,7 @@ export default function ModuleView() {
 
                   const slNo = (page - 1) * 10 + idx + 1;
                   const dataCodeVal = rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (rec.data?.campaignName ? `${String(rec.data.campaignName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-')}-DATA-${leadSerial}` : 'N/A');
-                  const leadCategoryVal = rec.data?.leadCategory || rec.data?.lead_category || rec.data?.loanType || 'PERSONAL LOAN';
+                  const leadCategoryVal = rec.data?.leadCategory || rec.data?.lead_category || 'N/A';
                   const campaignVal = rec.data?.campaignName || rec.data?.campaign || 'N/A';
                   const sourceVal = rec.data?.source || rec.data?.leadSource || 'Direct';
 
