@@ -5,7 +5,10 @@
   "description": "FMCG CRM Platform - Single Service Production Deployment",
   "scripts": {
     "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
-    "start": "cd backend && npm start"
+    "start": "cd backend && npm start",
+    "dev": "npm --prefix frontend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev"
   },
   "engines": {
     "node": ">=18.0.0"
