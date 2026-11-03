@@ -22,13 +22,41 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       campaignName = 'ALL',
       month = '10',
       year = '2026',
+      date,
       period = 'daily',
       metric = 'callsMade',
       userId = 'ALL',
       roleId = 'ALL'
     } = req.query;
 
-    const cacheKey = CacheKeys.campaignMatrix(orgId!, `${period}:${metric}:${campaignName}:${month}:${year}:${userId}:${roleId}`);
+    // Determine target single date for daily report (IST timezone)
+    const istNowStr = (() => {
+      try {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(new Date());
+      } catch (_) {
+        const istMs = Date.now() + (5.5 * 60 * 60 * 1000);
+        return new Date(istMs).toISOString().slice(0, 10);
+      }
+    })();
+
+    const selectedDateStr = (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
+      ? date
+      : istNowStr;
+
+    const [dYear, dMonth, dDay] = selectedDateStr.split('-').map(Number);
+    const dailyTargetDay = dDay; // 1 to 31
+    const dailyTargetMonthIndex = dMonth - 1; // 0 to 11
+    const dailyTargetYear = dYear;
+
+    const cacheKey = CacheKeys.campaignMatrix(
+      orgId!,
+      `${period}:${metric}:${campaignName}:${month}:${year}:${selectedDateStr}:${userId}:${roleId}`
+    );
     const cached = serverCache.get(cacheKey);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
@@ -294,10 +322,19 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           day: '2-digit'
         });
         const parts = istFormatter.format(validDateObj).split('-');
+
+        const istHourFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          hour12: false
+        });
+        const hour = parseInt(istHourFormatter.format(validDateObj), 10) % 24;
+
         return {
           year: parseInt(parts[0], 10),
           month: parseInt(parts[1], 10) - 1, // 0 to 11
-          day: parseInt(parts[2], 10) // 1 to 31
+          day: parseInt(parts[2], 10), // 1 to 31
+          hour
         };
       } catch (_) {
         const istMs = validDateObj.getTime() + (5.5 * 60 * 60 * 1000);
@@ -305,7 +342,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
         return {
           day: ist.getUTCDate(),
           month: ist.getUTCMonth(),
-          year: ist.getUTCFullYear()
+          year: ist.getUTCFullYear(),
+          hour: ist.getUTCHours()
         };
       }
     };
@@ -327,14 +365,29 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     };
 
     // 4. Generate Columns based on Period
+    const HOURLY_COLUMNS = [
+      '09:00 AM',
+      '10:00 AM',
+      '11:00 AM',
+      '12:00 PM',
+      '01:00 PM',
+      '02:00 PM',
+      '03:00 PM',
+      '04:00 PM',
+      '05:00 PM',
+      '06:00 PM',
+      '07:00 PM',
+      '08:00 PM'
+    ];
+
     let columns: string[] = [];
     if (period === 'daily') {
+      columns = HOURLY_COLUMNS;
+    } else if (period === 'monthly') {
       const daysInMonth = (isAllMonths || isAllYears) ? 31 : new Date(targetYear, targetMonthIndex + 1, 0).getDate();
       columns = Array.from({ length: daysInMonth }, (_, i) => `Day ${String(i + 1).padStart(2, '0')}`);
-    } else if (period === 'monthly') {
-      columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     } else {
-      columns = ['2024', '2025', '2026', '2027'];
+      columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     }
 
     // 5. Pre-bucket leads by canonical caller so EACH lead belongs to EXACTLY ONE caller
@@ -367,14 +420,35 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
 
       const relevantLeads = userLeads.filter(l => isLeadMetricMatch(l, String(metric)));
 
-      // Bucket relevant leads by date interval
+      // Bucket relevant leads by interval
+      const leadsByHour: Record<string, any[]> = {};
       const leadsByDay: Record<number, any[]> = {};
       const leadsByMonth: Record<number, any[]> = {};
-      const leadsByYear: Record<number, any[]> = {};
+
+      HOURLY_COLUMNS.forEach(col => { leadsByHour[col] = []; });
 
       relevantLeads.forEach(l => {
         const parts = getEventDateParts(l, String(metric));
         if (parts) {
+          // Strictly single date for daily
+          if (parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay) {
+            let colName = '09:00 AM';
+            if (parts.hour <= 9) colName = '09:00 AM';
+            else if (parts.hour === 10) colName = '10:00 AM';
+            else if (parts.hour === 11) colName = '11:00 AM';
+            else if (parts.hour === 12) colName = '12:00 PM';
+            else if (parts.hour === 13) colName = '01:00 PM';
+            else if (parts.hour === 14) colName = '02:00 PM';
+            else if (parts.hour === 15) colName = '03:00 PM';
+            else if (parts.hour === 16) colName = '04:00 PM';
+            else if (parts.hour === 17) colName = '05:00 PM';
+            else if (parts.hour === 18) colName = '06:00 PM';
+            else if (parts.hour === 19) colName = '07:00 PM';
+            else colName = '08:00 PM';
+
+            leadsByHour[colName].push(l);
+          }
+
           const monthMatch = isAllMonths || parts.month === targetMonthIndex;
           const yearMatch = isAllYears || parts.year === targetYear;
 
@@ -386,8 +460,6 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
             if (!leadsByMonth[parts.month]) leadsByMonth[parts.month] = [];
             leadsByMonth[parts.month].push(l);
           }
-          if (!leadsByYear[parts.year]) leadsByYear[parts.year] = [];
-          leadsByYear[parts.year].push(l);
         }
       });
 
@@ -398,11 +470,23 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
         let val = 0;
 
         if (period === 'daily') {
+          const hourLeads = leadsByHour[col] || [];
+          if (metric === 'callsMade' || metric === 'leadsCalled') {
+            val = hourLeads.length;
+          } else if (metric === 'targetAchievement' || metric === 'progressPct') {
+            val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+          } else if (metric === 'yetToCall') {
+            val = hourLeads.filter(l => !isLeadDialed(l)).length;
+          } else if (metric === 'campaignsAssigned') {
+            val = userAssigns.length > 0 ? 1 : 0;
+          } else {
+            val = hourLeads.length;
+          }
+        } else if (period === 'monthly') {
           const dayNum = cIdx + 1; // 1 to 31
           const dayLeads = leadsByDay[dayNum] || [];
 
           if (metric === 'callsMade' || metric === 'leadsCalled') {
-            // Exactly 1 count per lead called (never multiplies by lifetime call attempts)
             val = dayLeads.length;
           } else if (metric === 'targetAchievement' || metric === 'progressPct') {
             val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
@@ -413,7 +497,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           } else {
             val = dayLeads.length;
           }
-        } else if (period === 'monthly') {
+        } else {
+          // Annually
           const monthLeads = leadsByMonth[cIdx] || [];
 
           if (metric === 'callsMade' || metric === 'leadsCalled') {
@@ -426,22 +511,6 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
             val = userAssigns.length > 0 ? 1 : 0;
           } else {
             val = monthLeads.length;
-          }
-        } else {
-          // Annually
-          const yearVal = parseInt(col, 10);
-          const yearLeads = leadsByYear[yearVal] || [];
-
-          if (metric === 'callsMade' || metric === 'leadsCalled') {
-            val = yearLeads.length;
-          } else if (metric === 'targetAchievement' || metric === 'progressPct') {
-            val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
-          } else if (metric === 'yetToCall') {
-            val = yearLeads.filter(l => !isLeadDialed(l)).length;
-          } else if (metric === 'campaignsAssigned') {
-            val = userAssigns.length > 0 ? 1 : 0;
-          } else {
-            val = yearLeads.length;
           }
         }
 
@@ -479,10 +548,13 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     const isLeadInPeriod = (l: any, mKey: string): boolean => {
       const parts = getEventDateParts(l, mKey);
       if (!parts) return false;
+      if (period === 'daily') {
+        return parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay;
+      }
       const monthMatch = isAllMonths || parts.month === targetMonthIndex;
       const yearMatch = isAllYears || parts.year === targetYear;
-      if (period === 'daily') return monthMatch && yearMatch;
-      if (period === 'monthly') return yearMatch;
+      if (period === 'monthly') return monthMatch && yearMatch;
+      if (period === 'annually') return yearMatch;
       return true;
     };
 
@@ -508,6 +580,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     }
 
     const responsePayload = {
+      selectedDate: selectedDateStr,
       summary: {
         callsMade: periodCallsMade,
         hotLeads: periodHotLeads,

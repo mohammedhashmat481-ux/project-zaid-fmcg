@@ -127,6 +127,18 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   const [period, setPeriod] = useState<PeriodType>(initialPeriod);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+    } catch (_) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  });
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const m = new Date().getMonth() + 1;
     return m < 10 ? `0${m}` : `${m}`;
@@ -185,7 +197,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   // Fast React Query with client & server cache (60s staleTime)
   const { data: matrixResponse, isLoading: loading, refetch: refetchMatrixReport } = useQuery({
-    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedMonth, selectedYear, selectedUser, selectedRole],
+    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedDate, selectedMonth, selectedYear, selectedUser, selectedRole],
     queryFn: async () => {
       const metricParam = activeCardConfig.metricParam;
       const res = await api.get('/reports/campaign-matrix', {
@@ -193,6 +205,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
           period,
           metric: metricParam,
           campaignName: selectedCampaign,
+          date: selectedDate,
           month: selectedMonth,
           year: selectedYear,
           userId: selectedUser,
@@ -371,8 +384,22 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
             </div>
 
-            {/* Month Select (if daily or monthly) */}
+            {/* Date Select (for daily report) */}
             {period === 'daily' && (
+              <div className="relative">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="h-8 pl-8 pr-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                  title="Filter single day report"
+                />
+                <Icons.Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              </div>
+            )}
+
+            {/* Month Select (if monthly) */}
+            {period === 'monthly' && (
               <div className="relative">
                 <select
                   value={selectedMonth}
@@ -391,23 +418,25 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               </div>
             )}
 
-            {/* Year Select */}
-            <div className="relative">
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
-              >
-                <option value="ALL">-All Years-</option>
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-              <Icons.CalendarDays className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
-              <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
-            </div>
+            {/* Year Select (if monthly or annually) */}
+            {(period === 'monthly' || period === 'annually') && (
+              <div className="relative">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="h-8 pl-7 pr-7 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm appearance-none cursor-pointer"
+                >
+                  <option value="ALL">-All Years-</option>
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <Icons.CalendarDays className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+                <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+              </div>
+            )}
 
             {/* Search Caller */}
             <div className="relative min-w-[150px] max-w-[200px]">
@@ -440,7 +469,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   REPORT FILTER PARAMETERS
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  Filter metrics across all {usersList.length || 0} users by month and year
+                  {period === 'daily'
+                    ? `Single-day metrics across all ${usersList.length || 0} users for selected date (${selectedDate})`
+                    : `Filter metrics across all ${usersList.length || 0} users by ${period === 'monthly' ? 'month and year' : 'year'}`}
                 </p>
               </div>
             </div>
@@ -457,49 +488,135 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
-            {/* 1. Select Month */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Select Month
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
-                >
-                  <option value="ALL">-All Months-</option>
-                  {months.map((m) => (
-                    <option key={m.val} value={m.val}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-              </div>
-            </div>
+            {period === 'daily' ? (
+              <>
+                {/* 1. Select Date */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <Icons.Calendar className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    Select Date (Single Day)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="w-full h-10 px-3.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs cursor-pointer"
+                    />
+                  </div>
+                </div>
 
-            {/* 2. Select Year */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Select Year
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
-                >
-                  <option value="ALL">-All Years-</option>
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-              </div>
-            </div>
+                {/* 2. Select Campaign */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Campaign
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedCampaign}
+                      onChange={(e) => setSelectedCampaign(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">All Campaigns</option>
+                      {campaignsList.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+              </>
+            ) : period === 'monthly' ? (
+              <>
+                {/* 1. Select Month */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Month
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Months-</option>
+                      {months.map((m) => (
+                        <option key={m.val} value={m.val}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 2. Select Year */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Year
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Years-</option>
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 1. Select Year */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Year
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Years-</option>
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 2. Select Campaign */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Campaign
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedCampaign}
+                      onChange={(e) => setSelectedCampaign(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">All Campaigns</option>
+                      {campaignsList.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* 3. Select User */}
             <div>
@@ -634,7 +751,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX
+                {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX {period === 'daily' ? `(${selectedDate})` : ''}
               </h3>
               <span className="text-xs px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 font-bold">
                 {filteredRows.length} Callers
@@ -642,7 +759,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </div>
 
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              Showing breakdown across{' '}
+              Showing {period === 'daily' ? 'hourly ' : ''}breakdown across{' '}
               <strong className="text-slate-800 dark:text-slate-200 font-bold">
                 {matrixData.columns.length} intervals
               </strong>
