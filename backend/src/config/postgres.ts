@@ -240,6 +240,13 @@ export const initPostgresSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_cr_org_followup ON custom_records(organization_id, (data->>'followUpDate'));
     CREATE INDEX IF NOT EXISTS idx_cr_campaign ON custom_records((data->>'campaign'));
     CREATE INDEX IF NOT EXISTS idx_cr_campaign_name ON custom_records((data->>'campaignName'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_campaign_name ON custom_records (lower(data->>'campaignName'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_campaign ON custom_records (lower(data->>'campaign'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_source ON custom_records (lower(data->>'source'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_assigned ON custom_records (lower(data->>'assignedTo'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_dial_status ON custom_records (lower(data->>'dialStatus'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_status ON custom_records (lower(data->>'status'));
+    CREATE INDEX IF NOT EXISTS idx_cr_created_asc ON custom_records (created_at ASC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_cr_data_gin ON custom_records USING gin (data);
 
     CREATE TABLE IF NOT EXISTS activities (

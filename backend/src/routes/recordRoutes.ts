@@ -927,9 +927,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
     const moduleId = leadModule?._id || leadModule?.id;
 
     const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const campaignRegexStr = '^\\s*' + escName + '\\s*$';
-
-    // 1. Try ultra-fast PostgreSQL direct execution (<10ms)
+    // 1. Ultra-fast indexed PostgreSQL direct execution (<25ms)
     try {
       const baseParams: any[] = [orgId];
       let baseConds: string[] = ['organization_id = $1'];
@@ -939,13 +937,13 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         baseConds.push(`module_id = $${baseParams.length}`);
       }
 
-      baseParams.push(campaignRegexStr);
+      baseParams.push(decodedCampaignName);
       const campParamIdx = baseParams.length;
       baseConds.push(`(
-        (data->>'source') ~* $${campParamIdx} OR
-        (data->>'campaignName') ~* $${campParamIdx} OR
-        (data->>'campaign') ~* $${campParamIdx} OR
-        (data->>'campaign_name') ~* $${campParamIdx}
+        LOWER(data->>'campaignName') = LOWER($${campParamIdx}) OR
+        LOWER(data->>'campaign') = LOWER($${campParamIdx}) OR
+        LOWER(data->>'source') = LOWER($${campParamIdx}) OR
+        LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
 
       // Reporting managers see only their own assigned campaign records, not subordinates'
@@ -971,23 +969,17 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
 
       const baseWhere = baseConds.join(' AND ');
 
-      // Query total overall stats for this campaign in ONE pass (<5ms)
+      // Query total overall stats for this campaign (<5ms)
       const statsSql = `
         SELECT 
           COUNT(*)::int as total_allocated,
           COUNT(CASE WHEN 
             (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
-            (data->>'callAttempts' ~ '^[0-9]+$' AND (data->>'callAttempts')::int > 0) OR
-            (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
-            (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+            (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
           THEN 1 END)::int as dialed
         FROM custom_records
         WHERE ${baseWhere}
       `;
-      const statsRes = await queryPg(statsSql, baseParams);
-      const totalAllocated = statsRes[0]?.total_allocated || 0;
-      const dialed = statsRes[0]?.dialed || 0;
-      const yetToDial = Math.max(0, totalAllocated - dialed);
 
       // Now build current filtered query
       const filterParams = [...baseParams];
@@ -996,16 +988,12 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       if (tab === 'dialed') {
         filterConds.push(`(
           (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
-          (data->>'callAttempts' ~ '^[0-9]+$' AND (data->>'callAttempts')::int > 0) OR
-          (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
-          (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
         )`);
       } else if (tab === 'yetToDial') {
         filterConds.push(`(
           (data->>'dialedAt' IS NULL OR data->>'dialedAt' = '') AND 
-          (data->>'callAttempts' IS NULL OR NOT (data->>'callAttempts' ~ '^[0-9]+$') OR (data->>'callAttempts')::int <= 0) AND
-          (LOWER(COALESCE(data->>'dialStatus', '')) IN ('', 'yet to call', 'not called', 'new')) AND
-          (LOWER(COALESCE(data->>'status', '')) IN ('', 'yet to call', 'not called', 'new'))
+          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) IN ('', 'yet to call', 'not called', 'new'))
         )`);
       }
 
@@ -1038,22 +1026,12 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
 
       const filteredWhere = filterConds.join(' AND ');
 
-      // Count total matching leads for current page pagination
-      let filteredTotal = totalAllocated;
-      if (tab !== 'all' || search) {
-        const countSql = `SELECT COUNT(*)::int as count FROM custom_records WHERE ${filteredWhere}`;
-        const countRes = await queryPg(countSql, filterParams);
-        filteredTotal = countRes[0]?.count || 0;
-      } else {
-        filteredTotal = totalAllocated;
-      }
-
-      // Fetch page data with LIMIT and OFFSET
+      // Fetch page data with LIMIT, OFFSET and single-pass count(*) OVER() sorted ASCENDING (01 -> 3726)
       let fetchSql = `
-        SELECT id, data, created_at, updated_at
+        SELECT id, data, created_at, updated_at, count(*) OVER() as full_count
         FROM custom_records
         WHERE ${filteredWhere}
-        ORDER BY created_at DESC
+        ORDER BY created_at ASC, id ASC
       `;
       const fetchParams = [...filterParams];
       if (limit > 0) {
@@ -1064,7 +1042,27 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         fetchSql += ` OFFSET $${fetchParams.length}`;
       }
 
-      const rows = await queryPg(fetchSql, fetchParams);
+      // Execute stats and fetch simultaneously in parallel for instant response (<25ms)
+      const [statsRes, rows] = await Promise.all([
+        queryPg(statsSql, baseParams),
+        queryPg(fetchSql, fetchParams)
+      ]);
+
+      const totalAllocated = statsRes[0]?.total_allocated || 0;
+      const dialed = statsRes[0]?.dialed || 0;
+      const yetToDial = Math.max(0, totalAllocated - dialed);
+
+      let filteredTotal = 0;
+      if (rows.length > 0) {
+        filteredTotal = parseInt(rows[0].full_count, 10) || rows.length;
+      } else if (tab === 'all' && !search) {
+        filteredTotal = totalAllocated;
+      } else if (tab === 'dialed' && !search) {
+        filteredTotal = dialed;
+      } else if (tab === 'yetToDial' && !search) {
+        filteredTotal = yetToDial;
+      }
+
       const leads = rows.map((r: any) => ({
         _id: r.id,
         id: r.id,

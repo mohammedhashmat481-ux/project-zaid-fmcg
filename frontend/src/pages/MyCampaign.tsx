@@ -42,9 +42,9 @@ interface SaveSuccessModalData {
 
 const CAMPAIGN_STATUSES = [
   'Yet To Call',
-  'Hot Lead',
-  'Warm Lead',
-  'Not Intested',
+  'Hot Leads',
+  'Warm Leads',
+  'Not Interested',
   'Call Rejected',
   'Not Connected',
   'Cool Lead',
@@ -97,14 +97,32 @@ export default function MyCampaign() {
     placeholderData: keepPreviousData
   });
 
-  // Merge built-in campaign statuses with any custom statuses created in Settings -> Status
+  // Merge built-in campaign statuses with custom statuses with strict deduplication (single Hot Leads, single Warm Leads)
   const availableStatuses = useMemo(() => {
-    const list = [...CAMPAIGN_STATUSES];
-    statuses.forEach((s: string) => {
-      if (s && !list.some(existing => existing.trim().toUpperCase() === s.trim().toUpperCase())) {
-        list.push(s);
+    const list: string[] = [];
+    const seen = new Set<string>();
+
+    const normalizeKey = (name: string) => {
+      let s = name.trim().toUpperCase();
+      if (s === 'HOT LEAD' || s === 'HOT LEADS') return 'HOT LEADS';
+      if (s === 'WARM LEAD' || s === 'WARM LEADS') return 'WARM LEADS';
+      if (s === 'COOL LEAD' || s === 'COOL LEADS') return 'COOL LEAD';
+      if (s === 'NOT INTESTED' || s === 'NOT INTERESTED') return 'NOT INTERESTED';
+      return s;
+    };
+
+    const addStatus = (raw: string) => {
+      if (!raw) return;
+      const key = normalizeKey(raw);
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push(key);
       }
-    });
+    };
+
+    CAMPAIGN_STATUSES.forEach(addStatus);
+    statuses.forEach(addStatus);
+
     return list;
   }, [statuses]);
 
@@ -700,11 +718,18 @@ export default function MyCampaign() {
       queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
-      // Update lead in memory so counts & UI update immediately
-      setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
+      const isNowDialed = currentStatus && currentStatus !== 'Yet To Call' && currentStatus !== 'Not Called';
+
+      // If dialing in 'yetToDial' tab, immediately remove dialed lead from the list so it moves to dialed tab
+      if (filterTab === 'yetToDial' && isNowDialed) {
+        setLeads(prev => prev.filter(l => l._id !== leadId));
+        setServerTotalLeads(prev => Math.max(0, prev - 1));
+      } else {
+        // Update lead in memory so counts & UI update immediately
+        setLeads(prev => prev.map(l => l._id === leadId ? { ...l, data: { ...l.data, ...payload } } : l));
+      }
 
       // Update in-memory counts if lead was marked dialed
-      const isNowDialed = currentStatus && currentStatus !== 'Yet To Call' && currentStatus !== 'Not Called';
       if (isNowDialed && !isLeadDialed(lead)) {
         setCampaignStats(prev => ({
           ...prev,
