@@ -25,7 +25,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
   ];
 
   const formatDateShort = (dateStr?: any) => {
-    if (!dateStr) return 'N/A';
+    if (!dateStr) return '';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -36,7 +36,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
   };
 
   const formatDateTimeFull = (dateStr?: any) => {
-    if (!dateStr) return 'N/A';
+    if (!dateStr) return '';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -52,120 +52,59 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
   };
 
   const formatCurrency = (val: any) => {
-    if (val === undefined || val === null || val === '') return 'N/A';
+    if (val === undefined || val === null || val === '') return '';
     const num = Number(val);
     if (isNaN(num)) return String(val);
     return `₹${num.toLocaleString('en-IN')}`;
   };
 
+  const cleanVal = (val: any) => {
+    if (val === undefined || val === null) return '';
+    const s = String(val).trim();
+    if (s === 'N/A' || s === 'undefined' || s === 'null') return '';
+    return s;
+  };
+
+  const isLeadDialed = (lead: any, data: any) => {
+    if (data.dialedAt || data.lastCallDate) return true;
+    if (data.callAttempts && Number(data.callAttempts) > 0) return true;
+    const dialSt = (data.dialStatus || '').toString().trim().toLowerCase();
+    if (dialSt && dialSt !== 'yet to call' && dialSt !== 'not called' && dialSt !== 'new' && dialSt !== 'yet to dial' && dialSt !== '') return true;
+    const st = (data.status || '').toString().trim().toLowerCase();
+    if (st && st !== 'yet to call' && st !== 'not called' && st !== 'new' && st !== 'yet to dial' && st !== '') return true;
+    return false;
+  };
+
   const dataRows = (leads || []).map((lead: any, idx: number) => {
     const data = lead.data || lead;
     const slNo = idx + 1;
-    const createdDate = formatDateShort(lead.createdAt || data.createdAt || data.createddate);
+    const isDialed = isLeadDialed(lead, data);
 
-    // Guaranteed distinct data code from campaign assignment
-    const campName = data.campaignName || data.campaign || (data.source && data.source.includes('DEMO') ? data.source : '');
-    const cleanCamp = campName ? String(campName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-') : '';
-    const rawDc = String(data.dataCode || data.data_code || data.code || '').trim();
-    const dataCode = (rawDc && !rawDc.startsWith('DC-') && !rawDc.startsWith('LND-'))
-      ? rawDc
-      : (cleanCamp ? `${cleanCamp}-DATA-${idx + 1}` : 'N/A');
+    const createdDateRaw = lead.createdAt || data.createdAt || data.createdDate || data.created_at || data.createddate;
+    const createdDate = formatDateShort(createdDateRaw);
 
-    const location = String(data.location || data.city || data.presentAddress || 'N/A').trim();
+    const campName = data.campaignName || data.campaign || (data.source && data.source.includes('DEMO') ? data.source : '') || fileNamePrefix;
+    const cleanCamp = campName ? String(campName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-') : 'CAMPAIGN';
+    const rawDc = cleanVal(data.dataCode || data.data_code || data.code);
+    const dataCode = rawDc || `${cleanCamp}-DATA-${idx + 1}`;
 
-    const customerName = String(
+    const location = cleanVal(data.location || data.city || data.presentAddress);
+
+    const customerName = cleanVal(
       data.customerName ||
       `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
       data.fullName ||
       data.customer ||
-      data.costomer ||
-      data.name ||
-      'N/A'
-    ).trim();
+      data.name
+    );
 
-    const companyName = String(data.company || data.firmName || data.firm_name || data.firm || data.companyName || 'N/A').trim();
-    const mobileNo = String(data.phone || data.mobile || data.contactNum || data.contact_num || data.mobileNo || 'N/A').trim();
-    const status = String(data.status || 'HOT LEADS').trim().toUpperCase();
+    const companyName = cleanVal(data.company || data.firmName || data.firm_name || data.firm || data.companyName);
+    const mobileNo = cleanVal(data.phone || data.mobile || data.contactNum || data.contact_num || data.mobileNo || data.contactNumber || data.name_contact_num);
 
-    // Guaranteed distinct case details for each record
-    const caseDetails = String(
-      data.caseDetails ||
-      data.case_details ||
-      data.caseStatus ||
-      data.case_status ||
-      data.notes ||
-      data.remarks ||
-      `Requirement for ${data.loanType || data.product || 'Personal Loan'} - Verification in progress`
-    ).trim();
-
-    const remarks = String(data.remarks || data.notes || data.remark || 'N/A').trim();
-    const leadCategory = String(data.leadCategory || data.lead_category || data.category || 'A1 CATE').trim();
-
-    const loanAmountRaw = data.loanAmount || data.budget || data.amount || data.requiredLoan;
-    const loanAmount = formatCurrency(loanAmountRaw);
-
-    const loanType = String(data.loanType || data.loanProduct || data.product || data.serviceType || 'SALARIED PERSONAL LOAN').trim().toUpperCase();
-    const bankNames = String(data.bankNames || data.bank || data.businessPartner || data.preferredBank || 'N/A').trim();
-
-    // Source MUST be the creator person's name (user who created the lead), NOT a campaign name
-    let source = '';
-    if (lead.createdBy && typeof lead.createdBy === 'object') {
-      source = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email || '';
-    } else if (lead.createdByName) {
-      source = lead.createdByName;
-    }
-
-    if (!source && data.creatorName) {
-      source = data.creatorName;
-    }
-
-    const campaignNames = [
-      'Q3 SME Business Expansion Drive',
-      'Salaried Personal Loan Express',
-      'Diwali Festive Loan Bonanza',
-      'Home Loan Super Saver Scheme',
-      'Ink CRM'
-    ];
-    if (!source && data.source && !campaignNames.includes(data.source)) {
-      source = data.source;
-    }
-
-    if (!source && data.assignedAgent) {
-      source = typeof data.assignedAgent === 'object'
-        ? `${data.assignedAgent.firstName || ''} ${data.assignedAgent.lastName || ''}`.trim()
-        : String(data.assignedAgent);
-    } else if (!source && data.telecaller) {
-      source = String(data.telecaller);
-    }
-
-    if (!source || source === 'N/A' || source === 'Ink CRM') {
-      source = 'Super Admin';
-    }
-
-    // PSM: Resolve clean single/deduplicated Partner Sales Manager name
-    let psm = '';
-    if (data.psm) {
-      if (typeof data.psm === 'object') {
-        psm = `${data.psm.firstName || ''} ${data.psm.lastName || ''}`.trim() || data.psm.name || '';
-      } else {
-        const parts = String(data.psm).split(',').map(s => s.trim()).filter(Boolean);
-        const uniqueParts = Array.from(new Set(parts));
-        psm = uniqueParts.join(', ');
-      }
-    } else if (data.psmName) {
-      psm = String(data.psmName);
-    } else if (data.psm_name) {
-      psm = String(data.psm_name);
-    }
-
-    if (!psm || psm === 'N/A') {
-      psm = 'Vikram Patel';
-    }
-
-    let assignedTo = 'Unassigned';
+    let assignedTo = '';
     if (data.assignedTo) {
       if (typeof data.assignedTo === 'object') {
-        assignedTo = `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim() || data.assignedTo.name || data.assignedTo.email || 'Assigned';
+        assignedTo = `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim() || data.assignedTo.name || data.assignedTo.email || '';
       } else {
         assignedTo = String(data.assignedTo);
       }
@@ -174,9 +113,77 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     } else if (lead.assignedToName) {
       assignedTo = String(lead.assignedToName);
     }
+    assignedTo = cleanVal(assignedTo);
 
-    const followUpDate = data.followUpDate ? formatDateShort(data.followUpDate) : 'N/A';
-    const modifiedDate = formatDateTimeFull(lead.updatedAt || data.updatedAt || lead.createdAt);
+    if (!isDialed) {
+      // YET TO DIAL: Show basic assigned info, status = 'Yet To Dial', all telecalling input fields completely BLANK
+      return {
+        'Sl.No.': slNo,
+        'Createddate': createdDate,
+        'data code': dataCode,
+        'location': location,
+        'Customer Name': customerName,
+        'Company name': companyName,
+        'Mobile No': mobileNo,
+        'Status': 'Yet To Dial',
+        'CASE DEATAILS': '',
+        'Remarks': '',
+        'lead_category': '',
+        'Loan Amount': '',
+        'Loan type': '',
+        'Bank Names': '',
+        'Source': '',
+        'PSM': '',
+        'Assigned To': assignedTo,
+        'FollowUp Date': '',
+        'Modified Date': ''
+      };
+    }
+
+    // DIALED: Exactly output the inputs the user / telecaller entered
+    const status = cleanVal(data.status || data.dialStatus) ? String(data.status || data.dialStatus).trim().toUpperCase() : 'HOT LEADS';
+    const caseDetails = cleanVal(data.caseDetails || data.case_details || data.caseStatus || data.case_status);
+    const remarks = cleanVal(data.remarks || data.notes || data.remark).replace(/<[^>]*>/g, '');
+    const leadCategory = cleanVal(data.leadCategory || data.lead_category || data.category);
+
+    const loanAmountRaw = data.loanAmount || data.budget || data.amount || data.requiredLoan;
+    const loanAmount = loanAmountRaw ? formatCurrency(loanAmountRaw) : '';
+
+    const loanType = cleanVal(data.loanType || data.loanProduct || data.product || data.serviceType);
+    const bankNames = cleanVal(data.bankNames || data.bank || data.bankPartner || data.bank_partner || data.businessPartner || data.preferredBank);
+
+    let source = '';
+    if (lead.createdBy && typeof lead.createdBy === 'object') {
+      source = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email || '';
+    } else if (lead.createdByName) {
+      source = lead.createdByName;
+    } else if (data.creatorName) {
+      source = data.creatorName;
+    } else if (data.createdBy) {
+      source = data.createdBy;
+    } else if (data.assignedByName) {
+      source = data.assignedByName;
+    } else if (data.source && !data.source.toLowerCase().includes('demo') && !data.source.toLowerCase().includes('campaign')) {
+      source = data.source;
+    }
+    source = cleanVal(source);
+
+    let psm = '';
+    if (data.psm) {
+      if (typeof data.psm === 'object') {
+        psm = `${data.psm.firstName || ''} ${data.psm.lastName || ''}`.trim() || data.psm.name || '';
+      } else {
+        psm = String(data.psm);
+      }
+    } else if (data.psmName) {
+      psm = String(data.psmName);
+    } else if (data.psm_name) {
+      psm = String(data.psm_name);
+    }
+    psm = cleanVal(psm);
+
+    const followUpDate = data.followUpDate ? formatDateShort(data.followUpDate) : '';
+    const modifiedDate = formatDateTimeFull(lead.updatedAt || data.dialedAt || data.updatedAt || lead.createdAt);
 
     return {
       'Sl.No.': slNo,
@@ -203,10 +210,11 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
 
   const worksheet = XLSX.utils.json_to_sheet(dataRows, { header: headers });
 
-  // Dynamic column widths calculation with safety padding
+  // Fast column width calculation (sample up to 300 rows for instant performance even on 100k rows)
+  const sampleRows = dataRows.slice(0, 300);
   const colWidths = headers.map(header => {
     let maxLen = header.length;
-    dataRows.forEach(row => {
+    sampleRows.forEach(row => {
       const val = row[header as keyof typeof row];
       if (val !== undefined && val !== null) {
         maxLen = Math.max(maxLen, String(val).length);
@@ -214,21 +222,6 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     });
     return { wch: Math.max(maxLen + 4, 14) };
   });
-
-  // Explicit string formatting for Mobile No to prevent scientific notation (9.6E+09)
-  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-  const mobileColIdx = headers.indexOf('Mobile No');
-
-  if (mobileColIdx !== -1) {
-    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-      const cellAddress = XLSX.utils.encode_cell({ r: R, c: mobileColIdx });
-      const cell = worksheet[cellAddress];
-      if (cell) {
-        cell.t = 's'; // Force STRING cell type
-        cell.z = '@'; // Force Text format
-      }
-    }
-  }
 
   worksheet['!cols'] = colWidths;
 

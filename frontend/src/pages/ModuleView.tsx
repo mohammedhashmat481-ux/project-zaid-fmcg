@@ -1064,8 +1064,8 @@ export default function ModuleView() {
     }
 
     try {
-      showToast(`Exporting 12-column report for "${campaignName}"...`, 'info');
-      const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}`);
+      showToast(`Exporting report for "${campaignName}"...`, 'info');
+      const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}?all=true`);
       const leads = res.data?.leads || [];
 
       if (leads.length === 0) {
@@ -1073,8 +1073,8 @@ export default function ModuleView() {
         return;
       }
 
-      exportCampaignCSV(campaignName, leads);
-      showToast(`Exported ${leads.length} leads for campaign "${campaignName}"!`, 'success');
+      exportLeadReportXLSX(leads, campaignName);
+      showToast(`Exported all ${leads.length.toLocaleString()} leads for campaign "${campaignName}"!`, 'success');
     } catch (err) {
       console.error(err);
       showToast('Failed to export campaign data.', 'error');

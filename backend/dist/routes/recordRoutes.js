@@ -10,6 +10,7 @@ const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition")
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const Role_1 = __importDefault(require("../models/Role"));
 const User_1 = __importDefault(require("../models/User"));
+const Organization_1 = __importDefault(require("../models/Organization"));
 const Activity_1 = __importDefault(require("../models/Activity"));
 const AuditLog_1 = __importDefault(require("../models/AuditLog"));
 const formulaEvaluator_1 = require("../services/formulaEvaluator");
@@ -127,7 +128,69 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
             res.status(200).json({ stats: {}, dialedStats: {}, campaignAllocatedStats: {}, campaignDialedStats: {}, campaignAgentStats: {} });
             return;
         }
-        // Aggregate count of leads grouped by assignedTo (all campaigns)
+        const moduleId = leadModule._id || leadModule.id;
+        // Fast Single-Pass PostgreSQL Direct Query (<25ms)
+        try {
+            const statsSql = `
+        SELECT 
+          LOWER(COALESCE(NULLIF(data->>'campaignName', ''), NULLIF(data->>'campaign', ''), NULLIF(data->>'source', ''), NULLIF(data->>'campaign_name', ''))) as camp_name,
+          COALESCE(NULLIF(data->>'assignedTo', ''), '') as assigned_to,
+          COUNT(*)::int as total_allocated,
+          COUNT(CASE WHEN 
+            (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
+            (data->>'callAttempts' IS NOT NULL AND (data->>'callAttempts')::int > 0) OR
+            (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
+            (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+          THEN 1 END)::int as dialed
+        FROM custom_records
+        WHERE organization_id = $1 AND module_id = $2
+        GROUP BY 1, 2
+      `;
+            const rows = await (0, postgres_1.queryPg)(statsSql, [orgId, moduleId]);
+            const campaignAllocatedStats = {};
+            const campaignDialedStats = {};
+            const campaignAgentStats = {};
+            const statsMap = {};
+            const dialedMap = {};
+            const genericSources = new Set(['website', 'referral', 'cold call', 'social media', 'google ads', 'facebook ads', 'walk-in', 'direct']);
+            rows.forEach((r) => {
+                const camp = (r.camp_name || '').trim().toLowerCase();
+                const agent = (r.assigned_to || '').trim();
+                const alloc = parseInt(r.total_allocated, 10) || 0;
+                const d = parseInt(r.dialed, 10) || 0;
+                if (camp && !genericSources.has(camp)) {
+                    campaignAllocatedStats[camp] = (campaignAllocatedStats[camp] || 0) + alloc;
+                    campaignDialedStats[camp] = (campaignDialedStats[camp] || 0) + d;
+                    if (agent) {
+                        if (!campaignAgentStats[camp])
+                            campaignAgentStats[camp] = {};
+                        campaignAgentStats[camp][agent] = (campaignAgentStats[camp][agent] || 0) + alloc;
+                    }
+                }
+                if (agent) {
+                    statsMap[agent] = (statsMap[agent] || 0) + alloc;
+                    dialedMap[agent] = (dialedMap[agent] || 0) + d;
+                }
+            });
+            const effectiveStatsMap = targetCampaign
+                ? (campaignAgentStats[targetCampaign] || {})
+                : statsMap;
+            const payload = {
+                stats: effectiveStatsMap,
+                globalStats: statsMap,
+                dialedStats: dialedMap,
+                campaignAllocatedStats,
+                campaignDialedStats,
+                campaignAgentStats
+            };
+            cache_1.serverCache.set(cacheKey, payload, 30);
+            res.setHeader('X-Cache', 'MISS');
+            res.status(200).json(payload);
+            return;
+        }
+        catch (pgErr) {
+            console.warn('[allocation-stats] Fast PG aggregation failed, falling back:', pgErr);
+        }
         const stats = await CustomRecord_1.default.aggregate([
             { $match: { organizationId: orgId, moduleId: leadModule._id } },
             { $group: { _id: '$data.assignedTo', count: { $sum: 1 } } }
@@ -642,6 +705,111 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
         res.status(500).json({ error: error.message || 'Failed to bulk assign leads.' });
     }
 });
+const EXCLUDED_CAMPAIGN_STATUSES = new Set([
+    'REJECTED',
+    'DROPPED',
+    'DISBUSED',
+    'DISBURSED',
+    'APPROVE BUT NOT DISBUSE',
+    'APPROVED BUT NOT DISBUSE',
+    'APPROVAL PENDING',
+    'DOCUMENT PENDING',
+    'CEBIL PENDING',
+    'CIBIL PENDING',
+    'CEDIL PENDING',
+    'PENDING'
+]);
+const DEFAULT_CAMPAIGN_STATUSES = [
+    'Yet To Call',
+    'Hot Leads',
+    'Warm Leads',
+    'Cool Lead',
+    'Followup',
+    'Not Interested',
+    'Call Rejected',
+    'Not Connected',
+    'No Answer',
+    'Number Busy',
+    'Out of Service',
+    'No Incoming Calls',
+    'Switch Off',
+    'Not Reachable',
+    'Wrong Number',
+    'Not Exists',
+    'Repeated Number',
+    'No Business'
+];
+const DEFAULT_TRIGGER_STATUSES = ['HOT LEADS', 'WARM LEADS'];
+// GET campaign statuses and trigger statuses
+router.get('/campaigns/statuses', async (req, res) => {
+    try {
+        const orgId = req.organizationId;
+        const org = await Organization_1.default.findById(orgId);
+        const config = org?.themeSettings?.campaignStatusConfig;
+        let statuses = Array.isArray(config?.statuses) && config.statuses.length > 0
+            ? config.statuses.filter((s) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
+            : [...DEFAULT_CAMPAIGN_STATUSES];
+        // Ensure the new required statuses are present
+        const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
+        requiredStatuses.forEach(rs => {
+            const exists = statuses.some((s) => s.trim().toUpperCase() === rs.toUpperCase());
+            if (!exists)
+                statuses.push(rs);
+        });
+        let triggerStatuses = Array.isArray(config?.triggerStatuses) && config.triggerStatuses.length > 0
+            ? config.triggerStatuses.filter((s) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
+            : DEFAULT_TRIGGER_STATUSES;
+        res.status(200).json({
+            statuses,
+            triggerStatuses
+        });
+    }
+    catch (error) {
+        console.error('Failed to get campaign statuses:', error);
+        res.status(500).json({ error: error.message || 'Failed to get campaign statuses' });
+    }
+});
+// PUT update campaign statuses and trigger statuses (Super Admin / Admin)
+router.put('/campaigns/statuses', async (req, res) => {
+    try {
+        const orgId = req.organizationId;
+        const { statuses, triggerStatuses } = req.body;
+        if (!Array.isArray(statuses)) {
+            res.status(400).json({ error: 'Statuses must be an array of status names.' });
+            return;
+        }
+        const org = await Organization_1.default.findById(orgId);
+        if (!org) {
+            res.status(404).json({ error: 'Organization not found.' });
+            return;
+        }
+        const cleanedStatuses = Array.from(new Set(statuses
+            .map((s) => String(s || '').trim())
+            .filter((s) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s.toUpperCase()))));
+        const cleanedTrigger = Array.from(new Set((triggerStatuses || [])
+            .map((s) => String(s || '').trim().toUpperCase())
+            .filter((s) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s))));
+        const campaignStatusConfig = {
+            statuses: cleanedStatuses.length > 0 ? cleanedStatuses : DEFAULT_CAMPAIGN_STATUSES,
+            triggerStatuses: cleanedTrigger.length > 0 ? cleanedTrigger : DEFAULT_TRIGGER_STATUSES
+        };
+        org.themeSettings = {
+            ...(org.themeSettings || {}),
+            campaignStatusConfig
+        };
+        await org.save();
+        cache_1.serverCache.clear();
+        res.status(200).json({
+            success: true,
+            statuses: campaignStatusConfig.statuses,
+            triggerStatuses: campaignStatusConfig.triggerStatuses
+        });
+    }
+    catch (error) {
+        console.error('Failed to update campaign statuses:', error);
+        res.status(500).json({ error: error.message || 'Failed to update campaign statuses' });
+    }
+});
 // GET my campaigns (assigned to logged in user)
 router.get('/campaigns/my-campaigns', async (req, res) => {
     try {
@@ -910,7 +1078,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             const filteredWhere = filterConds.join(' AND ');
             // Fetch page data with LIMIT, OFFSET and single-pass count(*) OVER() sorted ASCENDING (01 -> 3726)
             let fetchSql = `
-        SELECT id, data, created_at, updated_at, count(*) OVER() as full_count
+        SELECT id, data, created_at, updated_at ${limit > 0 ? ', count(*) OVER() as full_count' : ''}
         FROM custom_records
         WHERE ${filteredWhere}
         ORDER BY created_at ASC, id ASC
@@ -932,7 +1100,10 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             const dialed = statsRes[0]?.dialed || 0;
             const yetToDial = Math.max(0, totalAllocated - dialed);
             let filteredTotal = 0;
-            if (rows.length > 0) {
+            if (limit === 0) {
+                filteredTotal = rows.length;
+            }
+            else if (rows.length > 0) {
                 filteredTotal = parseInt(rows[0].full_count, 10) || rows.length;
             }
             else if (tab === 'all' && !search) {

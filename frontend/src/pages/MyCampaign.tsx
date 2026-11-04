@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import api from '../services/api';
+import api, { FILE_BASE_URL } from '../services/api';
 import { useToastStore } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
 import { queryClient } from '../services/queryClient';
 import * as Icons from 'lucide-react';
 import { exportCampaignCSV } from '../utils/exportCampaignCSV';
+import { exportLeadReportXLSX } from '../utils/exportLeadReportXLSX';
+import { formatDate } from '../utils/dateFormatter';
+import { getStatusTokens } from '../utils/statusTokenMapper';
 
 interface CampaignStats {
   campaignName: string;
@@ -21,6 +24,10 @@ interface LeadRecord {
   _id: string;
   data: Record<string, any>;
   createdAt: string;
+  updatedAt?: string;
+  createdBy?: any;
+  assignedTo?: any;
+  [key: string]: any;
 }
 
 interface LeadState {
@@ -40,20 +47,40 @@ interface SaveSuccessModalData {
   hasNext: boolean;
 }
 
+const EXCLUDED_CAMPAIGN_STATUSES = new Set([
+  'REJECTED',
+  'DROPPED',
+  'DISBUSED',
+  'DISBURSED',
+  'APPROVE BUT NOT DISBUSE',
+  'APPROVED BUT NOT DISBUSE',
+  'APPROVAL PENDING',
+  'DOCUMENT PENDING',
+  'CEBIL PENDING',
+  'CIBIL PENDING',
+  'CEDIL PENDING',
+  'PENDING'
+]);
+
 const CAMPAIGN_STATUSES = [
   'Yet To Call',
   'Hot Leads',
   'Warm Leads',
+  'Cool Lead',
+  'Followup',
   'Not Interested',
   'Call Rejected',
   'Not Connected',
-  'Cool Lead',
   'No Answer',
+  'Number Busy',
+  'Out of Service',
+  'No Incoming Calls',
+  'Switch Off',
+  'Not Reachable',
   'Wrong Number',
   'Not Exists',
   'Repeated Number',
-  'No Business',
-  'Not Reachable'
+  'No Business'
 ];
 
 export default function MyCampaign() {
@@ -97,6 +124,47 @@ export default function MyCampaign() {
     placeholderData: keepPreviousData
   });
 
+  // Dynamic campaign status configuration (Custom statuses + Create Lead triggers)
+  const {
+    data: campaignStatusConfig,
+    refetch: refetchCampaignStatuses
+  } = useQuery({
+    queryKey: ['campaign-status-config'],
+    queryFn: async () => {
+      const res = await api.get('/records/campaigns/statuses').catch(() => ({
+        data: {
+          statuses: CAMPAIGN_STATUSES,
+          triggerStatuses: ['HOT LEADS', 'WARM LEADS']
+        }
+      }));
+      return res.data || { statuses: CAMPAIGN_STATUSES, triggerStatuses: ['HOT LEADS', 'WARM LEADS'] };
+    },
+    staleTime: 60000,
+    placeholderData: keepPreviousData
+  });
+
+  const configuredStatuses: string[] = useMemo(() => {
+    const rawList = Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0
+      ? campaignStatusConfig.statuses
+      : CAMPAIGN_STATUSES;
+    const filtered = rawList.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()));
+    
+    // Ensure the 4 newly requested statuses are always present
+    const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
+    requiredStatuses.forEach(rs => {
+      const exists = filtered.some((s: string) => s.trim().toUpperCase() === rs.toUpperCase());
+      if (!exists) filtered.push(rs);
+    });
+    return filtered;
+  }, [campaignStatusConfig]);
+
+  const triggerStatuses: string[] = useMemo(() => {
+    const rawTriggers = Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0
+      ? campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase())
+      : ['HOT LEADS', 'WARM LEADS'];
+    return rawTriggers.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+  }, [campaignStatusConfig]);
+
   // Merge built-in campaign statuses with custom statuses with strict deduplication (single Hot Leads, single Warm Leads)
   const availableStatuses = useMemo(() => {
     const list: string[] = [];
@@ -114,17 +182,100 @@ export default function MyCampaign() {
     const addStatus = (raw: string) => {
       if (!raw) return;
       const key = normalizeKey(raw);
+      if (EXCLUDED_CAMPAIGN_STATUSES.has(key)) return;
       if (!seen.has(key)) {
         seen.add(key);
         list.push(key);
       }
     };
 
-    CAMPAIGN_STATUSES.forEach(addStatus);
+    configuredStatuses.forEach(addStatus);
     statuses.forEach(addStatus);
 
     return list;
-  }, [statuses]);
+  }, [configuredStatuses, statuses]);
+
+  // Campaign Status Settings Modal State (Super Admin / Admin dynamic management)
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [modalStatuses, setModalStatuses] = useState<string[]>([]);
+  const [modalTriggerStatuses, setModalTriggerStatuses] = useState<string[]>([]);
+  const [newStatusInput, setNewStatusInput] = useState('');
+  const [newStatusTrigger, setNewStatusTrigger] = useState(false);
+  const [searchStatusModal, setSearchStatusModal] = useState('');
+  const [savingStatusConfig, setSavingStatusConfig] = useState(false);
+
+  useEffect(() => {
+    if (showStatusModal) {
+      setModalStatuses([...configuredStatuses]);
+      setModalTriggerStatuses([...triggerStatuses]);
+      setNewStatusInput('');
+      setNewStatusTrigger(false);
+      setSearchStatusModal('');
+    }
+  }, [showStatusModal, configuredStatuses, triggerStatuses]);
+
+  const handleToggleTriggerStatus = (statusName: string) => {
+    const norm = statusName.trim().toUpperCase();
+    setModalTriggerStatuses(prev => {
+      const exists = prev.some(s => s.trim().toUpperCase() === norm);
+      if (exists) {
+        return prev.filter(s => s.trim().toUpperCase() !== norm);
+      } else {
+        return [...prev, norm];
+      }
+    });
+  };
+
+  const handleAddNewStatus = () => {
+    const trimmed = newStatusInput.trim();
+    if (!trimmed) {
+      showToast('Please enter a status name.', 'warning');
+      return;
+    }
+    const norm = trimmed.toUpperCase();
+    const alreadyExists = modalStatuses.some(s => s.trim().toUpperCase() === norm);
+    if (alreadyExists) {
+      showToast('This status already exists in the list.', 'warning');
+      return;
+    }
+    setModalStatuses(prev => [...prev, trimmed]);
+    if (newStatusTrigger) {
+      setModalTriggerStatuses(prev => [...prev, norm]);
+    }
+    setNewStatusInput('');
+    setNewStatusTrigger(false);
+    showToast(`Added status "${trimmed}"`, 'success');
+  };
+
+  const handleDeleteStatus = (statusName: string) => {
+    const norm = statusName.trim().toUpperCase();
+    setModalStatuses(prev => prev.filter(s => s.trim().toUpperCase() !== norm));
+    setModalTriggerStatuses(prev => prev.filter(s => s.trim().toUpperCase() !== norm));
+  };
+
+  const handleSaveStatusSettings = async () => {
+    try {
+      setSavingStatusConfig(true);
+      await api.put('/records/campaigns/statuses', {
+        statuses: modalStatuses,
+        triggerStatuses: modalTriggerStatuses
+      });
+      await refetchCampaignStatuses();
+      showToast('Campaign statuses and lead triggers saved successfully!', 'success');
+      setShowStatusModal(false);
+    } catch (err: any) {
+      console.error('Failed to save campaign statuses', err);
+      showToast(err.response?.data?.error || 'Failed to save campaign statuses', 'error');
+    } finally {
+      setSavingStatusConfig(false);
+    }
+  };
+
+  const handleResetStatusDefaults = () => {
+    setModalStatuses([...CAMPAIGN_STATUSES]);
+    setModalTriggerStatuses(['HOT LEADS', 'WARM LEADS']);
+    showToast('Reset to default campaign statuses.', 'info');
+  };
 
   const [activeCampaign, setActiveCampaign] = useState<CampaignStats | null>(null);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
@@ -162,6 +313,89 @@ export default function MyCampaign() {
   // Modal & Navigation States for Lead Save Confirmation
   const [saveSuccessModal, setSaveSuccessModal] = useState<SaveSuccessModalData | null>(null);
   const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
+
+  // File upload and Audit History states
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
+  const [activeHistoryRecord, setActiveHistoryRecord] = useState<any | null>(null);
+  const [historyActivities, setHistoryActivities] = useState<any[]>([]);
+  const [historyDocuments, setHistoryDocuments] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Users dropdown query for resolving agent and manager names
+  const { data: usersDropdown } = useQuery({
+    queryKey: ['campaign-users-dropdown'],
+    queryFn: async () => {
+      const res = await api.get('/auth/users?purpose=dropdown').catch(() => ({ data: [] }));
+      return res.data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const resolveUserDisplayName = (val: any) => {
+    if (!val) return 'Unassigned';
+    if (typeof val === 'object') {
+      if (val.firstName || val.lastName) return `${val.firstName || ''} ${val.lastName || ''}`.trim();
+      if (val.name) return val.name;
+      if (val.email) return val.email.split('@')[0];
+    }
+    const str = String(val).trim();
+    if (!str || str === 'undefined' || str === 'null') return 'Unassigned';
+    if (Array.isArray(usersDropdown)) {
+      const found = usersDropdown.find((u: any) => 
+        u._id === str || u.id === str || u.email?.toLowerCase() === str.toLowerCase() || u.userCode === str
+      );
+      if (found) {
+        return `${found.firstName || ''} ${found.lastName || ''}`.trim() || found.name || found.email || str;
+      }
+    }
+    return str;
+  };
+
+  const handleUploadClick = (recordId: string) => {
+    setUploadingRecordId(recordId);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadingRecordId) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      await api.post(`/records/leads/${uploadingRecordId}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      showToast('File uploaded successfully', 'success');
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      showToast(err.response?.data?.message || 'Failed to upload document', 'error');
+    } finally {
+      setUploadingRecordId(null);
+    }
+  };
+
+  const openHistory = async (rec: any) => {
+    setActiveHistoryRecord(rec);
+    setLoadingHistory(true);
+    try {
+      const [activitiesRes, docsRes] = await Promise.all([
+        api.get(`/records/leads/${rec._id}/activities`).catch(() => ({ data: [] })),
+        api.get(`/records/leads/${rec._id}/documents`).catch(() => ({ data: [] }))
+      ]);
+      setHistoryActivities(activitiesRes.data || []);
+      setHistoryDocuments(docsRes.data || []);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      setHistoryActivities([]);
+      setHistoryDocuments([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   // Phone masking
   const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>({});
@@ -359,7 +593,7 @@ export default function MyCampaign() {
 
   const handleDownloadCampaign = async (campaignName: string) => {
     try {
-      showToast('Exporting campaign CSV report...', 'info');
+      showToast(`Exporting report for "${campaignName}"...`, 'info');
       const res = await api.get(`/records/campaigns/my-campaigns/details/${encodeURIComponent(campaignName)}?all=true`);
       const targetLeads: LeadRecord[] = res.data.leads || [];
 
@@ -368,37 +602,8 @@ export default function MyCampaign() {
         return;
       }
 
-      // Generate CSV rows
-      const headers = ['Sl No', 'Data Code', 'Location', 'Customer', 'Firm Name', 'Contact Number', 'Case Details', 'Lead Category', 'Remarks', 'Agent Assigned To', 'Dial Status', 'Created At'];
-      const rows = targetLeads.map((lead, idx) => {
-        const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
-          .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
-        const leadDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${idx + 1}`;
-        return [
-          idx + 1,
-          leadDataCode,
-        lead.data?.city || lead.data?.location || 'N/A',
-        `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A',
-        lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A',
-        lead.data?.phone || lead.data?.mobile || lead.data?.name_contact_num || 'N/A',
-        leadStates[lead._id]?.caseDetails ?? lead.data?.caseDetails ?? 'N/A',
-        lead.data?.leadCategory || lead.data?.lead_category || lead.data?.loanType || 'N/A',
-        (leadStates[lead._id]?.remarks ?? lead.data?.notes ?? '').toString().replace(/<[^>]*>/g, ''),
-        lead.data?.assignedTo || (lead as any).assignedToName || 'Unassigned',
-        leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call',
-        new Date(lead.createdAt).toLocaleDateString()
-      ];
-    });
-
-      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n');
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `${campaignName.replace(/\s+/g, '_')}_Leads_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast('Campaign exported successfully!', 'success');
+      exportLeadReportXLSX(targetLeads, campaignName);
+      showToast(`Exported all ${targetLeads.length.toLocaleString()} leads successfully!`, 'success');
     } catch (err) {
       console.error(err);
       showToast('Failed to export campaign report.', 'error');
@@ -419,7 +624,16 @@ export default function MyCampaign() {
     // 1. Always update state locally so user sees the selected status immediately
     handleFieldChange(lead._id, 'status', newStatus);
 
-    const isHotOrWarm = /^(HOT|WARM)(\s+LEADS?)?$/i.test(newStatus);
+    const normSelected = newStatus.trim().toUpperCase();
+    const isTriggerStatus = triggerStatuses.some(ts => {
+      const normTs = ts.trim().toUpperCase();
+      if (normTs === normSelected) return true;
+      if ((normTs === 'HOT LEADS' || normTs === 'HOT LEAD') && /^(HOT)(\s+LEADS?)?$/i.test(newStatus)) return true;
+      if ((normTs === 'WARM LEADS' || normTs === 'WARM LEAD') && /^(WARM)(\s+LEADS?)?$/i.test(newStatus)) return true;
+      if ((normTs === 'COOL LEAD' || normTs === 'COOL LEADS') && /^(COOL)(\s+LEADS?)?$/i.test(newStatus)) return true;
+      return false;
+    });
+
     const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
     const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
     const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
@@ -429,8 +643,9 @@ export default function MyCampaign() {
       ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
       : 'Super Admin';
 
-    // 2. ONLY for Hot Lead or Warm Lead: Auto-save status and immediately open Create Lead
-    if (isHotOrWarm) {
+    // 2. ONLY for configured Trigger Statuses (e.g. Hot Leads, Warm Leads, Cool Lead):
+    // Auto-save status and immediately open Create Lead prefilled!
+    if (isTriggerStatus) {
       try {
         const normalizedStatus = newStatus.toUpperCase().includes('HOT') ? 'HOT LEADS' : 'WARM LEADS';
         const payload = {
@@ -899,12 +1114,23 @@ export default function MyCampaign() {
                     )}
                   </div>
 
-                  <div className="text-[11.5px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <span>Showing</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">{filteredCampaigns.length}</span>
-                    <span>of</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">{safeCampaigns.length}</span>
-                    <span>campaigns</span>
+                  <div className="flex items-center gap-3">
+                    <div className="text-[11.5px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <span>Showing</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{filteredCampaigns.length}</span>
+                      <span>of</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{safeCampaigns.length}</span>
+                      <span>campaigns</span>
+                    </div>
+
+                    <button
+                      onClick={() => setShowStatusModal(true)}
+                      className="h-8 px-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-lg border border-indigo-200/80 dark:border-indigo-800 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                      title="Configure Campaign Statuses & Triggers"
+                    >
+                      <Icons.SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Campaign Statuses</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1074,62 +1300,72 @@ export default function MyCampaign() {
         })()
       ) : (
         // DETAILS VIEW
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-[#111827] p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-            <div className="flex items-center gap-3.5">
+        <div className="space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#111827] px-4 py-3 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
+            <div className="flex items-center gap-3">
               <button 
                 onClick={handleBack} 
-                className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all shadow-xs cursor-pointer"
+                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
                 title="Back to Campaigns"
               >
-                <Icons.ArrowLeft className="w-5 h-5" />
+                <Icons.ArrowLeft className="w-4 h-4" />
               </button>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-400 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-400 px-2 py-0.5 rounded-md uppercase tracking-wider">
                     Call Campaign
                   </span>
-                  <span className="text-xs font-semibold text-slate-400">
+                  <span className="text-[11px] font-medium text-slate-400">
                     Created {new Date(activeCampaign.createdAt).toLocaleDateString('en-GB')}
                   </span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight mt-0.5">
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight">
                   {activeCampaign.campaignName}
                 </h2>
               </div>
             </div>
 
             {/* Campaign Controls & Progress */}
-            <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               {/* View Switcher */}
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => setViewMode('table')}
-                  className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`py-1 px-2.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                     viewMode === 'table'
                       ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
                   }`}
                 >
                   <Icons.Table className="w-3.5 h-3.5" />
-                  Table View
+                  Table
                 </button>
                 <button
                   onClick={() => setViewMode('cards')}
-                  className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`py-1 px-2.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                     viewMode === 'cards'
                       ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
                   }`}
                 >
                   <Icons.LayoutGrid className="w-3.5 h-3.5" />
-                  Card View
+                  Cards
                 </button>
               </div>
 
+              {/* Campaign Statuses Modal Button (For Super Admin & Admins) */}
+              <button
+                onClick={() => setShowStatusModal(true)}
+                className="h-8 px-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-lg border border-indigo-200/80 dark:border-indigo-800 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                title="Configure Campaign Statuses & Triggers"
+              >
+                <Icons.SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Campaign Statuses</span>
+              </button>
+
               <button
                 onClick={() => handleDownloadCampaign(activeCampaign.campaignName)}
-                className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer uppercase tracking-wider active:scale-95"
+                className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-3xs transition-all flex items-center gap-1.5 cursor-pointer uppercase tracking-wider active:scale-95"
               >
                 <Icons.Download className="w-3.5 h-3.5" />
                 Export CSV
@@ -1139,13 +1375,13 @@ export default function MyCampaign() {
                   ? Math.round((activeCampaign.dialed / activeCampaign.totalAssigned) * 100)
                   : 0;
                 return (
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl min-w-[160px]">
+                  <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-lg min-w-[130px]">
                     <div className="flex-1">
-                      <div className="flex justify-between text-[11px] font-bold mb-1">
+                      <div className="flex justify-between text-[10px] font-bold mb-0.5">
                         <span className="text-slate-500 uppercase tracking-wider">Progress</span>
                         <span className="text-indigo-600 dark:text-indigo-400">{pct}%</span>
                       </div>
-                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div className="h-full bg-indigo-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
@@ -1155,34 +1391,34 @@ export default function MyCampaign() {
             </div>
           </div>
 
-          {/* ACTIVE CAMPAIGN METRICS GRID MATCHING REFERENCE IMAGE */}
-          <div className="space-y-5">
-                {/* 3 TOP METRIC CARDS MATCHING REFERENCE IMAGE */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* ACTIVE CAMPAIGN COMPACT METRICS GRID */}
+          <div className="space-y-3">
+                {/* 3 TOP COMPACT METRIC CARDS */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {/* 1. TOTAL YET TO DIAL */}
                   <div 
                     onClick={() => handleTabChange('yetToDial')}
-                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                    className={`px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'yetToDial'
-                        ? 'bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-400 dark:border-amber-500 shadow-xs'
+                        ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-400 dark:border-amber-500 shadow-xs ring-1 ring-amber-400/20'
                         : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700/60'
                     }`}
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-amber-500 flex-shrink-0">
-                        <Icons.Clock className="w-6 h-6 stroke-[2.2]" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/50 flex items-center justify-center text-amber-500 flex-shrink-0">
+                        <Icons.Clock className="w-4 h-4 stroke-[2.2]" />
                       </div>
                       <div>
-                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                        <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                           TOTAL YET TO DIAL
                         </span>
-                        <span className="text-3xl font-black text-amber-500 leading-tight">
-                          {yetToDialCount}
+                        <span className="text-xl sm:text-2xl font-black text-amber-500 leading-none">
+                          {yetToDialCount.toLocaleString()}
                         </span>
                       </div>
                     </div>
                     {filterTab === 'yetToDial' && (
-                      <span className="bg-amber-500 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                      <span className="bg-amber-500 text-white font-bold text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider shadow-3xs">
                         ACTIVE FILTER
                       </span>
                     )}
@@ -1191,27 +1427,27 @@ export default function MyCampaign() {
                   {/* 2. TOTAL DIALED */}
                   <div 
                     onClick={() => handleTabChange('dialed')}
-                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                    className={`px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'dialed'
-                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-2 border-emerald-400 dark:border-emerald-500 shadow-xs'
+                        ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-500 dark:border-emerald-500 shadow-xs ring-1 ring-emerald-500/20'
                         : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700/60'
                     }`}
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-900/50 flex items-center justify-center text-emerald-500 flex-shrink-0">
-                        <Icons.PhoneCall className="w-6 h-6 stroke-[2.2]" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-900/50 flex items-center justify-center text-emerald-500 flex-shrink-0">
+                        <Icons.PhoneCall className="w-4 h-4 stroke-[2.2]" />
                       </div>
                       <div>
-                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                        <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                           TOTAL DIALED
                         </span>
-                        <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 leading-tight">
-                          {dialedCount}
+                        <span className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
+                          {dialedCount.toLocaleString()}
                         </span>
                       </div>
                     </div>
                     {filterTab === 'dialed' && (
-                      <span className="bg-emerald-600 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                      <span className="bg-emerald-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider shadow-3xs">
                         ACTIVE FILTER
                       </span>
                     )}
@@ -1220,106 +1456,106 @@ export default function MyCampaign() {
                   {/* 3. TOTAL ALLOCATED */}
                   <div 
                     onClick={() => handleTabChange('all')}
-                    className={`p-5 rounded-2xl transition-all cursor-pointer flex items-center justify-between border ${
+                    className={`px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
                       filterTab === 'all'
-                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-2 border-indigo-400 dark:border-indigo-500 shadow-xs'
+                        ? 'bg-indigo-50/60 dark:bg-indigo-950/20 border-indigo-500 dark:border-indigo-500 shadow-xs ring-1 ring-indigo-500/20'
                         : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700/60'
                     }`}
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/50 flex items-center justify-center text-indigo-500 flex-shrink-0">
-                        <Icons.Layers className="w-6 h-6 stroke-[2.2]" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/50 flex items-center justify-center text-indigo-500 flex-shrink-0">
+                        <Icons.Layers className="w-4 h-4 stroke-[2.2]" />
                       </div>
                       <div>
-                        <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                        <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                           TOTAL ALLOCATED
                         </span>
-                        <span className="text-3xl font-black text-slate-900 dark:text-white leading-tight">
-                          {totalAllocatedCount}
+                        <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                          {totalAllocatedCount.toLocaleString()}
                         </span>
                       </div>
                     </div>
                     {filterTab === 'all' && (
-                      <span className="bg-indigo-600 text-white font-black text-[10px] px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                      <span className="bg-indigo-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider shadow-3xs">
                         ACTIVE FILTER
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* SEARCH & FILTER BAR MATCHING REFERENCE IMAGE */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                {/* SEARCH & FILTER BAR - CLASSIC & SPACE SAVING */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 px-3 py-2 rounded-xl shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
                   {/* Search input */}
                   <div className="relative flex-1">
-                    <Icons.Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => handleSearchChange(e.target.value)}
                       placeholder="Search leads by customer, firm, data code, mobile..."
-                      className="w-full h-11 pl-10 pr-9 text-xs sm:text-sm bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                      className="w-full h-8.5 pl-8.5 pr-8 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                     />
                     {searchQuery && (
                       <button
                         onClick={() => handleSearchChange('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                         title="Clear search"
                       >
-                        <Icons.X className="w-4 h-4" />
+                        <Icons.X className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
 
                   {/* Filter Tabs */}
-                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
+                  <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap flex-shrink-0">
                     <button
                       onClick={() => handleTabChange('yetToDial')}
-                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`h-8.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         filterTab === 'yetToDial'
-                          ? 'bg-amber-500 text-white shadow-xs'
+                          ? 'bg-amber-500 text-white shadow-3xs'
                           : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      <Icons.Clock className="w-4 h-4" />
+                      <Icons.Clock className="w-3.5 h-3.5" />
                       <span>Yet To Dial</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                        filterTab === 'yetToDial' ? 'bg-amber-600/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
+                        filterTab === 'yetToDial' ? 'bg-amber-600/60 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}>
-                        {yetToDialCount}
+                        {yetToDialCount.toLocaleString()}
                       </span>
                     </button>
 
                     <button
                       onClick={() => handleTabChange('dialed')}
-                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`h-8.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         filterTab === 'dialed'
-                          ? 'bg-emerald-600 text-white shadow-xs'
+                          ? 'bg-emerald-600 text-white shadow-3xs'
                           : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      <Icons.PhoneCall className="w-4 h-4" />
+                      <Icons.PhoneCall className="w-3.5 h-3.5" />
                       <span>Dialed</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                        filterTab === 'dialed' ? 'bg-emerald-700/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
+                        filterTab === 'dialed' ? 'bg-emerald-700/60 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}>
-                        {dialedCount}
+                        {dialedCount.toLocaleString()}
                       </span>
                     </button>
 
                     <button
                       onClick={() => handleTabChange('all')}
-                      className={`h-11 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`h-8.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         filterTab === 'all'
-                          ? 'bg-indigo-600 text-white shadow-xs'
+                          ? 'bg-indigo-600 text-white shadow-3xs'
                           : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      <Icons.Layers className="w-4 h-4" />
+                      <Icons.Layers className="w-3.5 h-3.5" />
                       <span>All Leads</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                        filterTab === 'all' ? 'bg-indigo-700/50 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
+                        filterTab === 'all' ? 'bg-indigo-700/60 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                       }`}>
-                        {totalAllocatedCount}
+                        {totalAllocatedCount.toLocaleString()}
                       </span>
                     </button>
                   </div>
@@ -1500,172 +1736,387 @@ export default function MyCampaign() {
                     </div>
                   </div>
                 ) : (
-                  /* CARD VIEW MATCHING EXACT USER SCREENSHOT (Paginated for Instant Load) */
-                  <div className="space-y-5">
+                  /* CARD VIEW MATCHING EXACT USER DESIGN (4-Column Structured Full Details) */
+                  <div className="space-y-4">
                     {paginatedLeads.map((lead, localIdx) => {
                       const idx = startIndex + localIdx;
                       const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
                         .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
                       const dataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${idx + 1}`;
-                      const customerName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.customer || 'N/A';
-                      const location = lead.data?.city || lead.data?.location || 'BLORE';
-                      const firmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || 'N/A';
+                      const leadNo = lead.data?.leadNo || lead.data?.lead_no || (lead._id ? lead._id.slice(-6).toUpperCase() : String(idx + 1).padStart(2, '0'));
+                      const leadName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.customerName || lead.data?.name || lead.data?.customer || 'N/A';
+                      const leadLocation = lead.data?.city || lead.data?.location || lead.data?.state || 'N/A';
+                      const firmCompanyVal = lead.data?.company || lead.data?.firm || lead.data?.firmName || lead.data?.firm_name || 'N/A';
                       const rawPhone = extractLeadPhone(lead.data) || '';
-                      const phoneDisplay = rawPhone ? rawPhone : 'XXXXXXXXXX';
-                      const assignedTo = lead.data?.assignedTo || (lead as any).assignedToName || 'Pavitra P';
-                      const createdDateStr = lead.data?.createdDate || lead.data?.created_at || (lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-GB') : 'N/A');
+                      const isRevealed = !!revealedPhones[lead._id];
+                      const displayedPhone = maskPhoneNumber(rawPhone, isRevealed);
+                      
+                      const amountVal = lead.data?.loanAmount || lead.data?.amount || lead.data?.loan_amount;
+                      const formattedAmount = amountVal != null && amountVal !== '' ? `₹${Number(amountVal).toLocaleString('en-IN')}` : 'N/A';
+                      
+                      const bankPartnerVal = lead.data?.businessPartner || lead.data?.bankPartner || lead.data?.bank_partner || lead.data?.bank || lead.data?.businessPartners || 'N/A';
+                      const productVal = lead.data?.loanType || lead.data?.product || lead.data?.loan_type || 'N/A';
+                      const campaignVal = lead.data?.campaignName || lead.data?.campaign || activeCampaign?.campaignName || 'N/A';
+                      const sourceVal = lead.data?.source || lead.data?.leadSource || 'Direct';
+
+                      const createdByName = lead.createdBy?.firstName
+                        ? `${lead.createdBy.firstName} ${lead.createdBy.lastName || ''}`.trim()
+                        : (lead.createdBy?.name || lead.createdBy?.email?.split('@')[0] || lead.data?.source || lead.data?.createdBy || 'Super Admin');
+
+                      const assignedToName = lead.data?.assignedToName || resolveUserDisplayName(lead.data?.assignedTo || (lead as any).assignedToName || lead.assignedTo);
+                      const assignedByName = lead.data?.assignedByName 
+                        ? resolveUserDisplayName(lead.data.assignedByName)
+                        : (lead.data?.assignedBy 
+                            ? resolveUserDisplayName(lead.data.assignedBy)
+                            : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'Super Admin'));
+                      const psmName = lead.data?.psmName || resolveUserDisplayName(lead.data?.psm || lead.data?.assignedTo || 'Unassigned');
+                      const pendingAtVal = lead.data?.assignToTeam || lead.data?.pendingAt || lead.data?.pending_at || 'SALES MANAGER';
+                      const followupDateVal = lead.data?.followUpDate || lead.data?.followupDate || lead.data?.followup_date;
+
+                      const currentStatus = leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call';
+                      const statusTokens = getStatusTokens(currentStatus);
+                      const rawStatus = currentStatus.toUpperCase();
+                      const statusBadgeText = rawStatus.endsWith('LEAD') || rawStatus.endsWith('LEADS') 
+                        ? rawStatus 
+                        : `${rawStatus} LEAD`;
+
+                      let statusBadgeStyle = 'border border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
+                      let StatusBadgeIcon: any = Icons.Sparkles;
+
+                      if (rawStatus.includes('HOT')) {
+                        statusBadgeStyle = 'border border-rose-200 bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400';
+                        StatusBadgeIcon = Icons.Flame;
+                      } else if (rawStatus.includes('CALL NOT CONNECT') || rawStatus.includes('NOT CONNECT') || rawStatus.includes('BUSY') || rawStatus.includes('OFF') || rawStatus.includes('SERVICE')) {
+                        statusBadgeStyle = 'border border-sky-200 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:border-sky-900/60 dark:text-sky-400';
+                        StatusBadgeIcon = Icons.PhoneOff;
+                      } else if (rawStatus.includes('WARM') || rawStatus.includes('COOL') || rawStatus.includes('DEMO')) {
+                        statusBadgeStyle = 'border border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-400';
+                        StatusBadgeIcon = Icons.Zap;
+                      } else if (rawStatus.includes('DISBURS') || rawStatus.includes('APPROV') || rawStatus.includes('WON')) {
+                        statusBadgeStyle = 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-400';
+                        StatusBadgeIcon = Icons.CheckCircle2;
+                      } else if (rawStatus.includes('REJECT') || rawStatus.includes('DROP') || rawStatus.includes('DEAD')) {
+                        statusBadgeStyle = 'border border-slate-300 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400';
+                        StatusBadgeIcon = Icons.XCircle;
+                      } else {
+                        statusBadgeStyle = 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/60 dark:text-indigo-400';
+                        StatusBadgeIcon = Icons.PhoneCall;
+                      }
 
                       return (
                         <div
                           key={lead._id}
                           id={`lead-card-${lead._id}`}
-                          className={`bg-white dark:bg-slate-900 rounded-2xl border-l-[5px] border-l-indigo-600 border border-slate-200/90 dark:border-slate-800 p-6 shadow-xs hover:shadow-md transition-all duration-300 space-y-5 ${
+                          className={`border border-slate-200 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-800 relative mb-4 last:mb-0 text-left shadow-xs hover:shadow-md transition-all duration-150 overflow-hidden ${
                             highlightedLeadId === lead._id
                               ? 'ring-4 ring-indigo-500/50 shadow-xl border-indigo-500 scale-[1.005]'
                               : ''
                           }`}
                         >
-                          {/* Top Header Row */}
-                          <div className="flex items-center justify-between pb-1">
-                            <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50">
-                              SL No. : {idx + 1}
-                            </span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                              Created Date: <strong className="text-slate-800 dark:text-slate-200 font-bold">{createdDateStr}</strong>
-                            </span>
-                          </div>
+                          {/* Status-colored Top Accent Bar */}
+                          <div
+                            className="absolute top-0 left-0 right-0 h-[3px]"
+                            style={{ backgroundColor: statusTokens.accentHex || '#f43f5e' }}
+                          />
 
-                          {/* 3-Column Field Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-y-4 gap-x-6 text-left">
-                            {/* Row 1 */}
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">DATA CODE:</span>
-                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 tracking-tight block">{dataCode}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">CUSTOMER NAME:</span>
-                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 block">{customerName}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">LOCATION:</span>
-                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase block">{location}</span>
-                            </div>
+                          <div className="p-5 sm:p-6 space-y-4">
+                            {/* 4-Column CSS Grid perfectly inline across all 4 columns */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
+                              {/* ===== ROW 1 ===== */}
+                              {/* Col 1: Sl No. */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 font-normal">{idx + 1}</span>
+                              </div>
 
-                            {/* Row 2 */}
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">FIRM NAME:</span>
-                              <span className="text-sm font-black text-slate-800 dark:text-slate-100 truncate block">{firmName}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">STATUS:</span>
-                              <div className="relative">
+                              {/* Col 2: Lead Name */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name:&nbsp;</span>
+                                <Link
+                                  to={`/modules/leads/${lead._id}`}
+                                  className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px]"
+                                  title={leadName}
+                                >
+                                  {leadName}
+                                </Link>
+                              </div>
+
+                              {/* Col 3: Created On */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Created On:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300">{formatDate(lead.createdAt || lead.data?.createdDate || lead.data?.created_at)}</span>
+                              </div>
+
+                              {/* Col 4: Firm/Company */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={firmCompanyVal}>
+                                  {firmCompanyVal}
+                                </span>
+                              </div>
+
+                              {/* ===== ROW 2 ===== */}
+                              {/* Col 1: Lead No. */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.:&nbsp;</span>
+                                <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                                  {leadNo}
+                                </span>
+                              </div>
+
+                              {/* Col 2: Location */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Location:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={leadLocation}>
+                                  {leadLocation}
+                                </span>
+                              </div>
+
+                              {/* Col 3: By */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">By:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={createdByName}>
+                                  {createdByName}
+                                </span>
+                              </div>
+
+                              {/* Col 4: Modified On */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Modified On:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300">{formatDate(lead.updatedAt || lead.createdAt)}</span>
+                              </div>
+
+                              {/* ===== ROW 3 ===== */}
+                              {/* Col 1: Data Code */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Data Code:&nbsp;</span>
+                                <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
+                                  {dataCode}
+                                </span>
+                              </div>
+
+                              {/* Col 2: Mobile No. */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
+                                  {displayedPhone}
+                                  {rawPhone && rawPhone !== 'N/A' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => togglePhoneReveal(lead._id)}
+                                      title={isRevealed ? "Hide number" : "Show number"}
+                                      className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                    >
+                                      {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                                    </button>
+                                  )}
+                                </span>
+                              </div>
+
+                              {/* Col 3: Followup Date */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date:&nbsp;</span>
+                                <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                                  {followupDateVal ? formatDate(followupDateVal) : 'N/A'}
+                                </span>
+                              </div>
+
+                              {/* Col 4: Assigned By */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={assignedByName}>
+                                  {assignedByName}
+                                </span>
+                              </div>
+
+                              {/* ===== ROW 4 ===== */}
+                              {/* Col 1: Lead Category */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Lead Category:&nbsp;</span>
+                                <input
+                                  type="text"
+                                  placeholder="Lead Category"
+                                  value={leadStates[lead._id]?.leadCategory !== undefined ? leadStates[lead._id].leadCategory : (lead.data?.leadCategory || lead.data?.lead_category || '')}
+                                  onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
+                                  className="text-xs font-semibold uppercase bg-slate-50 dark:bg-slate-800 hover:bg-white focus:bg-white border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-700 dark:text-slate-200 w-full max-w-[170px] focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              {/* Col 2: Amount */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Amount:&nbsp;</span>
+                                <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                                  {formattedAmount}
+                                </span>
+                              </div>
+
+                              {/* Col 3: Pending at */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Pending at:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px]" title={pendingAtVal}>
+                                  {pendingAtVal}
+                                </span>
+                              </div>
+
+                              {/* Col 4: Assigned To */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To:&nbsp;</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px]" title={assignedToName}>
+                                  {assignedToName}
+                                </span>
+                              </div>
+
+                              {/* ===== ROW 5 ===== */}
+                              {/* Col 1: Product */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Product:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={productVal}>
+                                  {productVal}
+                                </span>
+                              </div>
+
+                              {/* Col 2: Bank Partner */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={bankPartnerVal}>
+                                  {bankPartnerVal}
+                                </span>
+                              </div>
+
+                              {/* Col 3: PSM */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">PSM:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={psmName}>
+                                  {psmName}
+                                </span>
+                              </div>
+
+                              {/* Col 4: Case Details */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Case Details:&nbsp;</span>
+                                <input
+                                  type="text"
+                                  placeholder="Case Details"
+                                  value={leadStates[lead._id]?.caseDetails !== undefined ? leadStates[lead._id].caseDetails : (lead.data?.caseDetails || lead.data?.case_details || '')}
+                                  onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
+                                  className="text-xs bg-slate-50 dark:bg-slate-800 hover:bg-white focus:bg-white border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-700 dark:text-slate-200 w-full max-w-[170px] focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              {/* ===== ROW 6 ===== */}
+                              {/* Col 1: Status */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Status:&nbsp;</span>
                                 <select
-                                  value={leadStates[lead._id]?.status || 'Yet To Call'}
+                                  value={currentStatus}
                                   onChange={(e) => handleStatusSelect(lead, e.target.value)}
-                                  className="w-full h-10 pl-3 pr-8 text-sm font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs cursor-pointer uppercase appearance-none"
+                                  className="text-xs font-bold uppercase bg-slate-50 dark:bg-slate-800 hover:bg-white focus:bg-white border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 cursor-pointer focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                                 >
                                   {availableStatuses.map(st => (
                                     <option key={st} value={st}>{st.toUpperCase()}</option>
                                   ))}
                                 </select>
-                                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                               </div>
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">CASE DETAILS:</span>
-                              <input
-                                type="text"
-                                placeholder="Case Details"
-                                value={leadStates[lead._id]?.caseDetails ?? ''}
-                                onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
-                              />
-                            </div>
 
-                            {/* Row 3 */}
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">LEAD CATEGORY:</span>
-                              <input
-                                type="text"
-                                placeholder="Lead Category"
-                                value={leadStates[lead._id]?.leadCategory ?? ''}
-                                onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
-                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
-                              />
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">REMARKS:</span>
-                              <input
-                                type="text"
-                                placeholder="Remarks"
-                                value={leadStates[lead._id]?.remarks ?? ''}
-                                onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                                className="w-full h-10 px-3 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 shadow-3xs"
-                              />
-                            </div>
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">MOBILE NUMBER:</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-black text-slate-800 dark:text-slate-100 font-mono block">
-                                  {maskPhoneNumber(rawPhone, !!revealedPhones[lead._id])}
+                              {/* Col 2: Campaign */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Campaign:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[170px]" title={campaignVal}>
+                                  {campaignVal}
                                 </span>
-                                {rawPhone && (
-                                  <button
-                                    type="button"
-                                    onClick={() => togglePhoneReveal(lead._id)}
-                                    className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                                    title={revealedPhones[lead._id] ? "Hide number" : "Show number"}
-                                  >
-                                    {revealedPhones[lead._id] ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                                  </button>
-                                )}
+                              </div>
+
+                              {/* Col 3: Source */}
+                              <div className="leading-snug min-h-[24px] flex items-center">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Source:&nbsp;</span>
+                                <span className="text-slate-700 dark:text-slate-300 capitalize truncate inline-block max-w-[180px]" title={sourceVal}>
+                                  {sourceVal}
+                                </span>
+                              </div>
+
+                              {/* Col 4: Remarks */}
+                              <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800 dark:text-slate-100">Remarks:&nbsp;</span>
+                                <input
+                                  type="text"
+                                  placeholder="Remarks"
+                                  value={(leadStates[lead._id]?.remarks !== undefined ? leadStates[lead._id].remarks : (lead.data?.remarks || lead.data?.notes || '')).replace(/<[^>]*>/g, '')}
+                                  onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
+                                  className="text-xs italic bg-slate-50 dark:bg-slate-800 hover:bg-white focus:bg-white border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-700 dark:text-slate-200 w-full max-w-[170px] focus:outline-none focus:border-indigo-500"
+                                />
                               </div>
                             </div>
 
-                            {/* Row 4 */}
-                            <div>
-                              <span className="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">ASSIGNED TO:</span>
-                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 block">{assignedTo}</span>
-                            </div>
-                          </div>
+                            {/* Card Footer: Action Toolbar */}
+                            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider ${statusBadgeStyle}`}>
+                                  <StatusBadgeIcon className="w-3.5 h-3.5" />
+                                  <span>{statusBadgeText}</span>
+                                </span>
+                              </div>
 
-                          {/* Card Actions Bottom Row */}
-                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-                            {/* Left Side: WA CHAT & CALL */}
-                            <div className="flex items-center gap-2.5">
-                              <button
-                                onClick={() => handleWhatsAppChat(lead)}
-                                className="h-9 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
-                              >
-                                <Icons.MessageSquare className="w-4 h-4 text-emerald-600" />
-                                <span>WA CHAT</span>
-                              </button>
-                              <button
-                                onClick={() => handleInitiateCall(lead)}
-                                className="h-9 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-2 cursor-pointer transition-all shadow-3xs active:scale-95"
-                              >
-                                <Icons.PhoneCall className="w-4 h-4 text-blue-600" />
-                                <span>CALL</span>
-                              </button>
-                            </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {/* WA Chat (Green) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleWhatsAppChat(lead)}
+                                  className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                >
+                                  <Icons.MessageSquare className="w-3.5 h-3.5" />
+                                  <span>WA Chat</span>
+                                </button>
+                                
+                                {/* Call (Purple/Indigo) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleInitiateCall(lead)}
+                                  className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                >
+                                  <Icons.PhoneCall className="w-3.5 h-3.5" />
+                                  <span>Call</span>
+                                </button>
+                                
+                                {/* Upload File (White with border) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleUploadClick(lead._id)}
+                                  className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                >
+                                  <Icons.Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                                  <span>Upload File</span>
+                                </button>
 
-                            {/* Right Side: SAVE, SAVE & NEXT, EDIT */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                onClick={() => handleSaveLead(lead._id)}
-                                className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-95"
-                                title="Save lead and view confirmation popup"
-                              >
-                                <Icons.Save className="w-4 h-4" />
-                                <span>SAVE</span>
-                              </button>
-                              <button
-                                onClick={() => navigate(`/modules/leads/${lead._id}`)}
-                                className="h-9 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-3xs active:scale-95"
-                              >
-                                <Icons.Edit className="w-3.5 h-3.5" />
-                                <span>EDIT</span>
-                              </button>
+                                {/* Save (Indigo) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleSaveLead(lead._id)}
+                                  className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                  title="Save lead and advance calling"
+                                >
+                                  <Icons.Save className="w-3.5 h-3.5" />
+                                  <span>Save</span>
+                                </button>
+                                
+                                {/* Edit (Blue) */}
+                                <Link 
+                                  to={`/modules/leads/${lead._id}`} 
+                                  className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs"
+                                >
+                                  <Icons.Edit3 className="w-3.5 h-3.5" />
+                                  <span>Edit</span>
+                                </Link>
+                                
+                                {/* History (White with border) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => openHistory(lead)}
+                                  className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                >
+                                  <Icons.History className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                                  <span>History</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1748,6 +2199,206 @@ export default function MyCampaign() {
             </div>
           )}
 
+      {/* CAMPAIGN STATUSES & TRIGGER CONFIGURATION MODAL (Super Admin / Admin) */}
+      {showStatusModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs transition-all animate-in fade-in duration-150"
+          onClick={() => setShowStatusModal(false)}
+        >
+          <div 
+            className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0 border border-indigo-100 dark:border-indigo-900/50">
+                  <Icons.SlidersHorizontal className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Campaign Status Settings
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Configure statuses and choose which ones automatically open the Create Lead form.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <Icons.X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {/* Add New Status Card */}
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 p-3.5 rounded-xl space-y-2.5">
+                <span className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Create New Campaign Status
+                </span>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Status name (e.g. Cool Lead, Followup Required)..."
+                      value={newStatusInput}
+                      onChange={(e) => setNewStatusInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddNewStatus();
+                        }
+                      }}
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddNewStatus}
+                    className="h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-3xs flex-shrink-0"
+                  >
+                    <Icons.Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Add Status</span>
+                  </button>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-600 dark:text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={newStatusTrigger}
+                    onChange={(e) => setNewStatusTrigger(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 dark:border-slate-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <span>Automatically open <strong>Create Lead</strong> form when telecaller selects this status</span>
+                </label>
+              </div>
+
+              {/* Status List with Search */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    All Campaign Statuses ({modalStatuses.length})
+                  </span>
+                  <div className="relative w-44">
+                    <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Filter list..."
+                      value={searchStatusModal}
+                      onChange={(e) => setSearchStatusModal(e.target.value)}
+                      className="w-full h-7 pl-7 pr-2 text-[11px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden max-h-[280px] overflow-y-auto bg-white dark:bg-slate-900">
+                  {modalStatuses
+                    .filter(s => s.toLowerCase().includes(searchStatusModal.trim().toLowerCase()))
+                    .map((statusName) => {
+                      const norm = statusName.trim().toUpperCase();
+                      const isTrigger = modalTriggerStatuses.some(ts => ts.trim().toUpperCase() === norm);
+
+                      return (
+                        <div
+                          key={statusName}
+                          className="flex items-center justify-between px-3.5 py-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 flex-shrink-0" />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate uppercase">
+                              {statusName}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* Toggle / Checkbox for "Opens Create Lead" */}
+                            <label 
+                              onClick={() => handleToggleTriggerStatus(statusName)}
+                              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold cursor-pointer transition-all border ${
+                                isTrigger
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 shadow-3xs'
+                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                              }`}
+                              title={isTrigger ? 'Triggers Create Lead prefill' : 'Normal status update'}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isTrigger}
+                                onChange={() => {}} // handled by parent onClick
+                                className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 pointer-events-none"
+                              />
+                              <span>Opens Create Lead</span>
+                            </label>
+
+                            {/* Delete custom status button */}
+                            <button
+                              onClick={() => handleDeleteStatus(statusName)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              title="Delete status"
+                            >
+                              <Icons.Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 rounded-xl p-3 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                  <Icons.Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>How it works:</strong> Whenever a telecaller selects any status marked with <strong>"Opens Create Lead"</strong> (such as Hot Leads, Warm Leads, or Cool Lead), the lead is automatically saved and the <strong>Create Lead</strong> form will immediately open prefilled with customer details.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={handleResetStatusDefaults}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 underline cursor-pointer"
+              >
+                Reset to Defaults
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(false)}
+                  className="h-8.5 px-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveStatusSettings}
+                  disabled={savingStatusConfig}
+                  className="h-8.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingStatusConfig ? (
+                    <>
+                      <Icons.Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icons.Check className="w-3.5 h-3.5" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PROPER SAVE CONFIRMATION POPUP MODAL */}
       {saveSuccessModal && saveSuccessModal.isOpen && (
         <div 
@@ -1819,6 +2470,182 @@ export default function MyCampaign() {
                 title="Stay on this lead (Press Esc)"
               >
                 <span>DONE</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden File Input for Upload */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+
+      {/* History Audit Modal */}
+      {activeHistoryRecord && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-lg uppercase tracking-tight">
+                  Lead Audit History
+                </h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">
+                  Lead Name: <span className="text-slate-800 dark:text-white font-bold">{activeHistoryRecord.data?.firstName} {activeHistoryRecord.data?.lastName || activeHistoryRecord.data?.customerName || 'Customer'}</span> • Lead No: <span className="font-mono font-bold text-indigo-600">LND-{activeHistoryRecord._id.slice(-6).toUpperCase()}</span>
+                </p>
+              </div>
+              <button 
+                onClick={() => setActiveHistoryRecord(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 dark:text-slate-400 transition-colors cursor-pointer"
+              >
+                <Icons.X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              {loadingHistory ? (
+                <div className="flex justify-center items-center py-12">
+                  <Icons.Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* Documents Section */}
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Icons.File className="w-3.5 h-3.5 text-amber-500" /> Attached Documents ({historyDocuments.length})
+                    </h4>
+                    {historyDocuments.length > 0 ? (
+                      <div className="space-y-2">
+                        {historyDocuments.map((doc: any) => (
+                          <div key={doc._id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Icons.FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{doc.name}</p>
+                                <p className="text-[10px] text-slate-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                            </div>
+                            <a 
+                              href={`${FILE_BASE_URL}${doc.filePath}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                            >
+                              <Icons.Download className="w-3.5 h-3.5" /> Download
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">No files attached to this record.</p>
+                    )}
+                  </div>
+
+                  {/* Comprehensive Audit & Modification History */}
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-2">
+                      <Icons.History className="w-4 h-4 text-indigo-600" /> Full Audit & Modification History ({historyActivities.length})
+                    </h4>
+
+                    {historyActivities.length > 0 ? (
+                      <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 pl-6 space-y-6">
+                        {historyActivities.map((act: any) => {
+                          const dateObj = new Date(act.createdAt);
+                          const dateStr = formatDate(act.createdAt);
+                          const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                          const performerName = act.userId ? `${act.userId.firstName || ''} ${act.userId.lastName || ''}`.trim() : (act.performedBy ? `${act.performedBy.firstName || ''} ${act.performedBy.lastName || ''}`.trim() : 'System Router');
+                          
+                          const d = act.details || {};
+                          const fieldName = d.fieldName || '';
+                          const isStatusChange = act.type === 'status_change' || fieldName === 'status';
+                          const isAssignment = act.type === 'assignment' || fieldName === 'assignedTo';
+                          const isCreation = act.type === 'create';
+
+                          return (
+                            <div key={act._id} className="relative bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 p-3.5 rounded-2xl space-y-2">
+                              {/* Dot Icon */}
+                              <span className={`absolute -left-[31px] top-4 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 ${
+                                isStatusChange ? 'bg-indigo-600' : isAssignment ? 'bg-emerald-600' : isCreation ? 'bg-blue-600' : 'bg-amber-500'
+                              }`} />
+
+                              {/* Header & Event Badge */}
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-md border ${
+                                  isStatusChange ? 'bg-indigo-50 border-indigo-200 text-indigo-700' :
+                                  isAssignment ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                                  isCreation ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                                  'bg-amber-50 border-amber-200 text-amber-700'
+                                }`}>
+                                  {isStatusChange ? 'STATUS UPDATED' : isAssignment ? 'LEAD TRANSFERRED / ASSIGNED' : isCreation ? 'LEAD CREATED' : `EDITED (${fieldName.toUpperCase()})`}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400">
+                                  {dateStr} • {timeStr}
+                                </span>
+                              </div>
+
+                              {/* Activity Details: Old vs New Values */}
+                              <div className="text-xs space-y-1">
+                                {isStatusChange && (
+                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                    Status Changed: <span className="line-through text-rose-500 font-bold">{d.oldValue || 'N/A'}</span> ➔ <span className="text-emerald-600 font-bold uppercase">{d.newValue || 'Updated'}</span>
+                                  </div>
+                                )}
+
+                                {isAssignment && (
+                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                    Lead Transferred To: <span className="line-through text-slate-400">{d.oldValue || 'Unassigned'}</span> ➔ <span className="text-indigo-600 font-bold">{d.newValue || 'Agent'}</span>
+                                  </div>
+                                )}
+
+                                {!isStatusChange && !isAssignment && !isCreation && (
+                                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {fieldName ? `Field '${fieldName}': ` : ''}
+                                    <span className="line-through text-slate-400">{String(d.oldValue || 'N/A')}</span> ➔ <span className="text-slate-900 dark:text-white font-bold">{String(d.newValue || 'N/A')}</span>
+                                  </div>
+                                )}
+
+                                {isCreation && (
+                                  <div className="font-semibold text-slate-700 dark:text-slate-300">
+                                    Lead initially registered in system with status: <span className="font-bold text-indigo-600 uppercase">{activeHistoryRecord.data?.status || 'New'}</span>
+                                  </div>
+                                )}
+
+                                {d.commentText && (
+                                  <p className="text-[11px] text-slate-500 italic mt-1 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                    "{d.commentText}"
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Performed By footer */}
+                              <div className="text-[10px] text-slate-400 font-semibold pt-1 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between">
+                                <span>Action by: <span className="text-slate-700 dark:text-slate-300 font-bold">{performerName}</span></span>
+                                <span>Record ID: LND-{activeHistoryRecord._id.slice(-6).toUpperCase()}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic text-center py-6">No modification history logged for this record yet.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button 
+                onClick={() => setActiveHistoryRecord(null)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl uppercase transition-colors cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
