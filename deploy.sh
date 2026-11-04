@@ -52,22 +52,14 @@ echo "Building React frontend production package..."
 npx vite build
 cd ..
 
-# Auto-sync built frontend to all active Nginx root directories on server
-echo "Scanning active Nginx site configurations for web roots..."
+# Safe frontend deployment: Sync ONLY to this project's dedicated web root
+echo "Setting permissions on project frontend dist..."
 chmod -R 755 frontend/dist || true
-NGINX_ROOTS=$(grep -rh "root[[:space:]]" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/ 2>/dev/null | sed -n 's/.*root[[:space:]]\+\([^;[:space:]]\+\).*/\1/p' | sort -u)
-echo "Detected Nginx root directories: $NGINX_ROOTS"
-for dir in $NGINX_ROOTS; do
-  if [ -d "$dir" ] && [ "$dir" != "$(pwd)/frontend/dist" ]; then
-    echo "Syncing frontend dist to Nginx root: $dir"
-    cp -r frontend/dist/* "$dir/" || true
-    chmod -R 755 "$dir" || true
-  fi
-done
 
-for web_root in "/var/www/html" "/var/www/inkcrm/frontend/dist" "/var/www/inkCRM/frontend/dist" "/var/www/novaleadnexa/frontend/dist" "/var/www/novaleadnexa.in/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist" "/usr/share/nginx/html"; do
+# Target ONLY this project's specific directory (NEVER touch /var/www/html or other projects on the server like school-erp!)
+for web_root in "/var/www/novaleadnexa/frontend/dist" "/var/www/novaleadnexa.in/frontend/dist" "/var/www/project-zaid-fmcg/frontend/dist"; do
   if [ -d "$web_root" ] && [ "$web_root" != "$(pwd)/frontend/dist" ]; then
-    echo "Syncing frontend dist to $web_root..."
+    echo "Syncing frontend dist to project web root: $web_root..."
     cp -r frontend/dist/* "$web_root/" || true
     chmod -R 755 "$web_root" || true
   fi
