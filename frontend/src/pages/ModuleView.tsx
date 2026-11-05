@@ -1713,7 +1713,7 @@ export default function ModuleView() {
   const renderCampaignsList = () => {
     return (
       <div className="space-y-3.5 text-left">
-        {/* Top Header Bar with Campaign Statuses Button */}
+        {/* Top Header Bar with Actions */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
           <div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
@@ -1723,14 +1723,37 @@ export default function ModuleView() {
               Monitor active calling drives, allocated leads, and configure telecalling statuses.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowStatusModal(true)}
-            className="h-10 px-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white hover:bg-indigo-50/80 dark:bg-slate-900 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
-          >
-            <Icons.SlidersHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[2.2]" />
-            <span>Campaign Statuses</span>
-          </button>
+          <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('campaign-name-input');
+                if (el) {
+                  el.focus();
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }}
+              className="h-10 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+            >
+              <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Create Campaign</span>
+            </button>
+            <Link
+              to="/modules/campaignassignments"
+              className="h-10 px-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+            >
+              <Icons.UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[2.2]" />
+              <span>Assign Campaign</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowStatusModal(true)}
+              className="h-10 px-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white hover:bg-indigo-50/80 dark:bg-slate-900 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+            >
+              <Icons.SlidersHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[2.2]" />
+              <span>Campaign Statuses</span>
+            </button>
+          </div>
         </div>
 
         {/* 6 Vibrant Metric Cards matching Image 1 */}
@@ -1864,6 +1887,80 @@ export default function ModuleView() {
             </div>
           </div>
         </div>
+
+        {/* Create Campaign Studio Card */}
+        <form
+          onSubmit={handleSaveCampaign}
+          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs relative overflow-hidden text-left"
+        >
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 to-teal-500" />
+
+          <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+                <Icons.Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+                  {editCampaignId ? 'Edit Campaign Details' : 'Create Campaign'}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {editCampaignId ? 'Update the name of your campaign drive' : 'Launch a new calling drive and allocate leads to your telecallers'}
+                </span>
+              </div>
+            </div>
+            {editCampaignId && (
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                Editing Mode
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex-1 max-w-2xl">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                Campaign Name <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <Icons.Tag className="w-4 h-4 text-violet-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="campaign-name-input"
+                  type="text"
+                  value={campaignNameInput}
+                  onChange={(e) => setCampaignNameInput(e.target.value)}
+                  placeholder="e.g. Q3 Telecalling Drive, HNI Real Estate, Loan Festival..."
+                  className="w-full h-11 pl-10 pr-4 text-xs sm:text-sm font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all shadow-inner-sm"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end md:self-auto mt-2 md:mt-0">
+              {editCampaignId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCampaignNameInput('');
+                    setEditCampaignId(null);
+                  }}
+                  className="h-11 px-5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmittingCampaign || !campaignNameInput.trim()}
+                className="h-11 px-6 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-violet-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSubmittingCampaign ? (
+                  <Icons.Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
+                )}
+                <span>{editCampaignId ? 'Update Campaign' : '+ Create Campaign'}</span>
+              </button>
+            </div>
+          </div>
+        </form>
 
         {/* Edit Campaign Modal (Only opens if user clicks edit button on a campaign) */}
         {editCampaignId && (
@@ -2105,6 +2202,14 @@ export default function ModuleView() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
+                          <Link
+                            to={`/modules/campaignassignments`}
+                            className="h-8.5 px-3 bg-blue-50 hover:bg-blue-100 active:bg-blue-150 text-blue-700 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 rounded-xl text-xs font-bold shadow-3xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                            title="Assign Leads to Campaign"
+                          >
+                            <Icons.UserCheck className="w-3.5 h-3.5" />
+                            <span>Assign</span>
+                          </Link>
                           <button
                             type="button"
                             onClick={() => handleDownloadCampaign(rec)}
