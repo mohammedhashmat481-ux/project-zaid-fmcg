@@ -1277,8 +1277,9 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         LOWER(data->>'source') = LOWER($${campParamIdx}) OR
         LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
-            // Reporting managers see only their own assigned campaign records, not subordinates'
-            if (!isSuper) {
+            // Reporting managers see only their own assigned records in the telecalling view
+            // When exporting the full campaign (isAll = true) or for Super Admin, include all allocated records
+            if (!isSuper && !isAll) {
                 const userTerms = [
                     userId.toString(),
                     currentUser?.userCode,
@@ -1457,7 +1458,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             ...(moduleId ? { moduleId } : {}),
             ...matchFilter
         };
-        if (!isSuper) {
+        if (!isSuper && !isAll) {
             const userFilters = [
                 { createdBy: userId },
                 { 'data.assignedTo': userId.toString() }
