@@ -1724,20 +1724,6 @@ export default function ModuleView() {
             </p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById('campaign-name-input');
-                if (el) {
-                  el.focus();
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-              }}
-              className="h-10 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
-            >
-              <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Create Campaign</span>
-            </button>
             <Link
               to="/modules/campaignassignments"
               className="h-10 px-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer"
