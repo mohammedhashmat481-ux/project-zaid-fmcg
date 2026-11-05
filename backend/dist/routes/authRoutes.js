@@ -668,6 +668,9 @@ router.put('/roles/:id', authMiddleware_1.authenticate, async (req, res) => {
         if (typeof isActive === 'boolean')
             role.isActive = isActive;
         if (permissions) {
+            if (!role.permissions) {
+                role.permissions = { modules: [], fields: [], menus: [] };
+            }
             if (Array.isArray(permissions)) {
                 role.permissions.modules = permissions;
             }

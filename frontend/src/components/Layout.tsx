@@ -274,31 +274,43 @@ export default function Layout({ children }: LayoutProps) {
   const renderNavItems = (collapsed: boolean) => (
     <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar px-2 py-3 space-y-1">
       {/* Group 1: Quick Actions */}
-      <SidebarGroup title="QUICK ACTIONS" isCollapsed={collapsed}>
-        {(!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && (
-          <SidebarItem 
-            to="/modules/leads/new" 
-            label="Create Lead" 
-            icon={Icons.UserPlus} 
-            colorClass="text-status-info"
-            isCollapsed={collapsed}
-          />
-        )}
-        <SidebarItem 
-          to="/my-campaign" 
-          label="My Campaign" 
-          icon={Icons.Megaphone} 
-          colorClass="text-status-warm"
-          isCollapsed={collapsed}
-        />
-      </SidebarGroup>
+      {(((!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && canAccessMenu('leads')) || canAccessMenu('campaigns') || canAccessMenu('my_campaign')) && (
+        <SidebarGroup title="QUICK ACTIONS" isCollapsed={collapsed}>
+          {(!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && canAccessMenu('leads') && (
+            <SidebarItem 
+              to="/modules/leads/new" 
+              label="Create Lead" 
+              icon={Icons.UserPlus} 
+              colorClass="text-status-info"
+              isCollapsed={collapsed}
+            />
+          )}
+          {(canAccessMenu('campaigns') || canAccessMenu('my_campaign')) && (
+            <SidebarItem 
+              to="/my-campaign" 
+              label="My Campaign" 
+              icon={Icons.Megaphone} 
+              colorClass="text-status-warm"
+              isCollapsed={collapsed}
+            />
+          )}
+        </SidebarGroup>
+      )}
 
       {/* Group 2: Main Menu */}
       {(canAccessMenu('dashboard') ||
         canAccessMenu('leads') ||
         canAccessMenu('campaigns') ||
+        canAccessMenu('campaignassignments') ||
+        canAccessMenu('telecaller_reports') ||
         canAccessMenu('lead_reports') ||
-        canAccessMenu('funnel_daily')) && (
+        canAccessMenu('campaign_daily') ||
+        canAccessMenu('campaign_monthly') ||
+        canAccessMenu('campaign_annual') ||
+        canAccessMenu('funnel_daily') ||
+        canAccessMenu('funnel_monthly') ||
+        canAccessMenu('funnel_annual') ||
+        modules.some(m => !['departments', 'products', 'bankmasters', 'bankingpartners', 'companies', 'deals', 'campaigns', 'campaignassignments', 'leads'].includes(m.apiPath.toLowerCase()) && canAccessMenu(m.apiPath.toLowerCase()))) && (
         <SidebarGroup title="MAIN MENU" isCollapsed={collapsed}>
           {canAccessMenu('dashboard') && (
             <SidebarItem 
@@ -406,18 +418,28 @@ export default function Layout({ children }: LayoutProps) {
           ))}
 
           {/* Reports Navigation */}
-          {(canAccessMenu('lead_reports') || canAccessMenu('telecaller_reports') || canAccessMenu('telecaller_monthly')) && (
+          {(canAccessMenu('telecaller_reports') || canAccessMenu('lead_reports') || canAccessMenu('campaign_daily') || canAccessMenu('campaign_monthly') || canAccessMenu('campaign_annual')) && (
             <SidebarAccordion 
               label="Reports & Analytics" 
               icon={Icons.BarChart3} 
               defaultOpen={location.pathname.startsWith('/reports')}
               isCollapsed={collapsed}
             >
-              <SidebarItem to="/reports/telecaller-reports" label="Live Caller Status" icon={Icons.Radio} colorClass="text-status-success" indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/lead-reports" label="Lead Reports" icon={Icons.ListFilter} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-daily" label="Daily Report" icon={Icons.PhoneCall} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-monthly" label="Monthly Report" icon={Icons.Calendar} indent isCollapsed={collapsed} />
-              <SidebarItem to="/reports/campaign-annual" label="Annual Report" icon={Icons.CalendarDays} indent isCollapsed={collapsed} />
+              {canAccessMenu('telecaller_reports') && (
+                <SidebarItem to="/reports/telecaller-reports" label="Live Caller Status" icon={Icons.Radio} colorClass="text-status-success" indent isCollapsed={collapsed} />
+              )}
+              {canAccessMenu('lead_reports') && (
+                <SidebarItem to="/reports/lead-reports" label="Lead Reports" icon={Icons.ListFilter} indent isCollapsed={collapsed} />
+              )}
+              {canAccessMenu('campaign_daily') && (
+                <SidebarItem to="/reports/campaign-daily" label="Daily Report" icon={Icons.PhoneCall} indent isCollapsed={collapsed} />
+              )}
+              {canAccessMenu('campaign_monthly') && (
+                <SidebarItem to="/reports/campaign-monthly" label="Monthly Report" icon={Icons.Calendar} indent isCollapsed={collapsed} />
+              )}
+              {canAccessMenu('campaign_annual') && (
+                <SidebarItem to="/reports/campaign-annual" label="Annual Report" icon={Icons.CalendarDays} indent isCollapsed={collapsed} />
+              )}
             </SidebarAccordion>
           )}
 

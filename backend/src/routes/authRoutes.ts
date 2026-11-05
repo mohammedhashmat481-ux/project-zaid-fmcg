@@ -742,6 +742,9 @@ router.put('/roles/:id', authenticate, async (req: Request, res: Response): Prom
     if (typeof isActive === 'boolean') role.isActive = isActive;
 
     if (permissions) {
+      if (!role.permissions) {
+        role.permissions = { modules: [], fields: [], menus: [] };
+      }
       if (Array.isArray(permissions)) {
         role.permissions.modules = permissions;
       } else if (typeof permissions === 'object') {

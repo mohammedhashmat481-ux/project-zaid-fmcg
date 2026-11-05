@@ -184,7 +184,7 @@ export default function App() {
           <Route
             path="/reports/campaign-daily"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute menuKey="campaign_daily">
                 <CampaignReportPage initialPeriod="daily" />
               </ProtectedRoute>
             }
@@ -192,7 +192,7 @@ export default function App() {
           <Route
             path="/reports/campaign-monthly"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute menuKey="campaign_monthly">
                 <CampaignReportPage initialPeriod="monthly" />
               </ProtectedRoute>
             }
@@ -200,7 +200,7 @@ export default function App() {
           <Route
             path="/reports/campaign-annual"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute menuKey="campaign_annual">
                 <CampaignReportPage initialPeriod="annually" />
               </ProtectedRoute>
             }
@@ -208,7 +208,7 @@ export default function App() {
           <Route
             path="/reports/campaign-report"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute menuKey="campaign_daily">
                 <CampaignReportPage initialPeriod="daily" />
               </ProtectedRoute>
             }
