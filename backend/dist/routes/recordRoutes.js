@@ -650,17 +650,16 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let locationVal = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'location' ||
-                    cleanK === 'city' ||
-                    cleanK === 'place' ||
-                    cleanK === 'area' ||
-                    cleanK === 'district' ||
-                    cleanK === 'branch' ||
-                    cleanK === 'address' ||
-                    cleanK === 'locationname' ||
-                    cleanK === 'cityname' ||
-                    cleanK === 'state') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                if (cleanK.includes('location') ||
+                    cleanK.includes('city') ||
+                    cleanK.includes('place') ||
+                    cleanK.includes('area') ||
+                    cleanK.includes('district') ||
+                    cleanK.includes('branch') ||
+                    cleanK.includes('address') ||
+                    cleanK.includes('state') ||
+                    cleanK.includes('town')) {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
                         locationVal = String(v).trim();
                         break;
                     }
