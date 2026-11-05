@@ -2059,10 +2059,10 @@ export default function MyCampaign() {
                                 <span className="text-slate-700 dark:text-slate-300 font-medium">{idx + 1}</span>
                               </div>
 
-                              {/* Col 2: Lead Name (Text if present; input if empty or editing) */}
+                              {/* Col 2: Lead Name (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
-                                {isEditing || !currentLeadName ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Enter Lead Name"
@@ -2072,8 +2072,8 @@ export default function MyCampaign() {
                                   />
                                 ) : (
                                   <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                    <span className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[165px]" title={currentLeadName}>
-                                      {currentLeadName}
+                                    <span className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[165px]" title={currentLeadName || 'ENTER LEAD NAME'}>
+                                      {currentLeadName || 'ENTER LEAD NAME'}
                                     </span>
                                     <Link
                                       to={`/modules/leads/${lead._id}`}
@@ -2092,10 +2092,10 @@ export default function MyCampaign() {
                                 <span className="text-slate-700 dark:text-slate-300 font-medium">{createdOnDisplay}</span>
                               </div>
 
-                              {/* Col 4: Firm/Company (Text if present; input if empty or editing) */}
+                              {/* Col 4: Firm/Company (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
-                                {isEditing || !currentFirmCompany ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Firm / Company"
@@ -2104,8 +2104,8 @@ export default function MyCampaign() {
                                     className="h-6 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={currentFirmCompany}>
-                                    {currentFirmCompany}
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={currentFirmCompany || '—'}>
+                                    {currentFirmCompany || '—'}
                                   </span>
                                 )}
                               </div>
@@ -2119,20 +2119,20 @@ export default function MyCampaign() {
                                 </span>
                               </div>
 
-                              {/* Col 2: Location (Text if present; blank input if empty or editing) */}
+                              {/* Col 2: Location (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
-                                {isEditing || !currentLocation ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Location"
                                     value={currentLocation}
                                     onChange={(e) => handleFieldChange(lead._id, 'location', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[165px]" title={currentLocation}>
-                                    {currentLocation}
+                                  <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[165px]" title={currentLocation || '—'}>
+                                    {currentLocation || '—'}
                                   </span>
                                 )}
                               </div>
@@ -2152,10 +2152,10 @@ export default function MyCampaign() {
                               </div>
 
                               {/* ===== ROW 3 ===== */}
-                              {/* Col 1: Data Code (Lavender badge matching Image 4) */}
+                              {/* Col 1: Data Code (Lavender badge matching Image 4; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Data Code:&nbsp;</span>
-                                {isEditing || !currentDataCode ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Data Code"
@@ -2163,17 +2163,19 @@ export default function MyCampaign() {
                                     onChange={(e) => handleFieldChange(lead._id, 'dataCode', e.target.value)}
                                     className="h-6 text-xs font-mono font-bold bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded px-1.5 py-0.5 text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
                                   />
-                                ) : (
+                                ) : currentDataCode ? (
                                   <span className="inline-block px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-650 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/80 dark:border-indigo-800">
                                     {currentDataCode}
                                   </span>
+                                ) : (
+                                  <span className="text-slate-400 dark:text-slate-500 font-semibold">—</span>
                                 )}
                               </div>
 
-                              {/* Col 2: Mobile No. */}
+                              {/* Col 2: Mobile No. (Text with reveal by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
-                                {isEditing || !currentMobile ? (
+                                {isEditing ? (
                                   <input
                                     type="tel"
                                     placeholder="Mobile Number"
@@ -2181,39 +2183,41 @@ export default function MyCampaign() {
                                     onChange={(e) => handleFieldChange(lead._id, 'mobile', e.target.value)}
                                     className="h-6 text-xs font-mono font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
                                   />
-                                ) : (
+                                ) : (currentMobile || rawPhone) && (currentMobile !== 'N/A' && currentMobile !== 'XXXXXXXXXX') ? (
                                   <div className="flex items-center gap-1.5">
                                     <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
                                       {displayedPhone || currentMobile}
                                     </span>
-                                    {(currentMobile || rawPhone) && (currentMobile !== 'N/A' && currentMobile !== 'XXXXXXXXXX') && (
-                                      <button
-                                        type="button"
-                                        onClick={() => togglePhoneReveal(lead._id)}
-                                        title={isRevealed ? "Hide number" : "Show number"}
-                                        className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                                      >
-                                        {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => togglePhoneReveal(lead._id)}
+                                      title={isRevealed ? "Hide number" : "Show number"}
+                                      className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                    >
+                                      {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                                    </button>
                                   </div>
+                                ) : (
+                                  <span className="text-slate-400 dark:text-slate-500 font-semibold">—</span>
                                 )}
                               </div>
 
-                              {/* Col 3: Followup Date */}
+                              {/* Col 3: Followup Date (Badge by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
-                                {isEditing || !currentFollowupDate ? (
+                                {isEditing ? (
                                   <input
                                     type="date"
                                     value={currentFollowupDate}
                                     onChange={(e) => handleFieldChange(lead._id, 'followupDate', e.target.value)}
-                                    className="h-6 text-xs bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-indigo-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full max-w-[140px] cursor-pointer"
+                                    className="h-6 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[140px] cursor-pointer"
                                   />
-                                ) : (
+                                ) : currentFollowupDate ? (
                                   <span className="inline-block px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-medium border border-indigo-200/80 dark:border-indigo-800">
                                     {formatDate(currentFollowupDate) || currentFollowupDate}
                                   </span>
+                                ) : (
+                                  <span className="text-slate-400 dark:text-slate-500 font-semibold">—</span>
                                 )}
                               </div>
 
@@ -2226,39 +2230,41 @@ export default function MyCampaign() {
                               </div>
 
                               {/* ===== ROW 4 ===== */}
-                              {/* Col 1: Lead Category */}
+                              {/* Col 1: Lead Category (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Category:&nbsp;</span>
-                                {isEditing || !currentLeadCategory ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Lead Category"
                                     value={currentLeadCategory}
                                     onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
+                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[155px]" title={currentLeadCategory}>
-                                    {currentLeadCategory}
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[155px]" title={currentLeadCategory || '—'}>
+                                    {currentLeadCategory || '—'}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Col 2: Amount (Emerald bold text matching Image 4) */}
+                              {/* Col 2: Amount (Emerald bold text matching Image 4; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
-                                {isEditing || !currentAmount ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Loan Amount"
                                     value={currentAmount}
                                     onChange={(e) => handleFieldChange(lead._id, 'amount', e.target.value)}
-                                    className="h-6 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-emerald-300 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[150px]"
+                                    className="h-6 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[150px]"
                                   />
-                                ) : (
+                                ) : currentAmount ? (
                                   <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate inline-block max-w-[150px]">
                                     {currentAmount.startsWith('₹') ? currentAmount : `₹${currentAmount}`}
                                   </span>
+                                ) : (
+                                  <span className="text-slate-400 dark:text-slate-500 font-semibold">—</span>
                                 )}
                               </div>
 
@@ -2279,80 +2285,80 @@ export default function MyCampaign() {
                               </div>
 
                               {/* ===== ROW 5 ===== */}
-                              {/* Col 1: Product */}
+                              {/* Col 1: Product (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
-                                {isEditing || !currentProduct ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Product / Loan Type"
                                     value={currentProduct}
                                     onChange={(e) => handleFieldChange(lead._id, 'product', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]">
-                                    {currentProduct}
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentProduct || '—'}>
+                                    {currentProduct || '—'}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Col 2: Bank Partner */}
+                              {/* Col 2: Bank Partner (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
-                                {isEditing || !currentBankPartner ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Bank Partner"
                                     value={currentBankPartner}
                                     onChange={(e) => handleFieldChange(lead._id, 'bankPartner', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]">
-                                    {currentBankPartner}
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentBankPartner || '—'}>
+                                    {currentBankPartner || '—'}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Col 3: PSM */}
+                              {/* Col 3: PSM (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
-                                {isEditing || !currentPsm ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="PSM Name"
                                     value={currentPsm}
                                     onChange={(e) => handleFieldChange(lead._id, 'psm', e.target.value)}
-                                    className="h-6 text-xs font-medium bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-6 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]">
-                                    {currentPsm}
+                                  <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentPsm || '—'}>
+                                    {currentPsm || '—'}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Col 4: Case Details */}
+                              {/* Col 4: Case Details (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
-                                {isEditing || !currentCaseDetails ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Case Details"
                                     value={currentCaseDetails}
                                     onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                                    className="h-6 text-xs bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
+                                    className="h-6 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[150px]">
+                                  <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[150px]" title={currentCaseDetails || 'N/A'}>
                                     {currentCaseDetails || 'N/A'}
                                   </span>
                                 )}
                               </div>
 
                               {/* ===== ROW 6 ===== */}
-                              {/* Col 1: Status */}
+                              {/* Col 1: Status (Text by default; select dropdown only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
                                 {isEditing ? (
@@ -2388,20 +2394,20 @@ export default function MyCampaign() {
                                 </span>
                               </div>
 
-                              {/* Col 4: Remarks */}
+                              {/* Col 4: Remarks (Text by default; input only when editing) */}
                               <div className="leading-snug min-h-[26px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
-                                {isEditing || !currentRemarks ? (
+                                {isEditing ? (
                                   <input
                                     type="text"
                                     placeholder="Remarks / Notes"
                                     value={currentRemarks}
                                     onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                                    className="h-6 text-xs italic bg-slate-50/70 hover:bg-white focus:bg-white dark:bg-slate-800 border border-slate-200/80 hover:border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
+                                    className="h-6 text-xs italic bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-600 dark:text-slate-400 italic truncate inline-block max-w-[170px]" title={currentRemarks}>
-                                    {currentRemarks}
+                                  <span className="text-slate-600 dark:text-slate-400 italic truncate inline-block max-w-[170px]" title={currentRemarks || '—'}>
+                                    {currentRemarks || '—'}
                                   </span>
                                 )}
                               </div>
