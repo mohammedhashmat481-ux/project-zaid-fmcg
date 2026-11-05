@@ -733,6 +733,24 @@ export default function RecordForm() {
         } else {
           await api.post(`/records/${apiPath}`, data);
         }
+
+        const fromCampaignLeadId = location.state?.fromCampaignLeadId;
+        if (fromCampaignLeadId) {
+          try {
+            await api.put(`/records/leads/${fromCampaignLeadId}`, {
+              data: {
+                isLeadCreated: true,
+                leadCreated: true,
+                pipelineAssignedTo: data.assignedTo,
+                assignedToName: data.assignedToName || data.assignedTo,
+                assignToTeam: data.assignToTeam,
+                pendingAt: data.assignToTeam
+              }
+            });
+          } catch (linkErr) {
+            console.warn('Failed to update linked campaign lead:', linkErr);
+          }
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['records', apiPath] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });

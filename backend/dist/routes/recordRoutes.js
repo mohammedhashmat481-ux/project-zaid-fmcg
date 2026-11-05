@@ -597,25 +597,36 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
                 fName = parts[0];
                 lName = parts.slice(1).join(' ');
             }
-            // Extract dataCode from any possible column naming variation or derive from campaign
-            const rawDataCode = (lead.dataCode ||
-                lead.data_code ||
-                lead['Data Code'] ||
-                lead['data code'] ||
-                lead['DATA CODE'] ||
-                lead.datacode ||
-                lead.DataCode ||
-                lead.DATA_CODE ||
-                lead.leadCode ||
-                lead.lead_code ||
-                lead['Lead Code'] ||
-                lead['lead code'] ||
-                lead.code ||
-                lead.Code ||
-                lead.CODE ||
-                '')?.toString().trim();
-            const cleanCampPrefix = campaignName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
-            const finalDataCode = rawDataCode || `${cleanCampPrefix}-DATA-${globalOffset + idx + 1}`;
+            // Extract dataCode from any possible column naming variation in Excel
+            let rawDataCode = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'datacode' ||
+                    cleanK === 'code' ||
+                    cleanK === 'leadcode' ||
+                    cleanK === 'customercode' ||
+                    cleanK === 'datano') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        rawDataCode = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!rawDataCode) {
+                rawDataCode = (lead.dataCode ||
+                    lead.data_code ||
+                    lead['Data Code'] ||
+                    lead['data code'] ||
+                    lead['DATA CODE'] ||
+                    lead.datacode ||
+                    lead.DataCode ||
+                    lead.DATA_CODE ||
+                    lead.leadCode ||
+                    lead.lead_code ||
+                    lead.code ||
+                    '')?.toString().trim();
+            }
+            const finalDataCode = rawDataCode || '';
             // Universal phone / mobile extractor from any possible column name in Excel
             let phoneVal = '';
             for (const [k, v] of Object.entries(lead)) {
@@ -635,25 +646,141 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             if (!phoneVal) {
                 phoneVal = String(lead.phone || lead.mobile || lead.contactNumber || lead.name_contact_num || lead.contact_num || lead.contact || lead.mobileNo || '').trim();
             }
-            // Extract loanType / product separately
-            const rawLoanType = (lead.loanType ||
-                lead['Loan Type'] ||
-                lead['loan type'] ||
-                lead['LOAN TYPE'] ||
-                lead.product ||
-                lead.Product ||
-                lead.PRODUCT ||
-                '')?.toString().trim();
-            // Lead category should be strictly what is explicitly in a Lead Category column, or empty (NEVER defaulted to PERSONAL LOAN)
-            const rawCategory = (lead.leadCategory ||
-                lead.lead_category ||
-                lead['Lead Category'] ||
-                lead['lead category'] ||
-                lead['LEAD CATEGORY'] ||
-                lead.category ||
-                lead.Category ||
-                lead.CATEGORY ||
-                '')?.toString().trim();
+            // Universal location / city / place extractor from Excel
+            let locationVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'location' ||
+                    cleanK === 'city' ||
+                    cleanK === 'place' ||
+                    cleanK === 'area' ||
+                    cleanK === 'district' ||
+                    cleanK === 'branch' ||
+                    cleanK === 'address' ||
+                    cleanK === 'locationname' ||
+                    cleanK === 'cityname' ||
+                    cleanK === 'state') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        locationVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!locationVal) {
+                locationVal = (lead.city || lead.location || lead.Location || lead.LOCATION || lead.place || lead.address || '')?.toString().trim();
+            }
+            // Universal firm / company extractor from Excel
+            let firmVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'company' ||
+                    cleanK === 'firm' ||
+                    cleanK === 'firmname' ||
+                    cleanK === 'companyname' ||
+                    cleanK === 'organization' ||
+                    cleanK === 'employer') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        firmVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!firmVal) {
+                firmVal = (lead.company || lead.firm_name || lead.firmName || lead.firm || '')?.toString().trim();
+            }
+            // Extract loanType / product separately from Excel
+            let rawLoanType = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'loantype' ||
+                    cleanK === 'product' ||
+                    cleanK === 'producttype' ||
+                    cleanK === 'facility') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        rawLoanType = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!rawLoanType) {
+                rawLoanType = (lead.loanType || lead.product || lead['Loan Type'] || '')?.toString().trim();
+            }
+            // Lead category strictly what is in Excel, never defaulted
+            let rawCategory = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'leadcategory' ||
+                    cleanK === 'category' ||
+                    cleanK === 'leadtype' ||
+                    cleanK === 'cattype') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        rawCategory = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!rawCategory) {
+                rawCategory = (lead.leadCategory || lead.lead_category || lead['Lead Category'] || lead.category || '')?.toString().trim();
+            }
+            // Bank partner extractor from Excel
+            let bankPartnerVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'bank' ||
+                    cleanK === 'bankpartner' ||
+                    cleanK === 'bankingpartner' ||
+                    cleanK === 'bankname') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        bankPartnerVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!bankPartnerVal) {
+                bankPartnerVal = (lead.bankPartner || lead.bank || lead.bankName || '')?.toString().trim();
+            }
+            // Case details extractor from Excel
+            let caseDetailsVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'casedetails' || cleanK === 'casestatus' || cleanK === 'case') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        caseDetailsVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!caseDetailsVal) {
+                caseDetailsVal = (lead.caseDetails || lead.case_details || lead.case_status || '')?.toString().trim();
+            }
+            // PSM extractor from Excel
+            let psmVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'psm' || cleanK === 'psmname') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        psmVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!psmVal) {
+                psmVal = (lead.psm || lead.psmName || '')?.toString().trim();
+            }
+            // Amount / Budget extractor from Excel
+            let budgetVal = '';
+            for (const [k, v] of Object.entries(lead)) {
+                const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK === 'amount' || cleanK === 'loanamount' || cleanK === 'budget' || cleanK === 'reqamount') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                        budgetVal = String(v).trim();
+                        break;
+                    }
+                }
+            }
+            if (!budgetVal) {
+                budgetVal = (lead.budget || lead.amount || lead.loanAmount || '')?.toString().trim();
+            }
             recordsToCreate.push({
                 organizationId: orgId,
                 moduleId: leadModule._id,
@@ -670,23 +797,38 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
                     mobileNo: phoneVal,
                     email: lead.email || '',
                     loanType: rawLoanType,
+                    product: rawLoanType,
                     leadCategory: rawCategory,
                     lead_category: rawCategory,
-                    budget: lead.budget || lead.amount || '',
-                    company: lead.company || lead.firm_name || lead.firmName || lead.firm || '',
+                    budget: budgetVal,
+                    amount: budgetVal,
+                    loanAmount: budgetVal,
+                    company: firmVal,
+                    firmName: firmVal,
+                    firm_name: firmVal,
                     salary: lead.salary || '',
-                    city: lead.city || lead.location || '',
-                    state: lead.state || '',
+                    city: locationVal,
+                    location: locationVal,
+                    presentAddress: locationVal,
                     dataCode: finalDataCode,
                     data_code: finalDataCode,
-                    caseDetails: lead.caseDetails || lead.case_status || lead.case_details || lead['Case Details'] || lead['case details'] || '',
+                    bankPartner: bankPartnerVal,
+                    bank: bankPartnerVal,
+                    caseDetails: caseDetailsVal,
+                    psm: psmVal,
                     notes: lead.notes || lead.remarks || lead.remark || lead['Remarks'] || lead['remarks'] || '',
+                    remarks: lead.notes || lead.remarks || lead.remark || lead['Remarks'] || lead['remarks'] || '',
                     status: lead.status || 'New',
                     dialStatus: 'Yet To Call',
-                    source: campaignName, // Set source as campaign name
+                    source: campaignName,
                     campaign: campaignName,
                     campaignName: campaignName,
-                    assignedTo: assignedAgent, // Set agent name
+                    assignedTo: assignedAgent, // campaign telecaller
+                    telecaller: assignedAgent,
+                    pendingAt: '', // empty until user creates lead via Create Lead
+                    assignToTeam: '',
+                    isLeadCreated: false,
+                    leadCreated: false,
                     fullName: `${fName} ${lName}`.trim(),
                     customerName: `${fName} ${lName}`.trim()
                 }
