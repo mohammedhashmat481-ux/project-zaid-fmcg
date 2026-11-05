@@ -2095,27 +2095,27 @@ export default function MyCampaign() {
                         <div
                           key={lead._id}
                           id={`lead-card-${lead._id}`}
-                          className={`relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-[0_3px_12px_-2px_rgba(30,41,59,0.06),0_1px_3px_-1px_rgba(30,41,59,0.03)] hover:shadow-[0_8px_24px_-4px_rgba(79,70,229,0.10)] transition-all duration-200 p-3.5 sm:p-4 text-xs overflow-hidden ${
+                          className={`relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-[0_2px_8px_-2px_rgba(30,41,59,0.05),0_1px_2px_-1px_rgba(30,41,59,0.03)] hover:shadow-[0_6px_20px_-3px_rgba(79,70,229,0.08)] transition-all duration-200 p-2.5 sm:p-3 text-[11px] sm:text-xs overflow-hidden ${
                             highlightedLeadId === lead._id
                               ? 'ring-2 ring-indigo-500 shadow-md border-indigo-500'
                               : ''
                           }`}
                         >
-                          {/* Top Red Accent Ribbon matching Image 4 */}
-                          <div className="absolute top-0 left-0 right-0 h-[3px] bg-red-500" />
+                          {/* Top Red Accent Ribbon */}
+                          <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-red-500" />
 
-                          <div className="space-y-2.5">
-                            {/* 6-Row x 4-Column Structured Grid matching Image 4 */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-2 sm:gap-y-2.5 text-xs">
+                          <div className="space-y-1.5">
+                            {/* Compressed 6-Row x 4-Column Structured Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 lg:gap-x-5 gap-y-1 sm:gap-y-1.5 text-[11px] sm:text-xs">
                               {/* ===== ROW 1 ===== */}
                               {/* Col 1: Sl No. */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Sl No.:&nbsp;</span>
                                 <span className="text-slate-700 dark:text-slate-300 font-medium">{idx + 1}</span>
                               </div>
 
                               {/* Col 2: Lead Name (Text if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
                                 {isEditing || !cleanLeadName ? (
                                   <input
@@ -2123,10 +2123,10 @@ export default function MyCampaign() {
                                     placeholder="Enter Lead Name"
                                     value={currentLeadName}
                                     onChange={(e) => handleFieldChange(lead._id, 'leadName', e.target.value)}
-                                    className="h-6 text-xs font-bold text-sky-600 dark:text-sky-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-sky-500 w-full max-w-[165px] uppercase truncate"
+                                    className="h-[22px] text-[11px] font-bold text-sky-600 dark:text-sky-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 focus:outline-none focus:ring-1 focus:ring-sky-500 w-full max-w-[165px] uppercase truncate"
                                   />
                                 ) : (
-                                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                  <div className="flex items-center gap-1 flex-1 min-w-0">
                                     <span className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[165px]" title={currentLeadName || 'ENTER LEAD NAME'}>
                                       {currentLeadName || 'ENTER LEAD NAME'}
                                     </span>
@@ -2135,20 +2135,20 @@ export default function MyCampaign() {
                                       title="Open lead profile"
                                       className="p-0.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex-shrink-0"
                                     >
-                                      <Icons.ExternalLink className="w-3.5 h-3.5" />
+                                      <Icons.ExternalLink className="w-3 h-3" />
                                     </Link>
                                   </div>
                                 )}
                               </div>
 
                               {/* Col 3: Created On */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created On:&nbsp;</span>
                                 <span className="text-slate-700 dark:text-slate-300 font-medium">{createdOnDisplay}</span>
                               </div>
 
                               {/* Col 4: Firm/Company (Text if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
                                 {isEditing || !cleanFirm ? (
                                   <input
@@ -2156,7 +2156,7 @@ export default function MyCampaign() {
                                     placeholder="Firm / Company"
                                     value={currentFirmCompany}
                                     onChange={(e) => handleFieldChange(lead._id, 'firmName', e.target.value)}
-                                    className="h-6 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
+                                    className="h-[22px] text-[11px] font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
                                   />
                                 ) : (
                                   <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={currentFirmCompany || '—'}>
@@ -2167,15 +2167,15 @@ export default function MyCampaign() {
 
                               {/* ===== ROW 2 ===== */}
                               {/* Col 1: Lead No. */}
-                              <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
+                              <div className="leading-tight min-h-[22px] flex items-center gap-1.5">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead No.:&nbsp;</span>
-                                <span className="inline-block px-2.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/80 dark:border-slate-700">
+                                <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] font-bold border border-slate-200/80 dark:border-slate-700">
                                   {leadNo}
                                 </span>
                               </div>
 
                               {/* Col 2: Location (Text if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
                                 {isEditing || !cleanLocation ? (
                                   <input
@@ -2183,7 +2183,7 @@ export default function MyCampaign() {
                                     placeholder="Location"
                                     value={currentLocation}
                                     onChange={(e) => handleFieldChange(lead._id, 'location', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-[22px] text-[11px] uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
                                   <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[165px]" title={currentLocation || '—'}>
@@ -2193,7 +2193,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 3: By */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">By:&nbsp;</span>
                                 <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[170px]" title={createdByDisplay}>
                                   {createdByDisplay}
@@ -2201,14 +2201,14 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 4: Modified On */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Modified On:&nbsp;</span>
                                 <span className="text-slate-700 dark:text-slate-300 font-medium">{modifiedOnDisplay}</span>
                               </div>
 
                               {/* ===== ROW 3 ===== */}
                               {/* Col 1: Data Code (Lavender badge if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Data Code:&nbsp;</span>
                                 {isEditing || !cleanDataCode ? (
                                   <input
@@ -2216,17 +2216,17 @@ export default function MyCampaign() {
                                     placeholder="Data Code"
                                     value={currentDataCode}
                                     onChange={(e) => handleFieldChange(lead._id, 'dataCode', e.target.value)}
-                                    className="h-6 text-xs font-mono font-bold bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded px-1.5 py-0.5 text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
+                                    className="h-[22px] text-[11px] font-mono font-bold bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded px-1.5 py-0 text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
                                   />
                                 ) : (
-                                  <span className="inline-block px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/80 dark:border-indigo-800">
+                                  <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] font-bold border border-indigo-200/80 dark:border-indigo-800">
                                     {currentDataCode}
                                   </span>
                                 )}
                               </div>
 
                               {/* Col 2: Mobile No. (Text with reveal if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
                                 {isEditing || !cleanPhone ? (
                                   <input
@@ -2234,7 +2234,7 @@ export default function MyCampaign() {
                                     placeholder="Mobile Number"
                                     value={currentMobile}
                                     onChange={(e) => handleFieldChange(lead._id, 'mobile', e.target.value)}
-                                    className="h-6 text-xs font-mono font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
+                                    className="h-[22px] text-[11px] font-mono font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
                                   />
                                 ) : (
                                   <div className="flex items-center gap-1.5">
@@ -2247,31 +2247,31 @@ export default function MyCampaign() {
                                       title={isRevealed ? "Hide number" : "Show number"}
                                       className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                                     >
-                                      {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                                      {isRevealed ? <Icons.EyeOff className="w-3 h-3" /> : <Icons.Eye className="w-3 h-3" />}
                                     </button>
                                   </div>
                                 )}
                               </div>
 
                               {/* Col 3: Followup Date (Badge if set/saved; date input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
                                 {isEditing || !cleanFollowup ? (
                                   <input
                                     type="date"
                                     value={currentFollowupDate}
                                     onChange={(e) => handleFieldChange(lead._id, 'followupDate', e.target.value)}
-                                    className="h-6 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[140px] cursor-pointer"
+                                    className="h-[22px] text-[11px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[140px] cursor-pointer"
                                   />
                                 ) : (
-                                  <span className="inline-block px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-medium border border-indigo-200/80 dark:border-indigo-800">
+                                  <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] font-medium border border-indigo-200/80 dark:border-indigo-800">
                                     {formatDate(currentFollowupDate) || currentFollowupDate}
                                   </span>
                                 )}
                               </div>
 
                               {/* Col 4: Assigned By */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned By:&nbsp;</span>
                                 <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={assignedByName}>
                                   {assignedByName}
@@ -2280,7 +2280,7 @@ export default function MyCampaign() {
 
                               {/* ===== ROW 4 ===== */}
                               {/* Col 1: Lead Category (Text if matched from Excel; blank input if not matched or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Category:&nbsp;</span>
                                 {isEditing || !cleanCategory ? (
                                   <input
@@ -2288,7 +2288,7 @@ export default function MyCampaign() {
                                     placeholder="Lead Category"
                                     value={currentLeadCategory}
                                     onChange={(e) => handleFieldChange(lead._id, 'leadCategory', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
+                                    className="h-[22px] text-[11px] uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[155px]"
                                   />
                                 ) : (
                                   <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[155px]" title={currentLeadCategory || '—'}>
@@ -2298,7 +2298,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 2: Amount (Emerald bold text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
                                 {isEditing || !cleanAmount ? (
                                   <input
@@ -2306,7 +2306,7 @@ export default function MyCampaign() {
                                     placeholder="Loan Amount"
                                     value={currentAmount}
                                     onChange={(e) => handleFieldChange(lead._id, 'amount', e.target.value)}
-                                    className="h-6 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[150px]"
+                                    className="h-[22px] text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[150px]"
                                   />
                                 ) : (
                                   <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate inline-block max-w-[150px]">
@@ -2316,7 +2316,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 3: Pending at (strictly '—' until lead is actually created via Create Lead) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Pending at:&nbsp;</span>
                                 <span className={`font-semibold uppercase truncate inline-block max-w-[170px] ${isLeadCreated && pendingAtVal !== '—' ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500 font-semibold'}`} title={isLeadCreated ? pendingAtVal : '—'}>
                                   {isLeadCreated ? pendingAtVal : '—'}
@@ -2324,7 +2324,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 4: Assigned To (strictly '—' until lead is actually created via Create Lead) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned To:&nbsp;</span>
                                 <span className={`font-semibold truncate inline-block max-w-[170px] ${isLeadCreated && assignedToName !== '—' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 font-semibold'}`} title={isLeadCreated ? assignedToName : '—'}>
                                   {isLeadCreated ? assignedToName : '—'}
@@ -2333,7 +2333,7 @@ export default function MyCampaign() {
 
                               {/* ===== ROW 5 ===== */}
                               {/* Col 1: Product (Text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
                                 {isEditing || !cleanProduct ? (
                                   <input
@@ -2341,7 +2341,7 @@ export default function MyCampaign() {
                                     placeholder="PRODUCT / LOAN TYPE"
                                     value={currentProduct}
                                     onChange={(e) => handleFieldChange(lead._id, 'product', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-[22px] text-[11px] uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
                                   <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentProduct || '—'}>
@@ -2351,7 +2351,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 2: Bank Partner (Text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
                                 {isEditing || !cleanBankPartner ? (
                                   <input
@@ -2359,7 +2359,7 @@ export default function MyCampaign() {
                                     placeholder="BANK PARTNER"
                                     value={currentBankPartner}
                                     onChange={(e) => handleFieldChange(lead._id, 'bankPartner', e.target.value)}
-                                    className="h-6 text-xs uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-[22px] text-[11px] uppercase font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
                                   <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentBankPartner || '—'}>
@@ -2369,7 +2369,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 3: PSM (Text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
                                 {isEditing || !cleanPsm ? (
                                   <input
@@ -2377,7 +2377,7 @@ export default function MyCampaign() {
                                     placeholder="PSM Name"
                                     value={currentPsm}
                                     onChange={(e) => handleFieldChange(lead._id, 'psm', e.target.value)}
-                                    className="h-6 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                    className="h-[22px] text-[11px] font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                   />
                                 ) : (
                                   <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[165px]" title={currentPsm || '—'}>
@@ -2387,7 +2387,7 @@ export default function MyCampaign() {
                               </div>
 
                               {/* Col 4: Case Details (Text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
                                 {isEditing || !cleanCaseDetails ? (
                                   <input
@@ -2395,7 +2395,7 @@ export default function MyCampaign() {
                                     placeholder="Case Details"
                                     value={currentCaseDetails}
                                     onChange={(e) => handleFieldChange(lead._id, 'caseDetails', e.target.value)}
-                                    className="h-6 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
+                                    className="h-[22px] text-[11px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[150px]"
                                   />
                                 ) : (
                                   <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[150px]" title={currentCaseDetails || 'N/A'}>
@@ -2404,14 +2404,14 @@ export default function MyCampaign() {
                                 )}
                               </div>
 
-                              {/* ===== ROW 6 ===== */}
+                              {/* ===== ROW 6 (Compressed, without redundant Campaign display) ===== */}
                               {/* Col 1: Status (Dropdown select matching target design) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
                                 <select
                                   value={currentStatus}
                                   onChange={(e) => handleStatusSelect(lead, e.target.value)}
-                                  className="h-6 text-xs font-bold uppercase bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
+                                  className="h-[22px] text-[11px] font-bold uppercase bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[165px]"
                                 >
                                   {availableStatuses.map(st => (
                                     <option key={st} value={st}>{st.toUpperCase()}</option>
@@ -2419,24 +2419,16 @@ export default function MyCampaign() {
                                 </select>
                               </div>
 
-                              {/* Col 2: Campaign */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
-                                <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Campaign:&nbsp;</span>
-                                <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[165px]" title={campaignNameDisplay}>
-                                  {campaignNameDisplay}
-                                </span>
-                              </div>
-
-                              {/* Col 3: Source (strictly '—' until lead is actually created via Create Lead) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              {/* Col 2: Source (strictly '—' until lead is actually created via Create Lead) */}
+                              <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Source:&nbsp;</span>
                                 <span className={`font-semibold truncate inline-block max-w-[165px] ${isLeadCreated ? 'text-slate-700 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 font-semibold'}`} title={isLeadCreated ? sourceNameDisplay : '—'}>
                                   {isLeadCreated ? sourceNameDisplay : '—'}
                                 </span>
                               </div>
 
-                              {/* Col 4: Remarks (Italic text if matched/entered; blank input if empty or editing) */}
-                              <div className="leading-snug min-h-[26px] flex items-center">
+                              {/* Col 3 & 4: Remarks (Spanning remaining columns for wide comfortable notes input) */}
+                              <div className="leading-tight min-h-[22px] flex items-center sm:col-span-2">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
                                 {isEditing || !cleanRemarks ? (
                                   <input
@@ -2444,10 +2436,10 @@ export default function MyCampaign() {
                                     placeholder="Remarks / Notes"
                                     value={currentRemarks}
                                     onChange={(e) => handleFieldChange(lead._id, 'remarks', e.target.value)}
-                                    className="h-6 text-xs italic bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[170px]"
+                                    className="h-[22px] text-[11px] italic bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[340px]"
                                   />
                                 ) : (
-                                  <span className="text-slate-600 dark:text-slate-400 italic truncate inline-block max-w-[170px]" title={currentRemarks || '—'}>
+                                  <span className="text-slate-600 dark:text-slate-400 italic truncate inline-block max-w-[340px]" title={currentRemarks || '—'}>
                                     {currentRemarks || '—'}
                                   </span>
                                 )}
@@ -2455,29 +2447,29 @@ export default function MyCampaign() {
                             </div>
 
                             {/* Card Footer: Action Toolbar matching Image 4 */}
-                            <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-1.5">
                               {/* Left: Dynamic Status Pill Badge Button matching Image 4 */}
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleStatusSelect(lead, currentStatus)}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors shadow-3xs cursor-pointer ${statusMeta.color} ${statusMeta.bg} border ${statusMeta.border}`}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors shadow-3xs cursor-pointer ${statusMeta.color} ${statusMeta.bg} border ${statusMeta.border}`}
                                   title="Current Lead Status (Click to trigger / update)"
                                 >
-                                  <StatusIcon className="w-3.5 h-3.5" />
+                                  <StatusIcon className="w-3 h-3" />
                                   <span>{currentStatus}</span>
                                 </button>
                               </div>
 
                               {/* Right: Actions matching target UI */}
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 {/* WA Chat (Green) */}
                                 <button 
                                   type="button"
                                   onClick={() => handleWhatsAppChat(lead)}
-                                  className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                                  className="inline-flex items-center gap-1 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-lg transition-colors shadow-3xs cursor-pointer"
                                 >
-                                  <Icons.MessageSquare className="w-3.5 h-3.5" />
+                                  <Icons.MessageSquare className="w-3 h-3" />
                                   <span>WA Chat</span>
                                 </button>
                                 
@@ -2485,9 +2477,9 @@ export default function MyCampaign() {
                                 <button 
                                   type="button"
                                   onClick={() => handleInitiateCall(lead)}
-                                  className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                                  className="inline-flex items-center gap-1 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-lg transition-colors shadow-3xs cursor-pointer"
                                 >
-                                  <Icons.PhoneCall className="w-3.5 h-3.5" />
+                                  <Icons.PhoneCall className="w-3 h-3" />
                                   <span>Call</span>
                                 </button>
 
@@ -2495,10 +2487,10 @@ export default function MyCampaign() {
                                 <button 
                                   type="button"
                                   onClick={() => handleSaveLead(lead._id)}
-                                  className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs cursor-pointer"
+                                  className="inline-flex items-center gap-1 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-lg transition-all shadow-3xs cursor-pointer"
                                   title="Save entered details"
                                 >
-                                  <Icons.Save className="w-3.5 h-3.5" />
+                                  <Icons.Save className="w-3 h-3" />
                                   <span>Save</span>
                                 </button>
 
@@ -2506,14 +2498,14 @@ export default function MyCampaign() {
                                 <button 
                                   type="button"
                                   onClick={() => toggleLeadEdit(lead._id)}
-                                  className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs cursor-pointer ${
+                                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-lg transition-all shadow-3xs cursor-pointer ${
                                     isEditing
                                       ? 'bg-amber-600 hover:bg-amber-700 text-white'
                                       : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700'
                                   }`}
                                   title={isEditing ? "Exit Edit Mode" : "Edit All Fields"}
                                 >
-                                  <Icons.Edit3 className="w-3.5 h-3.5" />
+                                  <Icons.Edit3 className="w-3 h-3" />
                                   <span>{isEditing ? 'Done' : 'Edit'}</span>
                                 </button>
 
@@ -2521,10 +2513,10 @@ export default function MyCampaign() {
                                 <button
                                   type="button"
                                   onClick={() => handleUploadClick(lead._id)}
-                                  className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                                  className="inline-flex items-center gap-1 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-[11px] font-bold px-2.5 py-0.5 rounded-lg transition-colors shadow-3xs cursor-pointer"
                                   title="Upload document for this lead"
                                 >
-                                  <Icons.Upload className="w-3.5 h-3.5" />
+                                  <Icons.Upload className="w-3 h-3" />
                                   <span>Upload File</span>
                                 </button>
 
