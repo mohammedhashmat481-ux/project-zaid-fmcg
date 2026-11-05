@@ -582,6 +582,7 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
       queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
       queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
@@ -622,6 +623,7 @@ export default function Settings() {
           queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
           queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+          queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
           queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Status from '../models/Status';
+import Organization from '../models/Organization';
 import { authenticate } from '../middleware/authMiddleware';
 import { requireTenant } from '../middleware/tenantMiddleware';
 import { serverCache, CacheKeys, CacheInvalidators } from '../utils/cache';
@@ -50,6 +51,30 @@ async function reorderAfterDelete(organizationId: any) {
       item.order = finalOrder;
       await item.save();
     }
+  }
+}
+
+// Helper function to sync organization dashboardStatuses with PostgreSQL statuses
+async function syncOrganizationDashboardStatuses(organizationId: any) {
+  try {
+    const org = await Organization.findById(organizationId);
+    if (!org) return;
+    const allStatuses = await Status.find({ organizationId });
+    const dashNames = allStatuses
+      .filter((s: any) => s.dashboardVisibility !== false)
+      .map((s: any) => String(s.name || '').trim().toUpperCase())
+      .filter(Boolean);
+    const existingConfig = org.themeSettings?.campaignStatusConfig || {};
+    org.themeSettings = {
+      ...(org.themeSettings || {}),
+      campaignStatusConfig: {
+        ...existingConfig,
+        dashboardStatuses: Array.from(new Set(dashNames))
+      }
+    };
+    await org.save();
+  } catch (e) {
+    console.warn('Failed to sync organization dashboard statuses:', e);
   }
 }
 
@@ -141,6 +166,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     await adjustStatusOrders(req.organizationId, null, calculatedOrder, newStatusFields);
 
     const status = await Status.create(newStatusFields);
+    await syncOrganizationDashboardStatuses(req.organizationId);
     CacheInvalidators.invalidateStatuses(req.organizationId!);
     CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(201).json(status);
@@ -180,6 +206,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 
     await status.save();
+    await syncOrganizationDashboardStatuses(req.organizationId);
     CacheInvalidators.invalidateStatuses(req.organizationId!);
     CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json(status);
@@ -201,6 +228,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
     await reorderAfterDelete(req.organizationId);
+    await syncOrganizationDashboardStatuses(req.organizationId);
     CacheInvalidators.invalidateStatuses(req.organizationId!);
     CacheInvalidators.invalidateDashboard(req.organizationId!);
     res.status(200).json({ message: 'Status deleted successfully.' });

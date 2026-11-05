@@ -93,14 +93,16 @@ export const exportCampaignKPIDataset = (
   kpiType: 'dials' | 'hot' | 'logins' | 'approved' | 'disbursed' | 'target' | 'campaigns' | 'leads' | 'called' | 'pending' | 'progress',
   summary: CampaignSummaryData,
   matrix: CampaignMatrixData,
-  campaignName: string = 'ALL'
+  campaignName: string = 'ALL',
+  period: string = 'Daily'
 ) => {
   const wb = XLSX.utils.book_new();
   const now = new Date();
   const dateStamp = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
+  const periodLabel = period.charAt(0).toUpperCase() + period.slice(1).toLowerCase();
 
   if (kpiType === 'dials') {
-    exportCampaignMatrixXLSX(matrix, 'Calls Made', 'Daily', campaignName);
+    exportCampaignMatrixXLSX(matrix, 'Calls Made', periodLabel, campaignName);
     return;
   }
 
@@ -110,7 +112,7 @@ export const exportCampaignKPIDataset = (
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Hot Leads');
-    XLSX.writeFile(wb, `Hot_Leads_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Hot_Leads_${periodLabel}_Report_${dateStamp}.xlsx`);
     return;
   }
 
@@ -120,7 +122,7 @@ export const exportCampaignKPIDataset = (
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Logins');
-    XLSX.writeFile(wb, `Logins_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Logins_${periodLabel}_Report_${dateStamp}.xlsx`);
     return;
   }
 
@@ -130,7 +132,7 @@ export const exportCampaignKPIDataset = (
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Approved Leads');
-    XLSX.writeFile(wb, `Approved_Leads_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Approved_Leads_${periodLabel}_Report_${dateStamp}.xlsx`);
     return;
   }
 
@@ -140,7 +142,7 @@ export const exportCampaignKPIDataset = (
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Disbursed Loans');
-    XLSX.writeFile(wb, `Disbursed_Loans_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Disbursed_Loans_${periodLabel}_Report_${dateStamp}.xlsx`);
     return;
   }
 
@@ -150,7 +152,7 @@ export const exportCampaignKPIDataset = (
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 24 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Target Achievement');
-    XLSX.writeFile(wb, `Target_Achievement_Report_${dateStamp}.xlsx`);
+    XLSX.writeFile(wb, `Target_Achievement_${periodLabel}_Report_${dateStamp}.xlsx`);
     return;
   }
 

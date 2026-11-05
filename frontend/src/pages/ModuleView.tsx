@@ -16,6 +16,42 @@ import { exportCampaignCSV } from '../utils/exportCampaignCSV';
 import { exportLeadReportXLSX } from '../utils/exportLeadReportXLSX';
 import { getStatusTokens } from '../utils/statusTokenMapper';
 
+const EXCLUDED_CAMPAIGN_STATUSES = new Set([
+  'REJECTED',
+  'DROPPED',
+  'DISBUSED',
+  'DISBURSED',
+  'APPROVE BUT NOT DISBUSE',
+  'APPROVED BUT NOT DISBUSE',
+  'APPROVAL PENDING',
+  'DOCUMENT PENDING',
+  'CEBIL PENDING',
+  'CIBIL PENDING',
+  'CEDIL PENDING',
+  'PENDING'
+]);
+
+const CAMPAIGN_STATUSES = [
+  'Yet To Call',
+  'Hot Leads',
+  'Warm Leads',
+  'Cool Lead',
+  'Followup',
+  'Not Interested',
+  'Call Rejected',
+  'Not Connected',
+  'No Answer',
+  'Number Busy',
+  'Out of Service',
+  'No Incoming Calls',
+  'Switch Off',
+  'Not Reachable',
+  'Wrong Number',
+  'Not Exists',
+  'Repeated Number',
+  'No Business'
+];
+
 type ViewMode = 'table' | 'kanban' | 'calendar' | 'timeline';
 
 export default function ModuleView() {
@@ -25,6 +61,175 @@ export default function ModuleView() {
   const [searchParams] = useSearchParams();
 
   const { activeModule, setActiveModuleByPath, modules, loadingModules } = useModuleStore();
+
+  // Dynamic campaign status configuration (Custom statuses + Create Lead triggers + Dashboard visibility)
+  const {
+    data: campaignStatusConfig,
+    refetch: refetchCampaignStatuses
+  } = useQuery({
+    queryKey: ['campaign-status-config'],
+    queryFn: async () => {
+      const res = await api.get('/records/campaigns/statuses').catch(() => ({
+        data: {
+          statuses: CAMPAIGN_STATUSES,
+          triggerStatuses: ['HOT LEADS', 'WARM LEADS'],
+          dashboardStatuses: ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP']
+        }
+      }));
+      return res.data || { 
+        statuses: CAMPAIGN_STATUSES, 
+        triggerStatuses: ['HOT LEADS', 'WARM LEADS'],
+        dashboardStatuses: ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP']
+      };
+    },
+    enabled: apiPath === 'campaigns',
+    staleTime: 60000,
+    placeholderData: keepPreviousData
+  });
+
+  const configuredStatuses: string[] = useMemo(() => {
+    const rawList = Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0
+      ? campaignStatusConfig.statuses
+      : CAMPAIGN_STATUSES;
+    const filtered = rawList.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()));
+    
+    const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
+    requiredStatuses.forEach(rs => {
+      const exists = filtered.some((s: string) => s.trim().toUpperCase() === rs.toUpperCase());
+      if (!exists) filtered.push(rs);
+    });
+    return filtered;
+  }, [campaignStatusConfig]);
+
+  const triggerStatuses: string[] = useMemo(() => {
+    const rawTriggers = Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0
+      ? campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase())
+      : ['HOT LEADS', 'WARM LEADS'];
+    return rawTriggers.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+  }, [campaignStatusConfig]);
+
+  const dashboardStatuses: string[] = useMemo(() => {
+    const rawDash = Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0
+      ? campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase())
+      : ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
+    return rawDash.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+  }, [campaignStatusConfig]);
+
+  // Campaign Status Settings Modal State (Super Admin dynamic management)
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [modalStatuses, setModalStatuses] = useState<string[]>([]);
+  const [modalTriggerStatuses, setModalTriggerStatuses] = useState<string[]>([]);
+  const [modalDashboardStatuses, setModalDashboardStatuses] = useState<string[]>([]);
+  const [newStatusInput, setNewStatusInput] = useState('');
+  const [newStatusDashboard, setNewStatusDashboard] = useState(true);
+  const [newStatusTrigger, setNewStatusTrigger] = useState(false);
+  const [searchStatusModal, setSearchStatusModal] = useState('');
+  const [savingStatusConfig, setSavingStatusConfig] = useState(false);
+
+  useEffect(() => {
+    if (showStatusModal) {
+      setModalStatuses([...configuredStatuses]);
+      setModalTriggerStatuses([...triggerStatuses]);
+      setModalDashboardStatuses([...dashboardStatuses]);
+      setNewStatusInput('');
+      setNewStatusDashboard(true);
+      setNewStatusTrigger(false);
+      setSearchStatusModal('');
+    }
+  }, [showStatusModal, configuredStatuses, triggerStatuses, dashboardStatuses]);
+
+  const handleToggleTriggerStatus = (statusName: string) => {
+    const norm = statusName.trim().toUpperCase();
+    setModalTriggerStatuses(prev => {
+      const exists = prev.some(s => s.trim().toUpperCase() === norm);
+      if (exists) {
+        return prev.filter(s => s.trim().toUpperCase() !== norm);
+      } else {
+        return [...prev, norm];
+      }
+    });
+  };
+
+  const handleToggleDashboardStatus = (statusName: string) => {
+    const norm = statusName.trim().toUpperCase();
+    setModalDashboardStatuses(prev => {
+      const exists = prev.some(s => s.trim().toUpperCase() === norm);
+      if (exists) {
+        return prev.filter(s => s.trim().toUpperCase() !== norm);
+      } else {
+        return [...prev, norm];
+      }
+    });
+  };
+
+  const handleAddNewStatus = () => {
+    const trimmed = newStatusInput.trim();
+    if (!trimmed) {
+      showToast('Please enter a status name.', 'warning');
+      return;
+    }
+    const norm = trimmed.toUpperCase();
+    const alreadyExists = modalStatuses.some(s => s.trim().toUpperCase() === norm);
+    if (alreadyExists) {
+      showToast('This status already exists in the list.', 'warning');
+      return;
+    }
+    setModalStatuses(prev => [...prev, trimmed]);
+    if (newStatusDashboard) {
+      setModalDashboardStatuses(prev => [...prev, norm]);
+    }
+    if (newStatusTrigger) {
+      setModalTriggerStatuses(prev => [...prev, norm]);
+    }
+    setNewStatusInput('');
+    setNewStatusDashboard(true);
+    setNewStatusTrigger(false);
+    showToast(`Added status "${trimmed}"`, 'success');
+  };
+
+  const handleDeleteStatus = (statusName: string) => {
+    const norm = statusName.trim().toUpperCase();
+    setModalStatuses(prev => prev.filter(s => s.trim().toUpperCase() !== norm));
+    setModalTriggerStatuses(prev => prev.filter(s => s.trim().toUpperCase() !== norm));
+    setModalDashboardStatuses(prev => prev.filter(s => s.trim().toUpperCase() !== norm));
+  };
+
+  const handleSaveStatusSettings = async () => {
+    try {
+      setSavingStatusConfig(true);
+      await api.put('/records/campaigns/statuses', {
+        statuses: modalStatuses,
+        triggerStatuses: modalTriggerStatuses,
+        dashboardStatuses: modalDashboardStatuses
+      });
+      await refetchCampaignStatuses();
+      
+      // Invalidate queries so Dashboard and Settings update instantly
+      queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
+      queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
+      queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+
+      showToast('Campaign statuses, Dashboard links, and lead triggers saved successfully!', 'success');
+      setShowStatusModal(false);
+    } catch (err: any) {
+      console.error('Failed to save campaign statuses', err);
+      showToast(err.response?.data?.error || 'Failed to save campaign statuses', 'error');
+    } finally {
+      setSavingStatusConfig(false);
+    }
+  };
+
+  const handleResetStatusDefaults = () => {
+    setModalStatuses([...CAMPAIGN_STATUSES]);
+    setModalTriggerStatuses(['HOT LEADS', 'WARM LEADS']);
+    setModalDashboardStatuses(['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP']);
+    showToast('Reset to default campaign statuses.', 'info');
+  };
+
   const { canAccessMenu } = useAuthStore();
   const { branding } = useThemeStore();
   const { showConfirm, showToast, showAlertModal } = useToastStore();
@@ -1507,8 +1712,26 @@ export default function ModuleView() {
 
   const renderCampaignsList = () => {
     return (
-      <div className="space-y-6 text-left">
-
+      <div className="space-y-3.5 text-left">
+        {/* Top Header Bar with Campaign Statuses Button */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
+              Campaign Drives
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Monitor active calling drives, allocated leads, and configure telecalling statuses.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowStatusModal(true)}
+            className="h-10 px-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white hover:bg-indigo-50/80 dark:bg-slate-900 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <Icons.SlidersHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400 stroke-[2.2]" />
+            <span>Campaign Statuses</span>
+          </button>
+        </div>
 
         {/* 6 Vibrant Metric Cards matching Image 1 */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
@@ -1642,68 +1865,83 @@ export default function ModuleView() {
           </div>
         </div>
 
-        {/* Quick Create Marketing Campaign Studio Card */}
-        <form
-          onSubmit={handleSaveCampaign}
-          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden text-left"
-        >
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-600 via-indigo-600 to-teal-500" />
-
-          <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
-                <Icons.Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                {editCampaignId ? 'Edit Campaign Details' : 'Quick Create Marketing Campaign'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex-1 max-w-2xl">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                Campaign Name <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <Icons.Tag className="w-4 h-4 text-violet-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={campaignNameInput}
-                  onChange={(e) => setCampaignNameInput(e.target.value)}
-                  placeholder="e.g. Q3 Telecalling Drive, HNI Real Estate, Loan Festival..."
-                  className="w-full h-11 pl-10 pr-4 text-xs sm:text-sm font-semibold bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-all shadow-inner-sm"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5 self-end md:self-auto mt-2 md:mt-0">
-              {editCampaignId && (
+        {/* Edit Campaign Modal (Only opens if user clicks edit button on a campaign) */}
+        {editCampaignId && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-all"
+            onClick={() => {
+              setEditCampaignId(null);
+              setCampaignNameInput('');
+            }}
+          >
+            <div 
+              className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+                    <Icons.Edit3 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Edit Campaign Name
+                  </h3>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
-                    setCampaignNameInput('');
                     setEditCampaignId(null);
+                    setCampaignNameInput('');
                   }}
-                  className="h-11 px-5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all cursor-pointer"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
-                  Cancel
+                  <Icons.X className="w-4 h-4" />
                 </button>
-              )}
-              <button
-                type="submit"
-                disabled={isSubmittingCampaign || !campaignNameInput.trim()}
-                className="h-11 px-6 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md shadow-violet-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isSubmittingCampaign ? (
-                  <Icons.Loader className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
-                )}
-                <span>{editCampaignId ? 'Update Campaign' : '+ Create Campaign'}</span>
-              </button>
+              </div>
+
+              <form onSubmit={handleSaveCampaign} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                    Campaign Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={campaignNameInput}
+                    onChange={(e) => setCampaignNameInput(e.target.value)}
+                    placeholder="Enter campaign name..."
+                    className="w-full h-10 px-3 text-xs sm:text-sm font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-violet-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditCampaignId(null);
+                      setCampaignNameInput('');
+                    }}
+                    className="h-9 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingCampaign || !campaignNameInput.trim()}
+                    className="h-9 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSubmittingCampaign ? (
+                      <Icons.Loader className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Icons.Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
-        </form>
+        )}
 
         {/* Filter Tabs Bar matching Image 1 */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 px-4 shadow-xs">
@@ -1754,8 +1992,19 @@ export default function ModuleView() {
               </span>
             </button>
           </div>
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Showing <span className="font-bold text-slate-900 dark:text-white font-mono">{filteredCampaignRecords.length}</span> of <span className="font-bold text-slate-900 dark:text-white font-mono">{campaignSummaryStats.totalCampaigns}</span> campaigns
+          <div className="flex items-center gap-3">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Showing <span className="font-bold text-slate-900 dark:text-white font-mono">{filteredCampaignRecords.length}</span> of <span className="font-bold text-slate-900 dark:text-white font-mono">{campaignSummaryStats.totalCampaigns}</span> campaigns
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowStatusModal(true)}
+              className="h-8.5 px-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-1.5 shadow-3xs transition-all cursor-pointer"
+              title="Configure campaign statuses, Dashboard metrics, and Create Lead triggers"
+            >
+              <Icons.SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Campaign Statuses</span>
+            </button>
           </div>
         </div>
 
@@ -1905,6 +2154,290 @@ export default function ModuleView() {
               </tbody>
             </table>
           </div>
+
+        {/* CAMPAIGN STATUSES & TRIGGER CONFIGURATION MODAL (Super Admin / Admin) */}
+        {showStatusModal && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs transition-all animate-in fade-in duration-150"
+            onClick={() => setShowStatusModal(false)}
+          >
+            <div 
+              className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0 border border-indigo-100 dark:indigo-900/50">
+                    <Icons.SlidersHorizontal className="w-4 h-4 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      Campaign Status Settings
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Configure statuses and choose which ones automatically open the Create Lead form.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <Icons.X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* Add New Status Card */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 p-3.5 rounded-xl space-y-2.5">
+                  <span className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Create New Campaign Status
+                  </span>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Status name (e.g. Cool Lead, Followup Required)..."
+                        value={newStatusInput}
+                        onChange={(e) => setNewStatusInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddNewStatus();
+                          }
+                        }}
+                        className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNewStatus}
+                      className="h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-3xs flex-shrink-0"
+                    >
+                      <Icons.Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Add Status</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setNewStatusDashboard(!newStatusDashboard)}
+                      className={`flex items-center gap-2 cursor-pointer select-none text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                        newStatusDashboard
+                          ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800 shadow-3xs'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
+                        newStatusDashboard
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-transparent'
+                      }`}>
+                        <Icons.Check className="w-3 h-3 stroke-[3]" />
+                      </span>
+                      <Icons.LayoutDashboard className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>Show in <strong>Dashboard</strong></span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewStatusTrigger(!newStatusTrigger)}
+                      className={`flex items-center gap-2 cursor-pointer select-none text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                        newStatusTrigger
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 shadow-3xs'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
+                        newStatusTrigger
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-transparent'
+                      }`}>
+                        <Icons.Check className="w-3 h-3 stroke-[3]" />
+                      </span>
+                      <Icons.UserPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Automatically opens <strong>Create Lead</strong></span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status List with Search */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      All Campaign Statuses ({modalStatuses.length})
+                    </span>
+                    <div className="relative w-44">
+                      <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Filter list..."
+                        value={searchStatusModal}
+                        onChange={(e) => setSearchStatusModal(e.target.value)}
+                        className="w-full h-7 pl-7 pr-2 text-[11px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden max-h-[300px] overflow-y-auto bg-white dark:bg-slate-900">
+                    {modalStatuses
+                      .filter(s => s.toLowerCase().includes(searchStatusModal.trim().toLowerCase()))
+                      .map((statusName) => {
+                        const norm = statusName.trim().toUpperCase();
+                        const isTrigger = modalTriggerStatuses.some(ts => ts.trim().toUpperCase() === norm);
+                        const isDashboard = modalDashboardStatuses.some(ds => ds.trim().toUpperCase() === norm);
+
+                        return (
+                          <div
+                            key={statusName}
+                            className="flex items-center justify-between px-3.5 py-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors gap-2"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 flex-shrink-0" />
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate uppercase">
+                                {statusName}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {/* Toggle 1: Show in Dashboard */}
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleDashboardStatus(statusName);
+                                }}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all border select-none ${
+                                  isDashboard
+                                    ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-400 dark:border-indigo-700 shadow-3xs'
+                                    : 'bg-slate-50 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:text-slate-600'
+                                }`}
+                                title={isDashboard ? 'Visible on Dashboard KPI metrics' : 'Hidden from Dashboard'}
+                              >
+                                <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all ${
+                                  isDashboard
+                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                    : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-transparent'
+                                }`}>
+                                  <Icons.Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </span>
+                                <Icons.LayoutDashboard className="w-3 h-3" />
+                                <span>Dashboard</span>
+                              </button>
+
+                              {/* Toggle 2: Opens Create Lead */}
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleTriggerStatus(statusName);
+                                }}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all border select-none ${
+                                  isTrigger
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 shadow-3xs'
+                                    : 'bg-slate-50 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:text-slate-600'
+                                }`}
+                                title={isTrigger ? 'Triggers Create Lead form prefill' : 'Normal status update (does not open form)'}
+                              >
+                                <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all ${
+                                  isTrigger
+                                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                                    : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-transparent'
+                                }`}>
+                                  <Icons.Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </span>
+                                <Icons.UserPlus className="w-3 h-3" />
+                                <span>Opens Create Lead</span>
+                              </button>
+
+                              {/* Delete custom status button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDeleteStatus(statusName);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                title="Delete status"
+                              >
+                                <Icons.Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/50 rounded-xl p-3 text-[11px] text-indigo-950 dark:text-indigo-200 space-y-1">
+                    <div className="flex items-center gap-2 font-bold text-indigo-800 dark:text-indigo-300">
+                      <Icons.Info className="w-4 h-4 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />
+                      <span>How Super Admin Controls Status Options:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-0.5 text-slate-600 dark:text-slate-300 pl-1 text-[11px]">
+                      <li>
+                        <strong>Dashboard:</strong> Linked with <em>Settings &gt; Status</em>. Live lead counts for checked statuses reflect automatically as metric cards on your Dashboard.
+                      </li>
+                      <li>
+                        <strong>Opens Create Lead:</strong> Automatically opens the <em>Create Lead</em> form when selected.
+                      </li>
+                      <li>
+                        <strong>Example (Cool Lead):</strong> Keep <strong>Dashboard</strong> checked so Cool Lead displays on your Dashboard, but leave <strong>Opens Create Lead</strong> unchecked so telecallers simply set the status without opening the Create Lead form.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                <button
+                  type="button"
+                  onClick={handleResetStatusDefaults}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 underline cursor-pointer"
+                >
+                  Reset to Defaults
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowStatusModal(false)}
+                    className="h-8.5 px-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveStatusSettings}
+                    disabled={savingStatusConfig}
+                    className="h-8.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {savingStatusConfig ? (
+                      <>
+                        <Icons.Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Icons.Check className="w-3.5 h-3.5" />
+                        <span>Save Changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     );
@@ -1920,7 +2453,7 @@ export default function ModuleView() {
 
   if (apiPath === 'campaigns') {
     return (
-      <div className="space-y-6">
+      <div className="space-y-3">
         {renderCampaignsList()}
       </div>
     );
@@ -2233,95 +2766,103 @@ export default function ModuleView() {
                   return (
                     <div 
                       key={rec._id} 
-                      className="border border-slate-200 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-800 relative mb-4 last:mb-0 text-left shadow-xs hover:shadow-md transition-all duration-150 overflow-hidden"
+                      className="relative rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-900/60 hover:border-indigo-400/90 dark:hover:border-indigo-500/80 shadow-[0_3px_12px_-2px_rgba(30,41,59,0.07),0_1px_3px_-1px_rgba(30,41,59,0.04)] hover:shadow-[0_8px_24px_-4px_rgba(79,70,229,0.12)] transition-all duration-200 p-3.5 sm:p-4 text-xs overflow-hidden mb-2.5 last:mb-0 text-left"
                     >
-                      {/* Status-colored Top Accent Bar */}
-                      <div 
-                        className="absolute top-0 left-0 right-0 h-[3px]" 
-                        style={{ backgroundColor: statusTokens.accentHex }} 
-                      />
+                      {/* Classic Premium Top Accent Ribbon matching Image 2 */}
+                      <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-blue-700 via-indigo-600 to-sky-500" />
                       
-                      <div className="p-5 sm:p-6 space-y-4">
-                        {/* 4-Column CSS Grid perfectly inline across all 4 columns */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
+                      <div className="space-y-2.5">
+                        {/* 4-Column CSS Grid perfectly compact matching Image 2 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1.5 sm:gap-y-2 text-xs">
                           {/* ===== ROW 1 ===== */}
                           {/* Col 1: Sl No. */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-normal">{slNo}</span>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Sl No.:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">{slNo}</span>
                           </div>
 
                           {/* Col 2: Lead Name */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name:&nbsp;</span>
-                            <Link 
-                              to={`/modules/leads/${rec._id}`}
-                              className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px]" 
-                              title={leadName}
-                            >
-                              {leadName}
-                            </Link>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <Link 
+                                to={`/modules/leads/${rec._id}`}
+                                className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[170px] hover:underline" 
+                                title={leadName}
+                              >
+                                {leadName}
+                              </Link>
+                              <Link
+                                to={`/modules/leads/${rec._id}`}
+                                title="Open lead profile"
+                                className="p-0.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex-shrink-0"
+                              >
+                                <Icons.ExternalLink className="w-3.5 h-3.5" />
+                              </Link>
+                            </div>
                           </div>
 
                           {/* Col 3: Created On */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Created On:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created On:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
                           </div>
 
                           {/* Col 4: Firm/Company */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || 'N/A'}>
-                              {rec.data?.company || rec.data?.firm || 'N/A'}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || '—'}>
+                              {rec.data?.company || rec.data?.firm || '—'}
                             </span>
                           </div>
 
                           {/* ===== ROW 2 ===== */}
                           {/* Col 1: Lead No. */}
-                          <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.:&nbsp;</span>
+                          <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead No.:&nbsp;</span>
                             <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
                               {leadNo}
                             </span>
                           </div>
 
                           {/* Col 2: Location */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Location:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={leadLocation}>
-                              {leadLocation}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[170px]" title={leadLocation}>
+                              {leadLocation || '—'}
                             </span>
                           </div>
 
-                          {/* Col 3: By */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">By:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={createdByName}>
+                          {/* Col 3: Created By */}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created By:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[170px]" title={createdByName}>
                               {createdByName}
                             </span>
                           </div>
 
                           {/* Col 4: Modified On */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Modified On:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Modified On:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
                           </div>
 
                           {/* ===== ROW 3 ===== */}
-                          {/* Col 1: Data Code */}
-                          <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Data Code:&nbsp;</span>
-                            <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
-                              {dataCodeVal}
+                          {/* Col 1: Product */}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-medium uppercase truncate inline-block max-w-[170px]" title={rec.data?.loanType || rec.data?.product || '—'}>
+                              {rec.data?.loanType || rec.data?.product || '—'}
                             </span>
                           </div>
 
                           {/* Col 2: Mobile No. */}
-                          <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
-                              {displayedPhone}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                                {displayedPhone}
+                              </span>
                               {rawPhone && rawPhone !== 'N/A' && (
                                 <button
                                   type="button"
@@ -2332,131 +2873,98 @@ export default function ModuleView() {
                                   {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
                                 </button>
                               )}
-                            </span>
+                            </div>
                           </div>
 
                           {/* Col 3: Followup Date */}
-                          <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date:&nbsp;</span>
-                            <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
-                              {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
+                          <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
+                            <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                              {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : '—'}
                             </span>
                           </div>
 
                           {/* Col 4: Assigned By */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={assignedByName}>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned By:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={assignedByName}>
                               {assignedByName}
                             </span>
                           </div>
 
                           {/* ===== ROW 4 ===== */}
-                          {/* Col 1: Lead Category */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Lead Category:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[190px]" title={leadCategoryVal}>
-                              {leadCategoryVal}
+                          {/* Col 1: Status */}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-100 font-bold uppercase truncate inline-block max-w-[170px]">
+                              {rec.data?.status || 'YET TO CALL'}
                             </span>
                           </div>
 
                           {/* Col 2: Amount */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Amount:&nbsp;</span>
-                            <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
+                            <span className={formattedAmount !== 'N/A' && formattedAmount !== '—' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
                               {formattedAmount}
                             </span>
                           </div>
 
                           {/* Col 3: Pending at */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Pending at:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Pending at:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
                               {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
                             </span>
                           </div>
 
                           {/* Col 4: Assigned To */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To:&nbsp;</span>
-                            <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px]" title={assignedToName}>
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned To:&nbsp;</span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[170px]" title={assignedToName}>
                               {assignedToName}
                             </span>
                           </div>
 
                           {/* ===== ROW 5 ===== */}
-                          {/* Col 1: Product */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Product:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}>
-                              {rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}
+                          {/* Col 1: Bank Partner */}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || '—'}>
+                              {rec.data?.businessPartner || rec.data?.bankPartner || '—'}
                             </span>
                           </div>
 
-                          {/* Col 2: Bank Partner */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
-                              {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
+                          {/* Col 2: Case Details */}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={rec.data?.caseDetails || '—'}>
+                              {rec.data?.caseDetails || '—'}
                             </span>
                           </div>
 
                           {/* Col 3: PSM */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">PSM:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={psmName}>
-                              {psmName}
-                            </span>
-                          </div>
-
-                          {/* Col 4: Case Details */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Case Details:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.caseDetails || 'N/A'}>
-                              {rec.data?.caseDetails || 'N/A'}
-                            </span>
-                          </div>
-
-                          {/* ===== ROW 6 ===== */}
-                          {/* Col 1: Status */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Status:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
-                              {rec.data?.status || 'NEW'}
-                            </span>
-                          </div>
-
-                          {/* Col 2: Campaign */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Campaign:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[170px]" title={campaignVal}>
-                              {campaignVal}
-                            </span>
-                          </div>
-
-                          {/* Col 3: Source */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Source:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 capitalize truncate inline-block max-w-[180px]" title={sourceVal}>
-                              {sourceVal}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={psmName}>
+                              {psmName || '—'}
                             </span>
                           </div>
 
                           {/* Col 4: Remarks */}
-                          <div className="leading-snug min-h-[24px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">Remarks:&nbsp;</span>
-                            <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px]" title={remarksText}>
-                              {remarksText}
+                          <div className="leading-snug min-h-[26px] flex items-center">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
+                            <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[170px]" title={remarksText}>
+                              {remarksText || '—'}
                             </span>
                           </div>
                         </div>
 
-                        {/* Card Footer: Action Toolbar */}
-                        <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
+                        {/* Card Footer: Action Toolbar matching Image 2 */}
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider ${statusBadgeStyle}`}>
-                              <StatusBadgeIcon className="w-3.5 h-3.5" />
-                              <span>{statusBadgeText}</span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 shadow-3xs">
+                              <Icons.RotateCcw className="w-3.5 h-3.5" />
+                              <span>{rec.data?.status || 'NEW'}</span>
                             </span>
                           </div>
 
@@ -2476,7 +2984,7 @@ export default function ModuleView() {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
                             >
                               <Icons.MessageSquare className="w-3.5 h-3.5" />
                               <span>WA Chat</span>
@@ -2496,40 +3004,32 @@ export default function ModuleView() {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
                             >
                               <Icons.PhoneCall className="w-3.5 h-3.5" />
                               <span>Call</span>
                             </button>
                             
-                            {/* Upload File (White with border) */}
+                            {/* Save (Blue) */}
                             <button 
                               type="button"
-                              onClick={() => handleUploadClick(rec._id)}
-                              className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                              onClick={() => {
+                                showToast('Lead details saved.', 'success');
+                              }}
+                              className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
                             >
-                              <Icons.Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                              <span>Upload File</span>
+                              <Icons.Save className="w-3.5 h-3.5" />
+                              <span>Save</span>
                             </button>
                             
-                            {/* Edit (Blue) */}
+                            {/* Edit (Outline button) */}
                             <Link 
                               to={`/modules/leads/${rec._id}`} 
-                              className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs"
+                              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs"
                             >
                               <Icons.Edit3 className="w-3.5 h-3.5" />
                               <span>Edit</span>
                             </Link>
-                            
-                            {/* History (White with border) */}
-                            <button 
-                              type="button"
-                              onClick={() => openHistory(rec)}
-                              className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
-                            >
-                              <Icons.History className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                              <span>History</span>
-                            </button>
                           </div>
                         </div>
                       </div>

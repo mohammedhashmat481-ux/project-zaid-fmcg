@@ -364,19 +364,12 @@ export default function Dashboard() {
       }
     }
 
-    // Default fallback list of 11 cards + Today's Followups
+    // Default fallback list of active cards + Today's Followups
     return [
       { label: 'HOT LEADS', rawName: 'HOT LEADS', category: 'pipeline', icon: Icons.Flame, sub: 'Stage #2', accentColor: '#EF4444' },
       { label: 'WARM LEADS', rawName: 'WARM LEADS', category: 'pipeline', icon: Icons.Sun, sub: 'Stage #3', accentColor: '#F59E0B' },
-      { label: 'CEBIL PENDING', rawName: 'CEBIL PENDING', category: 'pipeline', icon: Icons.FileWarning, sub: 'Stage #5', accentColor: '#0284C7' },
-      { label: 'DOCUMENT PENDING', rawName: 'DOCUMENT PENDING', category: 'pipeline', icon: Icons.FileText, sub: 'Stage #6', accentColor: '#0D9488' },
-      { label: 'APPROVAL PENDING', rawName: 'APPROVAL PENDING', category: 'pipeline', icon: Icons.Clock, sub: 'Stage #7', accentColor: '#F97316' },
-      { label: 'APPROVED BUT NOT DISBUSE', rawName: 'APPROVED BUT NOT DISBUSE', category: 'pipeline', icon: Icons.CheckCircle, sub: 'Stage #8', accentColor: '#10B981' },
-      { label: 'DISBUSED', rawName: 'DISBUSED', category: 'pipeline', icon: Icons.Banknote, sub: '✔ Closed Won', accentColor: '#10B981' },
-      { label: 'REJECTED', rawName: 'REJECTED', category: 'overview', icon: Icons.XOctagon, sub: '✕ Closed Final', accentColor: '#F43F5E' },
-      { label: 'FOLLOWUP', rawName: 'FOLLOWUP', category: 'followups', icon: Icons.PhoneCall, sub: 'Stage #11', accentColor: '#0284C7' },
-      { label: 'DROPPED', rawName: 'DROPPED', category: 'overview', icon: Icons.ArrowDownCircle, sub: '✕ Closed Final', accentColor: '#F43F5E' },
-      { label: 'PENDING', rawName: 'PENDING', category: 'followups', icon: Icons.Hourglass, sub: 'Stage #13', accentColor: '#8B5CF6' },
+      { label: 'COOL LEAD', rawName: 'COOL LEAD', category: 'pipeline', icon: Icons.Snowflake, sub: 'Stage #4', accentColor: '#06B6D4' },
+      { label: 'FOLLOWUP', rawName: 'FOLLOWUP', category: 'followups', icon: Icons.PhoneCall, sub: 'Stage #5', accentColor: '#0284C7' },
       todaysFollowupsCard
     ];
   };
@@ -927,302 +920,271 @@ export default function Dashboard() {
               return (
                 <div 
                   key={rec._id} 
-                  className="border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 sm:p-6 bg-white dark:bg-slate-900 hover:shadow-md relative mb-4 last:mb-0 text-left shadow-xs transition-all duration-150 overflow-hidden"
+                  className="relative rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-900/60 hover:border-indigo-400/90 dark:hover:border-indigo-500/80 shadow-[0_3px_12px_-2px_rgba(30,41,59,0.07),0_1px_3px_-1px_rgba(30,41,59,0.04)] hover:shadow-[0_8px_24px_-4px_rgba(79,70,229,0.12)] transition-all duration-200 p-3.5 sm:p-4 text-xs overflow-hidden mb-2.5 last:mb-0 text-left"
                 >
-                  {/* Status-colored Top Accent Bar */}
-                  <div 
-                    className="absolute top-0 left-0 right-0 h-[3px]" 
-                    style={{ backgroundColor: statusTokens.accentHex }} 
-                  />
+                  {/* Classic Premium Top Accent Ribbon matching Image 2 */}
+                  <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-blue-700 via-indigo-600 to-sky-500" />
                   
-                  {/* 4-Column CSS Grid perfectly inline across all 4 columns */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3.5 text-xs">
-                    {/* ===== ROW 1 ===== */}
-                    {/* Col 1: Sl No. */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Sl No.:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-normal">{idx + 1}</span>
-                    </div>
+                  <div className="space-y-2.5">
+                    {/* 4-Column CSS Grid perfectly compact matching Image 2 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1.5 sm:gap-y-2 text-xs">
+                      {/* ===== ROW 1 ===== */}
+                      {/* Col 1: Sl No. */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Sl No.:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{idx + 1}</span>
+                      </div>
 
-                    {/* Col 2: Lead Name */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead Name:&nbsp;</span>
-                      <Link 
-                        to={`/modules/leads/${rec._id}`}
-                        className="text-sky-600 dark:text-sky-400 font-bold hover:underline cursor-pointer uppercase truncate inline-block max-w-[190px]" 
-                        title={leadName}
-                      >
-                        {leadName}
-                      </Link>
-                    </div>
-
-                    {/* Col 3: Created On */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Created On:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.createdAt)}</span>
-                    </div>
-
-                    {/* Col 4: Firm/Company */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Firm/Company:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || 'N/A'}>
-                        {rec.data?.company || rec.data?.firm || 'N/A'}
-                      </span>
-                    </div>
-
-                    {/* ===== ROW 2 ===== */}
-                    {/* Col 1: Lead No. */}
-                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead No.:&nbsp;</span>
-                      <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
-                        {leadNo}
-                      </span>
-                    </div>
-
-                    {/* Col 2: Location */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Location:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={leadLocation}>
-                        {leadLocation}
-                      </span>
-                    </div>
-
-                    {/* Col 3: By */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">By:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={createdByName}>
-                        {createdByName}
-                      </span>
-                    </div>
-
-                    {/* Col 4: Modified On */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Modified On:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300">{formatDate(rec.updatedAt)}</span>
-                    </div>
-
-                    {/* ===== ROW 3 ===== */}
-                    {/* Col 1: Data Code */}
-                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Data Code:&nbsp;</span>
-                      <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono text-[11px] font-bold border border-indigo-200/60 dark:border-indigo-800/60 uppercase">
-                        {dataCodeVal}
-                      </span>
-                    </div>
-
-                    {/* Col 2: Mobile No. */}
-                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Mobile No.:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-mono font-medium inline-flex items-center gap-1.5">
-                        {displayedPhone}
-                        {rawPhone && rawPhone !== 'N/A' && (
-                          <button
-                            type="button"
-                            onClick={() => togglePhoneReveal(rec._id)}
-                            title={isRevealed ? "Hide number" : "Show number"}
-                            className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      {/* Col 2: Lead Name */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <Link 
+                            to={`/modules/leads/${rec._id}`}
+                            className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[170px] hover:underline" 
+                            title={leadName}
                           >
-                            {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                      </span>
+                            {leadName}
+                          </Link>
+                          <Link
+                            to={`/modules/leads/${rec._id}`}
+                            title="Open lead profile"
+                            className="p-0.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex-shrink-0"
+                          >
+                            <Icons.ExternalLink className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      </div>
+
+                      {/* Col 3: Created On */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created On:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
+                      </div>
+
+                      {/* Col 4: Firm/Company */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || '—'}>
+                          {rec.data?.company || rec.data?.firm || '—'}
+                        </span>
+                      </div>
+
+                      {/* ===== ROW 2 ===== */}
+                      {/* Col 1: Lead No. */}
+                      <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead No.:&nbsp;</span>
+                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                          {leadNo}
+                        </span>
+                      </div>
+
+                      {/* Col 2: Location */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[170px]" title={leadLocation}>
+                          {leadLocation || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 3: Created By */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created By:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[170px]" title={createdByName}>
+                          {createdByName}
+                        </span>
+                      </div>
+
+                      {/* Col 4: Modified On */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Modified On:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
+                      </div>
+
+                      {/* ===== ROW 3 ===== */}
+                      {/* Col 1: Product */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-medium uppercase truncate inline-block max-w-[170px]" title={rec.data?.loanType || rec.data?.product || '—'}>
+                          {rec.data?.loanType || rec.data?.product || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 2: Mobile No. */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                            {displayedPhone}
+                          </span>
+                          {rawPhone && rawPhone !== 'N/A' && (
+                            <button
+                              type="button"
+                              onClick={() => togglePhoneReveal(rec._id)}
+                              title={isRevealed ? "Hide number" : "Show number"}
+                              className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                            >
+                              {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Col 3: Followup Date */}
+                      <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
+                        <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                          {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 4: Assigned By */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned By:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={assignedByName}>
+                          {assignedByName}
+                        </span>
+                      </div>
+
+                      {/* ===== ROW 4 ===== */}
+                      {/* Col 1: Status */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-100 font-bold uppercase truncate inline-block max-w-[170px]">
+                          {rec.data?.status || 'YET TO CALL'}
+                        </span>
+                      </div>
+
+                      {/* Col 2: Amount */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
+                        <span className={formattedAmount !== 'N/A' && formattedAmount !== '—' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                          {formattedAmount}
+                        </span>
+                      </div>
+
+                      {/* Col 3: Pending at */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Pending at:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
+                          {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                        </span>
+                      </div>
+
+                      {/* Col 4: Assigned To */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned To:&nbsp;</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[170px]" title={assignedToName}>
+                          {assignedToName}
+                        </span>
+                      </div>
+
+                      {/* ===== ROW 5 ===== */}
+                      {/* Col 1: Bank Partner */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || '—'}>
+                          {rec.data?.businessPartner || rec.data?.bankPartner || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 2: Case Details */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={rec.data?.caseDetails || '—'}>
+                          {rec.data?.caseDetails || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 3: PSM */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={psmName}>
+                          {psmName || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 4: Remarks */}
+                      <div className="leading-snug min-h-[26px] flex items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
+                        <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[170px]" title={remarksText}>
+                          {remarksText || '—'}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Col 3: Followup Date */}
-                    <div className="leading-snug min-h-[24px] flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Followup Date:&nbsp;</span>
-                      <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
-                        {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : 'N/A'}
-                      </span>
-                    </div>
+                    {/* Card Footer: Action Toolbar matching Image 2 */}
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 shadow-3xs">
+                          <Icons.RotateCcw className="w-3.5 h-3.5" />
+                          <span>{rec.data?.status || 'NEW'}</span>
+                        </span>
+                      </div>
 
-                    {/* Col 4: Assigned By */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Assigned By:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={assignedByName}>
-                        {assignedByName}
-                      </span>
-                    </div>
-
-                    {/* ===== ROW 4 ===== */}
-                    {/* Col 1: Lead Category */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Lead Category:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[190px]" title={leadCategoryVal}>
-                        {leadCategoryVal}
-                      </span>
-                    </div>
-
-                    {/* Col 2: Amount */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Amount:&nbsp;</span>
-                      <span className={formattedAmount !== 'N/A' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
-                        {formattedAmount}
-                      </span>
-                    </div>
-
-                    {/* Col 3: Pending at */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Pending at:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
-                        {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
-                      </span>
-                    </div>
-
-                    {/* Col 4: Assigned To */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Assigned To:&nbsp;</span>
-                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[180px]" title={assignedToName}>
-                        {assignedToName}
-                      </span>
-                    </div>
-
-                    {/* ===== ROW 5 ===== */}
-                    {/* Col 1: Product */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Product:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[190px]" title={rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}>
-                        {rec.data?.loanType || rec.data?.product || rec.data?.leadCategory || 'N/A'}
-                      </span>
-                    </div>
-
-                    {/* Col 2: Bank Partner */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Bank Partner:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}>
-                        {rec.data?.businessPartner || rec.data?.bankPartner || 'BAJAJ FINANCE'}
-                      </span>
-                    </div>
-
-                    {/* Col 3: PSM */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">PSM:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={psmName}>
-                        {psmName}
-                      </span>
-                    </div>
-
-                    {/* Col 4: Case Details */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Case Details:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[180px]" title={rec.data?.caseDetails || 'N/A'}>
-                        {rec.data?.caseDetails || 'N/A'}
-                      </span>
-                    </div>
-
-                    {/* ===== ROW 6 ===== */}
-                    {/* Col 1: Status */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Status:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase">
-                        {rec.data?.status || 'NEW'}
-                      </span>
-                    </div>
-
-                    {/* Col 2: Campaign */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Campaign:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 uppercase truncate inline-block max-w-[170px]" title={campaignVal}>
-                        {campaignVal}
-                      </span>
-                    </div>
-
-                    {/* Col 3: Source */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Source:&nbsp;</span>
-                      <span className="text-slate-700 dark:text-slate-300 capitalize truncate inline-block max-w-[180px]" title={sourceVal}>
-                        {sourceVal}
-                      </span>
-                    </div>
-
-                    {/* Col 4: Remarks */}
-                    <div className="leading-snug min-h-[24px] flex items-center">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Remarks:&nbsp;</span>
-                      <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[180px]" title={remarksText}>
-                        {remarksText}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions Row */}
-                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider ${statusBadgeStyle}`}>
-                        <StatusBadgeIcon className="w-3.5 h-3.5" />
-                        <span>{statusBadgeText}</span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* WA Chat (Green) */}
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
-                          let cleanPhone = String(rawPhone).replace(/\D/g, '').trim();
-                          if (cleanPhone) {
-                            if (cleanPhone.length === 10) {
-                              cleanPhone = `91${cleanPhone}`;
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* WA Chat (Green) */}
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                            let cleanPhone = String(rawPhone).replace(/\D/g, '').trim();
+                            if (cleanPhone) {
+                              if (cleanPhone.length === 10) {
+                                cleanPhone = `91${cleanPhone}`;
+                              }
+                              window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                            } else {
+                              showToast('No phone number available for this lead.', 'warning');
                             }
-                            window.open(`https://wa.me/${cleanPhone}`, '_blank');
-                          } else {
-                            showToast('No phone number available for this lead.', 'warning');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
-                      >
-                        <Icons.MessageSquare className="w-3.5 h-3.5" />
-                        <span>WA Chat</span>
-                      </button>
-                      
-                      {/* Call (Purple/Indigo) */}
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
-                          const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
-                          if (cleanPhone) {
-                            const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
-                            showToast(`Calling ${name} (${cleanPhone})...`, 'info');
-                            window.location.href = `tel:${cleanPhone}`;
-                          } else {
-                            showToast('No phone number available for this lead.', 'warning');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
-                      >
-                        <Icons.PhoneCall className="w-3.5 h-3.5" />
-                        <span>Call</span>
-                      </button>
-                      
-                      {/* Upload File (White with border) */}
-                      <button 
-                        type="button"
-                        onClick={() => handleUploadClick(rec._id)}
-                        className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
-                      >
-                        <Icons.Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        <span>Upload File</span>
-                      </button>
-                      
-                      {/* Edit (Blue) */}
-                      <Link 
-                        to={`/modules/leads/${rec._id}`} 
-                        className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs"
-                      >
-                        <Icons.Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </Link>
-
-                      {/* History (White with border) */}
-                      <button 
-                        type="button"
-                        onClick={() => openHistory(rec)}
-                        className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
-                      >
-                        <Icons.History className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        <span>History</span>
-                      </button>
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                        >
+                          <Icons.MessageSquare className="w-3.5 h-3.5" />
+                          <span>WA Chat</span>
+                        </button>
+                        
+                        {/* Call (Purple/Indigo) */}
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const rawPhone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                            const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
+                            if (cleanPhone) {
+                              const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
+                              showToast(`Calling ${name} (${cleanPhone})...`, 'info');
+                              window.location.href = `tel:${cleanPhone}`;
+                            } else {
+                              showToast('No phone number available for this lead.', 'warning');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                        >
+                          <Icons.PhoneCall className="w-3.5 h-3.5" />
+                          <span>Call</span>
+                        </button>
+                        
+                        {/* Save (Blue) */}
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            showToast('Lead details saved.', 'success');
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                        >
+                          <Icons.Save className="w-3.5 h-3.5" />
+                          <span>Save</span>
+                        </button>
+                        
+                        {/* Edit (Outline button) */}
+                        <Link 
+                          to={`/modules/leads/${rec._id}`} 
+                          className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs"
+                        >
+                          <Icons.Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </div>

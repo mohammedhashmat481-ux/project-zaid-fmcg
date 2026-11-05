@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const Status_1 = __importDefault(require("../models/Status"));
+const Organization_1 = __importDefault(require("../models/Organization"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const cache_1 = require("../utils/cache");
@@ -52,6 +53,31 @@ async function reorderAfterDelete(organizationId) {
             item.order = finalOrder;
             await item.save();
         }
+    }
+}
+// Helper function to sync organization dashboardStatuses with PostgreSQL statuses
+async function syncOrganizationDashboardStatuses(organizationId) {
+    try {
+        const org = await Organization_1.default.findById(organizationId);
+        if (!org)
+            return;
+        const allStatuses = await Status_1.default.find({ organizationId });
+        const dashNames = allStatuses
+            .filter((s) => s.dashboardVisibility !== false)
+            .map((s) => String(s.name || '').trim().toUpperCase())
+            .filter(Boolean);
+        const existingConfig = org.themeSettings?.campaignStatusConfig || {};
+        org.themeSettings = {
+            ...(org.themeSettings || {}),
+            campaignStatusConfig: {
+                ...existingConfig,
+                dashboardStatuses: Array.from(new Set(dashNames))
+            }
+        };
+        await org.save();
+    }
+    catch (e) {
+        console.warn('Failed to sync organization dashboard statuses:', e);
     }
 }
 // 1. Get all statuses
@@ -133,6 +159,7 @@ router.post('/', async (req, res) => {
         // Shift other statuses to accommodate the new status
         await adjustStatusOrders(req.organizationId, null, calculatedOrder, newStatusFields);
         const status = await Status_1.default.create(newStatusFields);
+        await syncOrganizationDashboardStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(201).json(status);
@@ -176,6 +203,7 @@ router.put('/:id', async (req, res) => {
             status.order = tempWrapper.order;
         }
         await status.save();
+        await syncOrganizationDashboardStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json(status);
@@ -198,6 +226,7 @@ router.delete('/:id', async (req, res) => {
             return;
         }
         await reorderAfterDelete(req.organizationId);
+        await syncOrganizationDashboardStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         res.status(200).json({ message: 'Status deleted successfully.' });

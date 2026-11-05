@@ -6,6 +6,7 @@ import User from '../models/User';
 import Organization from '../models/Organization';
 import Activity from '../models/Activity';
 import AuditLog from '../models/AuditLog';
+import Status from '../models/Status';
 import { FormulaEvaluator } from '../services/formulaEvaluator';
 import { WorkflowEngine } from '../services/workflowEngine';
 import { createNotification } from '../utils/notificationHelper';
@@ -619,10 +620,51 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
       const assignedAgent = cleanAgents[(globalOffset + idx) % numAgents];
       agentCounts[assignedAgent] = (agentCounts[assignedAgent] || 0) + 1;
       
-      // Parse names — support multiple column name formats
-      let fName = lead.firstName || lead.name || lead.costomer || lead.customer || lead.customer_name || 'Unnamed';
+      // Parse names — robustly support all possible Excel/CSV column naming variations
+      let extractedName = '';
+      for (const [k, v] of Object.entries(lead)) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (
+          cleanK === 'customername' ||
+          cleanK === 'customer' ||
+          cleanK === 'clientname' ||
+          cleanK === 'client' ||
+          cleanK === 'leadname' ||
+          cleanK === 'partyname' ||
+          cleanK === 'applicantname' ||
+          cleanK === 'borrowername' ||
+          cleanK === 'fullname' ||
+          cleanK === 'name' ||
+          cleanK === 'contactperson' ||
+          cleanK === 'firstname'
+        ) {
+          if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+            extractedName = String(v).trim();
+            break;
+          }
+        }
+      }
+
+      if (!extractedName) {
+        extractedName = String(
+          lead.firstName ||
+          lead.customerName ||
+          lead.customer ||
+          lead.name ||
+          lead.leadName ||
+          lead.fullName ||
+          ''
+        ).trim();
+      }
+
+      // Do NOT default to "Unnamed"! If empty or "Unnamed", leave as blank ""
+      if (extractedName.toUpperCase() === 'UNNAMED' || extractedName.toUpperCase() === 'N/A') {
+        extractedName = '';
+      }
+
+      let fName = extractedName;
       let lName = lead.lastName || '';
-      if (!lead.lastName && fName && fName.includes(' ')) {
+      if (!lName && fName && fName.includes(' ')) {
         const parts = fName.split(' ');
         fName = parts[0];
         lName = parts.slice(1).join(' ');
@@ -827,8 +869,9 @@ const DEFAULT_CAMPAIGN_STATUSES = [
 ];
 
 const DEFAULT_TRIGGER_STATUSES = ['HOT LEADS', 'WARM LEADS'];
+const DEFAULT_DASHBOARD_STATUSES = ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
 
-// GET campaign statuses and trigger statuses
+// GET campaign statuses, trigger statuses (Opens Create Lead), and dashboard statuses (Show in Dashboard)
 router.get('/campaigns/statuses', async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
@@ -846,13 +889,35 @@ router.get('/campaigns/statuses', async (req: Request, res: Response): Promise<v
       if (!exists) statuses.push(rs);
     });
 
+    // Opens Create Lead triggers
     let triggerStatuses = Array.isArray(config?.triggerStatuses) && config.triggerStatuses.length > 0
       ? config.triggerStatuses.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
-      : DEFAULT_TRIGGER_STATUSES;
+      : [...DEFAULT_TRIGGER_STATUSES];
+
+    // Show in Dashboard statuses: synchronize with PostgreSQL 'statuses' table
+    const dbStatuses = await Status.find({ organizationId: orgId });
+    const dbDashboardVisibleNames = dbStatuses
+      .filter((st: any) => st.dashboardVisibility !== false && !EXCLUDED_CAMPAIGN_STATUSES.has(String(st.name || '').trim().toUpperCase()))
+      .map((st: any) => String(st.name || '').trim().toUpperCase());
+
+    let dashboardStatuses: string[];
+    if (Array.isArray(config?.dashboardStatuses)) {
+      dashboardStatuses = Array.from(new Set(
+        config.dashboardStatuses.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
+      ));
+    } else if (dbDashboardVisibleNames.length > 0) {
+      dashboardStatuses = Array.from(new Set([
+        ...dbDashboardVisibleNames,
+        'COOL LEAD'
+      ]));
+    } else {
+      dashboardStatuses = [...DEFAULT_DASHBOARD_STATUSES];
+    }
 
     res.status(200).json({
       statuses,
-      triggerStatuses
+      triggerStatuses,
+      dashboardStatuses
     });
   } catch (error: any) {
     console.error('Failed to get campaign statuses:', error);
@@ -860,11 +925,11 @@ router.get('/campaigns/statuses', async (req: Request, res: Response): Promise<v
   }
 });
 
-// PUT update campaign statuses and trigger statuses (Super Admin / Admin)
+// PUT update campaign statuses, triggers (Opens Create Lead), and dashboard visibility (Show in Dashboard)
 router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
-    const { statuses, triggerStatuses } = req.body;
+    const { statuses, triggerStatuses, dashboardStatuses } = req.body;
 
     if (!Array.isArray(statuses)) {
       res.status(400).json({ error: 'Statuses must be an array of status names.' });
@@ -887,10 +952,16 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
         .map((s: any) => String(s || '').trim().toUpperCase())
         .filter((s: string) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s))
     ));
+    const cleanedDashboard: string[] = Array.from(new Set(
+      (dashboardStatuses || [])
+        .map((s: any) => String(s || '').trim().toUpperCase())
+        .filter((s: string) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s))
+    ));
 
     const campaignStatusConfig = {
       statuses: cleanedStatuses.length > 0 ? cleanedStatuses : DEFAULT_CAMPAIGN_STATUSES,
-      triggerStatuses: cleanedTrigger.length > 0 ? cleanedTrigger : DEFAULT_TRIGGER_STATUSES
+      triggerStatuses: cleanedTrigger,
+      dashboardStatuses: cleanedDashboard
     };
 
     org.themeSettings = {
@@ -899,12 +970,79 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
     };
 
     await org.save();
+
+    // 2-Way Synchronization with PostgreSQL 'statuses' table
+    try {
+      const existingDbStatuses = await Status.find({ organizationId: orgId });
+      const existingMap = new Map<string, any>();
+      existingDbStatuses.forEach((st: any) => {
+        existingMap.set(String(st.name || '').trim().toUpperCase(), st);
+      });
+
+      // Campaign statuses that are explicitly marked for Dashboard (e.g. COOL LEAD, FOLLOWUP)
+      for (const dashStatusName of cleanedDashboard) {
+        const upper = dashStatusName.toUpperCase();
+        const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
+        let existing = existingMap.get(upper);
+        if (!existing && strippedUpper) {
+          existing = existingMap.get(strippedUpper) || existingMap.get(`${strippedUpper} LEAD`) || existingMap.get(`${strippedUpper} LEADS`);
+        }
+
+        if (existing) {
+          if (existing.dashboardVisibility !== true) {
+            existing.dashboardVisibility = true;
+            await existing.save();
+          }
+        } else {
+          // Create new status in statuses table ONLY because it was marked for Dashboard
+          let color = '#06B6D4';
+          let icon = 'Snowflake';
+          if (upper.includes('HOT')) { color = '#EF4444'; icon = 'Flame'; }
+          else if (upper.includes('WARM')) { color = '#F59E0B'; icon = 'Sun'; }
+          else if (upper.includes('FOLLOW')) { color = '#0284C7'; icon = 'PhoneCall'; }
+
+          await Status.create({
+            organizationId: orgId,
+            name: dashStatusName,
+            color,
+            icon,
+            pipelinePosition: existingDbStatuses.length + 1,
+            dashboardVisibility: true,
+            isFinal: false,
+            isSuccess: false,
+            order: existingDbStatuses.length + 1
+          });
+        }
+      }
+
+      // If a campaign-only status is NOT in cleanedDashboard, and it exists in statuses table:
+      // Remove it from statuses table so Settings > Status stays clean!
+      const CAMPAIGN_NON_PIPELINE = new Set([
+        'YET TO CALL', 'NOT CALLED', 'NOT INTERESTED', 'CALL REJECTED', 'NOT CONNECTED',
+        'NO ANSWER', 'NUMBER BUSY', 'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF',
+        'NOT REACHABLE', 'WRONG NUMBER', 'NOT EXISTS', 'REPEATED NUMBER', 'NO BUSINESS',
+        'CALL LATER', 'DROPPED', 'PENDING'
+      ]);
+
+      for (const st of existingDbStatuses) {
+        const u = String(st.name || '').trim().toUpperCase();
+        if (CAMPAIGN_NON_PIPELINE.has(u) && !cleanedDashboard.includes(u)) {
+          await queryPg('DELETE FROM statuses WHERE id = $1', [st._id || st.id]);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Error syncing campaign statuses with Status table:', syncErr);
+    }
+
+    CacheInvalidators.invalidateStatuses(orgId);
+    CacheInvalidators.invalidateDashboard(orgId);
     serverCache.clear();
 
     res.status(200).json({
       success: true,
       statuses: campaignStatusConfig.statuses,
-      triggerStatuses: campaignStatusConfig.triggerStatuses
+      triggerStatuses: campaignStatusConfig.triggerStatuses,
+      dashboardStatuses: campaignStatusConfig.dashboardStatuses
     });
   } catch (error: any) {
     console.error('Failed to update campaign statuses:', error);
@@ -1259,13 +1397,45 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         filteredTotal = yetToDial;
       }
 
-      const leads = rows.map((r: any) => ({
-        _id: r.id,
-        id: r.id,
-        data: r.data || {},
-        createdAt: r.created_at,
-        updatedAt: r.updated_at
-      }));
+      const leads = rows.map((r: any) => {
+        const d = { ...(r.data || {}) };
+        const rawCust = String(d.customerName || d.firstName || '').trim();
+        if (rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
+          let altName = '';
+          for (const [k, v] of Object.entries(d)) {
+            const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (
+              cleanK === 'customername' || cleanK === 'customer' || cleanK === 'clientname' ||
+              cleanK === 'client' || cleanK === 'leadname' || cleanK === 'partyname' ||
+              cleanK === 'applicantname' || cleanK === 'borrowername' || cleanK === 'fullname' || cleanK === 'name'
+            ) {
+              if (v && String(v).trim() && String(v).trim().toUpperCase() !== 'UNNAMED' && String(v).trim().toUpperCase() !== 'N/A') {
+                altName = String(v).trim();
+                break;
+              }
+            }
+          }
+          d.customerName = altName;
+          d.firstName = altName;
+          d.fullName = altName;
+        }
+
+        const isDialed = d.dialedAt || d.lastCallDate || (d.callAttempts && Number(d.callAttempts) > 0) ||
+          (d.status && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL'].includes(String(d.status).trim().toUpperCase()));
+        if (!isDialed) {
+          if (d.psm && (d.psm === d.assignedTo || d.psm === decodedCampaignName || String(d.psm).toUpperCase() === 'N/A' || String(d.psm).includes('DEMO'))) {
+            delete d.psm;
+            delete d.psmName;
+          }
+        }
+        return {
+          _id: r.id,
+          id: r.id,
+          data: d,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        };
+      });
 
       const payload = {
         leads,
@@ -1333,11 +1503,70 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
     const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.mobileNo data.contactNumber data.name_contact_num data.contactNum data.contact_num data.phoneNumber data.phone_number data.contact data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.businessPartner data.bank data.bankName data.budget data.amount data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
 
     const totalCount = await CustomRecord.countDocuments(query);
-    const queryChain = CustomRecord.find(query).select(LEAD_PROJECTION).sort({ createdAt: -1 });
+    const queryChain = CustomRecord.find(query).select('_id data createdBy updatedBy createdAt updatedAt').sort({ createdAt: -1 });
     if (limit > 0) {
       queryChain.skip((page - 1) * limit).limit(limit);
     }
-    const leads = await queryChain.lean();
+    const rawLeads = await queryChain.lean();
+    const leads = rawLeads.map((l: any) => {
+      const d = { ...(l.data || {}) };
+      const rawCust = String(d.customerName || d.firstName || '').trim();
+      if (rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
+        let altName = '';
+        for (const [k, v] of Object.entries(d)) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (
+            cleanK === 'customername' || cleanK === 'customer' || cleanK === 'clientname' ||
+            cleanK === 'client' || cleanK === 'leadname' || cleanK === 'partyname' ||
+            cleanK === 'applicantname' || cleanK === 'borrowername' || cleanK === 'fullname' || cleanK === 'name'
+          ) {
+            if (v && String(v).trim() && String(v).trim().toUpperCase() !== 'UNNAMED' && String(v).trim().toUpperCase() !== 'N/A') {
+              altName = String(v).trim();
+              break;
+            }
+          }
+        }
+        d.customerName = altName;
+        d.firstName = altName;
+        d.fullName = altName;
+      }
+
+      // Fallback universal phone extractor
+      if (!d.phone && !d.mobile) {
+        for (const [k, v] of Object.entries(d)) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (
+            cleanK.includes('phone') || cleanK.includes('mobile') ||
+            cleanK.includes('contact') || cleanK.includes('cell') ||
+            cleanK === 'mob' || cleanK === 'tel' || cleanK.includes('number')
+          ) {
+            if (v && String(v).trim() && String(v).trim() !== 'N/A') {
+              d.phone = String(v).trim();
+              d.mobile = String(v).trim();
+              d.mobileNo = String(v).trim();
+              break;
+            }
+          }
+        }
+      }
+
+      const isDialed = d.dialedAt || d.lastCallDate || (d.callAttempts && Number(d.callAttempts) > 0) ||
+        (d.status && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL'].includes(String(d.status).trim().toUpperCase()));
+      if (!isDialed) {
+        if (d.psm && (d.psm === d.assignedTo || d.psm === decodedCampaignName || String(d.psm).toUpperCase() === 'N/A' || String(d.psm).includes('DEMO'))) {
+          delete d.psm;
+          delete d.psmName;
+        }
+        if (d.loanType === 'PERSONAL LOAN' || d.loanType === 'PERSONAL DETAILS') {
+          delete d.loanType;
+        }
+        if (d.leadCategory === 'PERSONAL LOAN') {
+          delete d.leadCategory;
+          delete d.lead_category;
+        }
+      }
+      return { ...l, data: d };
+    });
 
     const payload = {
       leads,

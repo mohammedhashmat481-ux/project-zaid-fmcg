@@ -12,6 +12,7 @@ const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const User_1 = __importDefault(require("../models/User"));
 const cache_1 = require("../utils/cache");
+const postgres_1 = require("../config/postgres");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
 router.use(tenantMiddleware_1.requireTenant);
@@ -19,22 +20,12 @@ router.use(tenantMiddleware_1.requireTenant);
 router.get('/campaign-matrix', async (req, res) => {
     try {
         const orgId = req.organizationId;
-        const { campaignName = 'ALL', month = '10', year = '2026', date, period = 'daily', metric = 'callsMade', userId = 'ALL', roleId = 'ALL' } = req.query;
-        // Determine target single date for daily report (IST timezone)
-        const istNowStr = (() => {
-            try {
-                return new Intl.DateTimeFormat('en-CA', {
-                    timeZone: 'Asia/Kolkata',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit'
-                }).format(new Date());
-            }
-            catch (_) {
-                const istMs = Date.now() + (5.5 * 60 * 60 * 1000);
-                return new Date(istMs).toISOString().slice(0, 10);
-            }
-        })();
+        const nowMs = Date.now();
+        const istNow = new Date(nowMs + 5.5 * 60 * 60 * 1000);
+        const defaultMonth = String(istNow.getUTCMonth() + 1).padStart(2, '0');
+        const defaultYear = String(istNow.getUTCFullYear());
+        const istNowStr = `${defaultYear}-${defaultMonth}-${String(istNow.getUTCDate()).padStart(2, '0')}`;
+        const { campaignName = 'ALL', month = defaultMonth, year = defaultYear, date, period = 'daily', metric = 'callsMade', userId = 'ALL', roleId = 'ALL' } = req.query;
         const selectedDateStr = (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
             ? date
             : istNowStr;
@@ -51,36 +42,91 @@ router.get('/campaign-matrix', async (req, res) => {
         }
         const isAllMonths = String(month).toUpperCase() === 'ALL' || String(month).toLowerCase().includes('all');
         const isAllYears = String(year).toUpperCase() === 'ALL' || String(year).toLowerCase().includes('all');
-        const targetMonthIndex = isAllMonths ? -1 : (parseInt(String(month || '10'), 10) - 1); // 0 to 11
-        const targetYear = isAllYears ? -1 : (parseInt(String(year || '2026'), 10) || 2026);
-        // 1. Fetch Registered Campaigns, Assignments, and Leads from DB with lean, indexed projections
-        const campaignModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' });
-        const assignmentModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaignassignments' });
-        const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
-        let campaignDocs = [];
+        const targetMonthIndex = isAllMonths ? -1 : (parseInt(String(month || defaultMonth), 10) - 1); // 0 to 11
+        const targetYear = isAllYears ? -1 : (parseInt(String(year || defaultYear), 10) || parseInt(defaultYear, 10));
+        // 1. Fetch Registered Campaigns and Modules with fast parallel queries
+        const [campaignModule, assignmentModule, leadModule] = await Promise.all([
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' }).lean(),
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaignassignments' }).lean(),
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' }).lean()
+        ]);
+        // Fast indexed query for registered campaign names
+        let registeredCampaignNames = [];
         if (campaignModule) {
-            campaignDocs = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: campaignModule._id })
-                .select('_id data.campaignName data.name createdAt')
-                .lean();
+            const campRows = await (0, postgres_1.queryPg)(`SELECT DISTINCT COALESCE(data->>'campaignName', data->>'name', '') as name 
+         FROM custom_records 
+         WHERE organization_id = $1 AND module_id = $2`, [orgId, campaignModule._id || campaignModule.id]);
+            registeredCampaignNames = campRows.map((r) => (r.name || '').trim()).filter(Boolean);
         }
-        const registeredCampaignNames = Array.from(new Set(campaignDocs.map((c) => {
-            const d = c.data || {};
-            return (d.campaignName || d.name || '').toString().trim();
-        }).filter(Boolean)));
         // Fetch Campaign Assignments
         let assignmentDocs = [];
         if (assignmentModule) {
-            assignmentDocs = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: assignmentModule._id })
+            assignmentDocs = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: assignmentModule._id || assignmentModule.id })
                 .select('_id data.campaign data.campaignName data.assignedTo data.telecaller createdAt')
                 .lean();
         }
-        // Fetch Leads with lean projection for instant report queries (100x faster than full docs)
-        const REPORT_LEAD_PROJECTION = '_id createdBy updatedBy createdAt updatedAt data.dialedAt data.dialStatus data.status data.callAttempts data.assignedTo data.source data.creatorName data.dialedBy data.callerName data.lastDialedBy data.hotDate data.loginDate data.approvalDate data.disbursalDate data.leadCategory data.campaign data.campaignName';
+        // Fast SQL Query for Leads with direct field projection & database-level campaign filter
         let leadDocs = [];
         if (leadModule) {
-            leadDocs = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: leadModule._id })
-                .select(REPORT_LEAD_PROJECTION)
-                .lean();
+            const leadModId = leadModule._id || leadModule.id;
+            const leadSqlParams = [orgId, leadModId];
+            let leadWhereClause = `WHERE organization_id = $1 AND module_id = $2`;
+            if (campaignName && campaignName !== 'ALL') {
+                leadSqlParams.push(String(campaignName).toLowerCase().trim());
+                leadWhereClause += ` AND (lower(COALESCE(data->>'campaign', '')) = $3 OR lower(COALESCE(data->>'campaignName', '')) = $3)`;
+            }
+            const leadRows = await (0, postgres_1.queryPg)(`SELECT 
+           id as _id, 
+           created_by as "createdBy", 
+           updated_by as "updatedBy", 
+           created_at as "createdAt", 
+           updated_at as "updatedAt",
+           data->>'campaign' as campaign,
+           data->>'campaignName' as "campaignName",
+           data->>'dialedAt' as "dialedAt",
+           data->>'dialStatus' as "dialStatus",
+           data->>'status' as status,
+           data->>'callAttempts' as "callAttempts",
+           data->>'assignedTo' as "assignedTo",
+           data->>'source' as source,
+           data->>'creatorName' as "creatorName",
+           data->>'dialedBy' as "dialedBy",
+           data->>'callerName' as "callerName",
+           data->>'lastDialedBy' as "lastDialedBy",
+           data->>'hotDate' as "hotDate",
+           data->>'loginDate' as "loginDate",
+           data->>'approvalDate' as "approvalDate",
+           data->>'disbursalDate' as "disbursalDate",
+           data->>'leadCategory' as "leadCategory"
+         FROM custom_records
+         ${leadWhereClause}`, leadSqlParams);
+            leadDocs = leadRows.map((r) => ({
+                _id: r._id,
+                id: r._id,
+                createdBy: r.createdBy,
+                updatedBy: r.updatedBy,
+                createdAt: r.createdAt,
+                updatedAt: r.updatedAt,
+                data: {
+                    campaign: r.campaign,
+                    campaignName: r.campaignName,
+                    dialedAt: r.dialedAt,
+                    dialStatus: r.dialStatus,
+                    status: r.status,
+                    callAttempts: r.callAttempts,
+                    assignedTo: r.assignedTo,
+                    source: r.source,
+                    creatorName: r.creatorName,
+                    dialedBy: r.dialedBy,
+                    callerName: r.callerName,
+                    lastDialedBy: r.lastDialedBy,
+                    hotDate: r.hotDate,
+                    loginDate: r.loginDate,
+                    approvalDate: r.approvalDate,
+                    disbursalDate: r.disbursalDate,
+                    leadCategory: r.leadCategory
+                }
+            }));
         }
         // Filter by selected campaign if specified
         let filteredAssignments = assignmentDocs;
@@ -89,10 +135,6 @@ router.get('/campaign-matrix', async (req, res) => {
             const campLower = String(campaignName).toLowerCase().trim();
             filteredAssignments = assignmentDocs.filter((a) => {
                 const c = (a.data?.campaign || a.data?.campaignName || '').toString().toLowerCase().trim();
-                return c === campLower;
-            });
-            filteredLeads = leadDocs.filter((l) => {
-                const c = (l.data?.campaign || l.data?.campaignName || l.campaignName || '').toString().toLowerCase().trim();
                 return c === campLower;
             });
         }
@@ -255,8 +297,9 @@ router.get('/campaign-matrix', async (req, res) => {
                 return true;
             return false;
         };
-        // Helper: Resolve the real date of an event (in Indian Standard Time)
+        // Helper: Resolve the real date of an event (in Indian Standard Time UTC+05:30)
         // NEVER uses followUpDate for calls made (followUpDate is a scheduled future date!)
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
         const getEventDateParts = (lead, metricType) => {
             const d = lead.data || {};
             let rawDate = null;
@@ -281,42 +324,19 @@ router.get('/campaign-matrix', async (req, res) => {
             if (!rawDate)
                 return null;
             const dateObj = new Date(rawDate);
-            if (isNaN(dateObj.getTime()))
+            const timeMs = dateObj.getTime();
+            if (isNaN(timeMs))
                 return null;
             // Cap at current time to never project events into future days beyond today (IST)
-            const now = new Date();
-            const validDateObj = dateObj.getTime() > now.getTime() ? now : dateObj;
-            try {
-                const istFormatter = new Intl.DateTimeFormat('en-CA', {
-                    timeZone: 'Asia/Kolkata',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit'
-                });
-                const parts = istFormatter.format(validDateObj).split('-');
-                const istHourFormatter = new Intl.DateTimeFormat('en-US', {
-                    timeZone: 'Asia/Kolkata',
-                    hour: 'numeric',
-                    hour12: false
-                });
-                const hour = parseInt(istHourFormatter.format(validDateObj), 10) % 24;
-                return {
-                    year: parseInt(parts[0], 10),
-                    month: parseInt(parts[1], 10) - 1, // 0 to 11
-                    day: parseInt(parts[2], 10), // 1 to 31
-                    hour
-                };
-            }
-            catch (_) {
-                const istMs = validDateObj.getTime() + (5.5 * 60 * 60 * 1000);
-                const ist = new Date(istMs);
-                return {
-                    day: ist.getUTCDate(),
-                    month: ist.getUTCMonth(),
-                    year: ist.getUTCFullYear(),
-                    hour: ist.getUTCHours()
-                };
-            }
+            const currentMs = Date.now();
+            const validTimeMs = timeMs > currentMs ? currentMs : timeMs;
+            const istDate = new Date(validTimeMs + IST_OFFSET_MS);
+            return {
+                year: istDate.getUTCFullYear(),
+                month: istDate.getUTCMonth(), // 0 to 11
+                day: istDate.getUTCDate(), // 1 to 31
+                hour: istDate.getUTCHours() // 0 to 23
+            };
         };
         // Helper to check if lead matches a metric
         const isLeadMetricMatch = (l, m) => {

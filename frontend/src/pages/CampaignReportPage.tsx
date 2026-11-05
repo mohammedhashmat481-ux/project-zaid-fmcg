@@ -264,7 +264,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   // Handle Pill Download on any card
   const handlePillDownload = (e: React.MouseEvent, card: KPICardConfig) => {
     e.stopPropagation(); // Don't trigger card selection change
-    exportCampaignKPIDataset(card.pillKey, summary, matrixData, selectedCampaign);
+    exportCampaignKPIDataset(card.pillKey, summary, matrixData, selectedCampaign, period);
     showToast(`Downloaded ${card.label} dataset.`, 'success');
   };
 
@@ -293,7 +293,11 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               {period === 'daily' ? 'Daily Report' : period === 'monthly' ? 'Monthly Report' : 'Annual Report'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              {period === 'daily' ? 'Daily' : period === 'monthly' ? 'Monthly' : 'Annual'} calling matrix, dial attempts, and outbound contact progress.
+              {period === 'daily'
+                ? `Hourly calling matrix, dial attempts, and outbound contact progress for ${selectedDate}.`
+                : period === 'monthly'
+                ? `Day-by-day calling matrix, dial attempts, and outbound contact progress for ${months.find((m) => m.val === selectedMonth)?.label || selectedMonth} ${selectedYear}.`
+                : `Month-by-month calling matrix, dial attempts, and outbound contact progress for ${selectedYear}.`}
             </p>
           </div>
 
@@ -487,7 +491,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+          <div className={`grid gap-4 pt-4 ${period === 'monthly' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
             {period === 'daily' ? (
               <>
                 {/* 1. Select Date */}
@@ -571,6 +575,26 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                     <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                   </div>
                 </div>
+
+                {/* 3. Select Campaign (Monthly) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Campaign
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedCampaign}
+                      onChange={(e) => setSelectedCampaign(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">All Campaigns</option>
+                      {campaignsList.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
               </>
             ) : (
               <>
@@ -618,7 +642,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               </>
             )}
 
-            {/* 3. Select User */}
+            {/* Select User */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Select User
@@ -643,7 +667,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               </div>
             </div>
 
-            {/* 4. Select Role */}
+            {/* Select Role */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Select Role
@@ -751,7 +775,12 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX {period === 'daily' ? `(${selectedDate})` : ''}
+                {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX{' '}
+                {period === 'daily'
+                  ? `(${selectedDate})`
+                  : period === 'monthly'
+                  ? `(${months.find((m) => m.val === selectedMonth)?.label || selectedMonth} ${selectedYear})`
+                  : `(${selectedYear})`}
               </h3>
               <span className="text-xs px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 font-bold">
                 {filteredRows.length} Callers
