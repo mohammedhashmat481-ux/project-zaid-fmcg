@@ -1033,6 +1033,7 @@ export default function MyCampaign() {
         dialedAt: new Date(),
         dialedBy: loggedInSaverName,
         callerName: loggedInSaverName,
+        source: loggedInSaverName,
         callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
         notes: currentRemarks,
         remarks: currentRemarks,
@@ -2084,8 +2085,9 @@ export default function MyCampaign() {
                         : cleanFollowup;
 
                       const currentStatus = leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call';
-                      const campaignNameDisplay = activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.campaign || lead.data?.source || '—';
-                      const sourceNameDisplay = lead.data?.source || createdByDisplay || '—';
+                      const campaignNameDisplay = activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.campaign || '—';
+                      // Source name is strictly same as Created By (who is dialing / creating)
+                      const sourceNameDisplay = createdByDisplay;
 
                       const isEditing = !!editingLeadIds[lead._id];
                       const statusMeta = getCardStatusMeta(currentStatus);
@@ -2419,11 +2421,11 @@ export default function MyCampaign() {
                                 </select>
                               </div>
 
-                              {/* Col 2: Source (strictly '—' until lead is actually created via Create Lead) */}
+                              {/* Col 2: Source (Same as Created By: who is dialing / creating) */}
                               <div className="leading-tight min-h-[22px] flex items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Source:&nbsp;</span>
-                                <span className={`font-semibold truncate inline-block max-w-[165px] ${isLeadCreated ? 'text-slate-700 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 font-semibold'}`} title={isLeadCreated ? sourceNameDisplay : '—'}>
-                                  {isLeadCreated ? sourceNameDisplay : '—'}
+                                <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[165px]" title={sourceNameDisplay}>
+                                  {sourceNameDisplay}
                                 </span>
                               </div>
 
