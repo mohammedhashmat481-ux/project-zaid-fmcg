@@ -559,19 +559,23 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let extractedName = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'customername' ||
-                    cleanK === 'customer' ||
-                    cleanK === 'clientname' ||
-                    cleanK === 'client' ||
-                    cleanK === 'leadname' ||
-                    cleanK === 'partyname' ||
-                    cleanK === 'applicantname' ||
-                    cleanK === 'borrowername' ||
-                    cleanK === 'fullname' ||
+                if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('bank') || cleanK.includes('psm') || cleanK.includes('campaign') || cleanK.includes('source') || cleanK.includes('assignedto') || cleanK.includes('agent')) {
+                    continue;
+                }
+                if (cleanK.includes('customer') ||
+                    cleanK.includes('client') ||
+                    cleanK.includes('leadname') ||
+                    cleanK.includes('applicant') ||
+                    cleanK.includes('borrower') ||
+                    cleanK.includes('party') ||
+                    cleanK.includes('contactperson') ||
+                    cleanK.includes('custname') ||
                     cleanK === 'name' ||
-                    cleanK === 'contactperson' ||
-                    cleanK === 'firstname') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                    cleanK === 'fullname' ||
+                    cleanK === 'firstname' ||
+                    cleanK === 'first' ||
+                    cleanK === 'lead') {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNNAMED', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
                         extractedName = String(v).trim();
                         break;
                     }
@@ -601,11 +605,12 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let rawDataCode = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'datacode' ||
+                if (cleanK.includes('datacode') ||
+                    cleanK.includes('leadcode') ||
+                    cleanK.includes('customercode') ||
+                    cleanK.includes('datano') ||
                     cleanK === 'code' ||
-                    cleanK === 'leadcode' ||
-                    cleanK === 'customercode' ||
-                    cleanK === 'datano') {
+                    cleanK === 'dcode') {
                     if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
                         rawDataCode = String(v).trim();
                         break;
@@ -631,20 +636,45 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let phoneVal = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanK.includes('psm') || cleanK.includes('datacode') || cleanK.includes('leadno') || cleanK.includes('slno')) {
+                    continue;
+                }
                 if (cleanK.includes('phone') ||
                     cleanK.includes('mobile') ||
                     cleanK.includes('contact') ||
                     cleanK.includes('cell') ||
-                    cleanK === 'mob' ||
-                    cleanK === 'tel') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== 'N/A') {
-                        phoneVal = String(v).trim();
-                        break;
+                    cleanK.includes('mob') ||
+                    cleanK.includes('tel') ||
+                    cleanK.includes('calling') ||
+                    cleanK.includes('dial') ||
+                    cleanK === 'number' ||
+                    cleanK === 'no') {
+                    if (v !== undefined && v !== null) {
+                        let strV = String(v).trim().replace(/\.0+$/, '');
+                        if (strV !== '' && !['N/A', 'UNDEFINED', 'NULL'].includes(strV.toUpperCase())) {
+                            phoneVal = strV;
+                            break;
+                        }
                     }
                 }
             }
             if (!phoneVal) {
-                phoneVal = String(lead.phone || lead.mobile || lead.contactNumber || lead.name_contact_num || lead.contact_num || lead.contact || lead.mobileNo || '').trim();
+                // Fallback: check if any value looks like a 10-12 digit phone number
+                for (const [k, v] of Object.entries(lead)) {
+                    const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanK.includes('sl') || cleanK.includes('id') || cleanK.includes('code') || cleanK.includes('amount') || cleanK.includes('budget'))
+                        continue;
+                    if (v !== undefined && v !== null) {
+                        const numStr = String(v).trim().replace(/[^0-9]/g, '');
+                        if (numStr.length === 10 || (numStr.length === 12 && numStr.startsWith('91'))) {
+                            phoneVal = String(v).trim().replace(/\.0+$/, '');
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!phoneVal) {
+                phoneVal = String(lead.phone || lead.mobile || lead.contactNumber || lead.name_contact_num || lead.contact_num || lead.contact || lead.mobileNo || '').trim().replace(/\.0+$/, '');
             }
             // Universal location / city / place extractor from Excel
             let locationVal = '';
@@ -658,7 +688,10 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
                     cleanK.includes('branch') ||
                     cleanK.includes('address') ||
                     cleanK.includes('state') ||
-                    cleanK.includes('town')) {
+                    cleanK.includes('town') ||
+                    cleanK.includes('zone') ||
+                    cleanK.includes('region') ||
+                    cleanK.includes('territory')) {
                     if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
                         locationVal = String(v).trim();
                         break;
@@ -672,13 +705,14 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let firmVal = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'company' ||
-                    cleanK === 'firm' ||
-                    cleanK === 'firmname' ||
-                    cleanK === 'companyname' ||
-                    cleanK === 'organization' ||
-                    cleanK === 'employer') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                if (cleanK.includes('company') ||
+                    cleanK.includes('firm') ||
+                    cleanK.includes('firmname') ||
+                    cleanK.includes('companyname') ||
+                    cleanK.includes('organization') ||
+                    cleanK.includes('employer') ||
+                    cleanK.includes('business')) {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
                         firmVal = String(v).trim();
                         break;
                     }
@@ -691,11 +725,12 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let rawLoanType = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'loantype' ||
-                    cleanK === 'product' ||
-                    cleanK === 'producttype' ||
-                    cleanK === 'facility') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                if (cleanK.includes('loantype') ||
+                    cleanK.includes('product') ||
+                    cleanK.includes('producttype') ||
+                    cleanK.includes('facility') ||
+                    cleanK.includes('scheme')) {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN', 'PERSONAL DETAILS'].includes(String(v).trim().toUpperCase())) {
                         rawLoanType = String(v).trim();
                         break;
                     }
@@ -708,11 +743,11 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
             let rawCategory = '';
             for (const [k, v] of Object.entries(lead)) {
                 const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (cleanK === 'leadcategory' ||
-                    cleanK === 'category' ||
-                    cleanK === 'leadtype' ||
-                    cleanK === 'cattype') {
-                    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A') {
+                if (cleanK.includes('leadcat') ||
+                    cleanK.includes('category') ||
+                    cleanK.includes('leadtype') ||
+                    cleanK.includes('cattype')) {
+                    if (v !== undefined && v !== null && String(v).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(v).trim().toUpperCase())) {
                         rawCategory = String(v).trim();
                         break;
                     }
@@ -1390,23 +1425,103 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             }
             const leads = rows.map((r) => {
                 const d = { ...(r.data || {}) };
-                const rawCust = String(d.customerName || d.firstName || '').trim();
-                if (rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
-                    let altName = '';
+                // 1. Ensure customerName / leadName is populated from any available column
+                let rawCust = String(d.customerName || d.firstName || '').trim();
+                if (!rawCust || ['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(rawCust.toUpperCase())) {
                     for (const [k, v] of Object.entries(d)) {
                         const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        if (cleanK === 'customername' || cleanK === 'customer' || cleanK === 'clientname' ||
-                            cleanK === 'client' || cleanK === 'leadname' || cleanK === 'partyname' ||
-                            cleanK === 'applicantname' || cleanK === 'borrowername' || cleanK === 'fullname' || cleanK === 'name') {
-                            if (v && String(v).trim() && String(v).trim().toUpperCase() !== 'UNNAMED' && String(v).trim().toUpperCase() !== 'N/A') {
-                                altName = String(v).trim();
+                        if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('bank') || cleanK.includes('psm') || cleanK.includes('campaign') || cleanK.includes('source') || cleanK.includes('assignedto') || cleanK.includes('agent'))
+                            continue;
+                        if (cleanK.includes('customer') || cleanK.includes('client') || cleanK.includes('leadname') ||
+                            cleanK.includes('applicant') || cleanK.includes('borrower') || cleanK.includes('party') ||
+                            cleanK.includes('contactperson') || cleanK.includes('custname') || cleanK === 'name' || cleanK === 'fullname' || cleanK === 'firstname' || cleanK === 'lead') {
+                            if (v && String(v).trim() && !['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
+                                d.customerName = String(v).trim();
+                                d.firstName = String(v).trim();
+                                d.fullName = String(v).trim();
                                 break;
                             }
                         }
                     }
-                    d.customerName = altName;
-                    d.firstName = altName;
-                    d.fullName = altName;
+                }
+                // 2. Ensure phone / mobile is populated from any available column
+                let rawPhone = String(d.phone || d.mobile || d.contactNumber || d.mobileNo || '').trim();
+                if (!rawPhone || ['N/A', 'UNDEFINED', 'NULL', 'XXXXXXXXXX'].includes(rawPhone.toUpperCase())) {
+                    for (const [k, v] of Object.entries(d)) {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes('psm') || cleanK.includes('datacode') || cleanK.includes('leadno') || cleanK.includes('slno'))
+                            continue;
+                        if (cleanK.includes('phone') || cleanK.includes('mobile') || cleanK.includes('contact') ||
+                            cleanK.includes('cell') || cleanK.includes('mob') || cleanK.includes('tel') ||
+                            cleanK.includes('calling') || cleanK.includes('dial') || cleanK === 'number' || cleanK === 'no') {
+                            if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
+                                const cleanP = String(v).trim().replace(/\.0+$/, '');
+                                d.phone = cleanP;
+                                d.mobile = cleanP;
+                                d.contactNumber = cleanP;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 3. Ensure city / location is populated from any available column
+                let rawLoc = String(d.city || d.location || d.place || '').trim();
+                if (!rawLoc || ['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(rawLoc.toUpperCase())) {
+                    for (const [k, v] of Object.entries(d)) {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes('location') || cleanK.includes('city') || cleanK.includes('place') ||
+                            cleanK.includes('area') || cleanK.includes('district') || cleanK.includes('branch') ||
+                            cleanK.includes('address') || cleanK.includes('state') || cleanK.includes('town') ||
+                            cleanK.includes('zone') || cleanK.includes('region')) {
+                            if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
+                                d.city = String(v).trim();
+                                d.location = String(v).trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 4. Ensure dataCode is populated from any available column
+                let rawCode = String(d.dataCode || d.data_code || d.code || '').trim();
+                if (!rawCode || ['N/A', 'UNDEFINED', 'NULL'].includes(rawCode.toUpperCase())) {
+                    for (const [k, v] of Object.entries(d)) {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK.includes('datano') || cleanK === 'code' || cleanK === 'dcode') {
+                            if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
+                                d.dataCode = String(v).trim();
+                                d.data_code = String(v).trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 5. Ensure company / firm is populated from any available column
+                let rawFirm = String(d.company || d.firm || d.firmName || d.firm_name || '').trim();
+                if (!rawFirm || ['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(rawFirm.toUpperCase())) {
+                    for (const [k, v] of Object.entries(d)) {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('employer') || cleanK.includes('organization') || cleanK.includes('business')) {
+                            if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
+                                d.company = String(v).trim();
+                                d.firmName = String(v).trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 6. Ensure leadCategory is populated from any available column
+                let rawCat = String(d.leadCategory || d.lead_category || d.category || '').trim();
+                if (!rawCat || ['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(rawCat.toUpperCase())) {
+                    for (const [k, v] of Object.entries(d)) {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes('leadcat') || cleanK.includes('category') || cleanK.includes('leadtype') || cleanK.includes('cattype')) {
+                            if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(v).trim().toUpperCase())) {
+                                d.leadCategory = String(v).trim();
+                                d.lead_category = String(v).trim();
+                                break;
+                            }
+                        }
+                    }
                 }
                 const isDialed = d.dialedAt || d.lastCallDate || (d.callAttempts && Number(d.callAttempts) > 0) ||
                     (d.status && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL'].includes(String(d.status).trim().toUpperCase()));
@@ -1493,34 +1608,82 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         const leads = rawLeads.map((l) => {
             const d = { ...(l.data || {}) };
             const rawCust = String(d.customerName || d.firstName || '').trim();
-            if (rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
+            if (!rawCust || rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
                 let altName = '';
                 for (const [k, v] of Object.entries(d)) {
                     const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    if (cleanK === 'customername' || cleanK === 'customer' || cleanK === 'clientname' ||
-                        cleanK === 'client' || cleanK === 'leadname' || cleanK === 'partyname' ||
-                        cleanK === 'applicantname' || cleanK === 'borrowername' || cleanK === 'fullname' || cleanK === 'name') {
-                        if (v && String(v).trim() && String(v).trim().toUpperCase() !== 'UNNAMED' && String(v).trim().toUpperCase() !== 'N/A') {
+                    if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('bank') || cleanK.includes('psm') || cleanK.includes('campaign') || cleanK.includes('source') || cleanK.includes('assignedto') || cleanK.includes('agent'))
+                        continue;
+                    if (cleanK.includes('customer') || cleanK.includes('client') || cleanK.includes('leadname') ||
+                        cleanK.includes('applicant') || cleanK.includes('borrower') || cleanK.includes('party') ||
+                        cleanK.includes('contactperson') || cleanK.includes('custname') || cleanK === 'name' || cleanK === 'fullname' || cleanK === 'firstname' || cleanK === 'lead') {
+                        if (v && String(v).trim() && !['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
                             altName = String(v).trim();
                             break;
                         }
                     }
                 }
-                d.customerName = altName;
-                d.firstName = altName;
-                d.fullName = altName;
+                if (altName) {
+                    d.customerName = altName;
+                    d.firstName = altName;
+                    d.fullName = altName;
+                }
             }
-            // Fallback universal phone extractor
+            // Universal phone extractor fallback
             if (!d.phone && !d.mobile) {
                 for (const [k, v] of Object.entries(d)) {
                     const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanK.includes('psm') || cleanK.includes('datacode') || cleanK.includes('leadno') || cleanK.includes('slno'))
+                        continue;
                     if (cleanK.includes('phone') || cleanK.includes('mobile') ||
                         cleanK.includes('contact') || cleanK.includes('cell') ||
-                        cleanK === 'mob' || cleanK === 'tel' || cleanK.includes('number')) {
-                        if (v && String(v).trim() && String(v).trim() !== 'N/A') {
-                            d.phone = String(v).trim();
-                            d.mobile = String(v).trim();
-                            d.mobileNo = String(v).trim();
+                        cleanK.includes('mob') || cleanK.includes('tel') || cleanK.includes('calling') || cleanK.includes('dial') || cleanK === 'number' || cleanK === 'no') {
+                        if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
+                            const cleanP = String(v).trim().replace(/\.0+$/, '');
+                            d.phone = cleanP;
+                            d.mobile = cleanP;
+                            d.mobileNo = cleanP;
+                            break;
+                        }
+                    }
+                }
+            }
+            // Universal city / location fallback
+            if (!d.city && !d.location) {
+                for (const [k, v] of Object.entries(d)) {
+                    const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanK.includes('location') || cleanK.includes('city') || cleanK.includes('place') ||
+                        cleanK.includes('area') || cleanK.includes('district') || cleanK.includes('branch') ||
+                        cleanK.includes('address') || cleanK.includes('state') || cleanK.includes('town')) {
+                        if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
+                            d.city = String(v).trim();
+                            d.location = String(v).trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            // Universal dataCode fallback
+            if (!d.dataCode && !d.data_code) {
+                for (const [k, v] of Object.entries(d)) {
+                    const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK.includes('datano') || cleanK === 'code' || cleanK === 'dcode') {
+                        if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).trim().toUpperCase())) {
+                            d.dataCode = String(v).trim();
+                            d.data_code = String(v).trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            // Universal company / firm fallback
+            if (!d.company && !d.firm) {
+                for (const [k, v] of Object.entries(d)) {
+                    const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('employer') || cleanK.includes('organization') || cleanK.includes('business')) {
+                        if (v && String(v).trim() && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).trim().toUpperCase())) {
+                            d.company = String(v).trim();
+                            d.firmName = String(v).trim();
                             break;
                         }
                     }
@@ -2173,9 +2336,10 @@ router.put('/:apiPath/:id', async (req, res) => {
                 updateData.partnerName = `${updateData.bank || oldValues.bank || ''} - ${updateData.loanType || oldValues.loanType || ''} - ${updateData.psm || oldValues.psm || ''}`.trim() || 'Banking Partner';
             }
         }
-        // Lead Source is permanently immutable: never overwrite original creator
+        // Lead Source is permanently immutable: never overwrite original creator (unless old source was just raw campaign drive name)
         if (apiPath.toLowerCase() === 'leads') {
-            if (oldValues.source) {
+            const isRawCampSource = oldValues.source && (oldValues.source === oldValues.campaignName || oldValues.source === oldValues.campaign);
+            if (oldValues.source && !isRawCampSource) {
                 updateData.source = oldValues.source;
             }
             if (oldValues.creatorName) {

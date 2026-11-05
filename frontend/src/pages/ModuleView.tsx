@@ -589,34 +589,58 @@ export default function ModuleView() {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    // Use sheet_to_json in object mode — SheetJS automatically skips truly empty rows
-    const rawRows: any[] = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
+    // Read as 2D array to accurately detect the true header row even if title rows exist
+    const raw2D: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false, defval: '' });
+    if (!raw2D || raw2D.length === 0) return [];
 
-    if (rawRows.length === 0) return [];
-
-    const results: any[] = [];
-    for (let i = 0; i < rawRows.length; i++) {
-      const row = rawRows[i];
-      
-      // Check if this row has at least one non-empty value in a meaningful column
-      const keys = Object.keys(row);
-      const hasContent = keys.some((key) => {
-        const k = key.toLowerCase().trim();
-        // Skip index/serial number columns
-        if (k === 'slno' || k === 'sl no' || k === 'sno' || k === 'id' || k === 's.no' || k === 'sr no' || k === 'srno') return false;
-        return String(row[key]).trim() !== '';
-      });
-      if (!hasContent) continue;
-
-      // Normalize keys: trim whitespace
-      const cleanRow: Record<string, string> = {};
-      keys.forEach((key) => {
-        cleanRow[key.trim()] = String(row[key]).trim();
-      });
-      results.push(cleanRow);
+    // Find the header row index: scan top rows for row with at least 2 non-empty column names
+    let headerRowIdx = 0;
+    for (let r = 0; r < Math.min(raw2D.length, 10); r++) {
+      const row = raw2D[r];
+      if (!Array.isArray(row)) continue;
+      const nonEmptyCols = row.filter((c: any) => c !== undefined && c !== null && String(c).trim() !== '');
+      if (nonEmptyCols.length >= 2) {
+        headerRowIdx = r;
+        break;
+      }
     }
 
-    console.log(`[parseExcelFile] Parsed ${results.length} valid rows from Excel file`);
+    const headers = (raw2D[headerRowIdx] || []).map((h: any) => String(h || '').trim());
+    const results: any[] = [];
+
+    for (let r = headerRowIdx + 1; r < raw2D.length; r++) {
+      const rowArr = raw2D[r];
+      if (!rowArr || rowArr.length === 0) continue;
+
+      const cleanRow: Record<string, string> = {};
+      let hasMeaningfulContent = false;
+
+      headers.forEach((header, colIdx) => {
+        if (!header) return;
+        let val = rowArr[colIdx];
+        if (val === undefined || val === null) {
+          val = '';
+        } else {
+          val = String(val).trim();
+          // Remove trailing .0 from phone numbers or integers formatted as float
+          if (/^\d+\.0+$/.test(val)) {
+            val = val.replace(/\.0+$/, '');
+          }
+        }
+        cleanRow[header] = val;
+
+        const cleanH = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!['slno', 'sl no', 'sno', 'id', 'srno', 'sr no'].includes(cleanH) && val !== '') {
+          hasMeaningfulContent = true;
+        }
+      });
+
+      if (hasMeaningfulContent) {
+        results.push(cleanRow);
+      }
+    }
+
+    console.log(`[parseExcelFile] Parsed ${results.length} valid rows from Excel file (Header detected at row ${headerRowIdx + 1})`);
     return results;
   };
 

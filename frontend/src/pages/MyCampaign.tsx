@@ -515,22 +515,39 @@ export default function MyCampaign() {
   const extractLeadPhone = (obj: any): string => {
     if (!obj || typeof obj !== 'object') return '';
     const direct = obj.phone || obj.mobile || obj.contactNumber || obj.mobileNo || obj.name_contact_num || obj.contact_num || obj.contactNum || obj.contact || obj.phoneNumber || obj.phone_number || obj.mobile_no || obj.contact_number;
-    if (direct && String(direct).trim() !== '' && String(direct).trim() !== 'N/A') {
-      return String(direct).trim();
+    if (direct && String(direct).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL'].includes(String(direct).trim().toUpperCase())) {
+      return String(direct).trim().replace(/\.0+$/, '');
     }
     for (const key of Object.keys(obj)) {
       const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanKey.includes('psm') || cleanKey.includes('datacode') || cleanKey.includes('leadno') || cleanKey.includes('slno')) continue;
       if (
         cleanKey.includes('phone') ||
         cleanKey.includes('mobile') ||
         cleanKey.includes('contact') ||
         cleanKey.includes('cell') ||
-        cleanKey === 'mob' ||
-        cleanKey === 'tel'
+        cleanKey.includes('mob') ||
+        cleanKey.includes('tel') ||
+        cleanKey.includes('calling') ||
+        cleanKey.includes('dial') ||
+        cleanKey === 'number' ||
+        cleanKey === 'no'
       ) {
         const val = obj[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== 'N/A') {
-          return String(val).trim();
+        if (val !== undefined && val !== null && String(val).trim() !== '' && !['N/A', 'UNDEFINED', 'NULL'].includes(String(val).trim().toUpperCase())) {
+          return String(val).trim().replace(/\.0+$/, '');
+        }
+      }
+    }
+    // Fallback: search for any key containing a genuine 10-12 digit phone number
+    for (const key of Object.keys(obj)) {
+      const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanKey.includes('sl') || cleanKey.includes('id') || cleanKey.includes('amount') || cleanKey.includes('budget') || cleanKey.includes('code')) continue;
+      const val = obj[key];
+      if (val !== undefined && val !== null) {
+        const numStr = String(val).trim().replace(/[^0-9]/g, '');
+        if (numStr.length === 10 || (numStr.length === 12 && numStr.startsWith('91'))) {
+          return String(val).trim().replace(/\.0+$/, '');
         }
       }
     }
@@ -1896,7 +1913,12 @@ export default function MyCampaign() {
                       if (!cleanLeadName && lead.data) {
                         for (const [k, v] of Object.entries(lead.data)) {
                           const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                          if (cleanK.includes('customer') || cleanK.includes('client') || cleanK.includes('leadname') || cleanK.includes('applicant') || cleanK.includes('borrower')) {
+                          if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('bank') || cleanK.includes('psm') || cleanK.includes('campaign') || cleanK.includes('source') || cleanK.includes('assignedto') || cleanK.includes('agent')) continue;
+                          if (
+                            cleanK.includes('customer') || cleanK.includes('client') || cleanK.includes('leadname') ||
+                            cleanK.includes('applicant') || cleanK.includes('borrower') || cleanK.includes('party') ||
+                            cleanK.includes('contactperson') || cleanK.includes('custname') || cleanK === 'name' || cleanK === 'fullname' || cleanK === 'firstname' || cleanK === 'lead'
+                          ) {
                             if (v && !['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(String(v).toUpperCase()) && String(v).trim()) {
                               cleanLeadName = String(v).trim();
                               break;
@@ -1914,7 +1936,12 @@ export default function MyCampaign() {
                       if (!cleanLocation && lead.data) {
                         for (const [k, v] of Object.entries(lead.data)) {
                           const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                          if (cleanK.includes('location') || cleanK.includes('city') || cleanK.includes('place') || cleanK.includes('district') || cleanK.includes('area') || cleanK.includes('address') || cleanK.includes('branch')) {
+                          if (
+                            cleanK.includes('location') || cleanK.includes('city') || cleanK.includes('place') ||
+                            cleanK.includes('district') || cleanK.includes('area') || cleanK.includes('address') ||
+                            cleanK.includes('branch') || cleanK.includes('state') || cleanK.includes('town') ||
+                            cleanK.includes('zone') || cleanK.includes('region')
+                          ) {
                             if (v && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).toUpperCase()) && String(v).trim()) {
                               cleanLocation = String(v).trim();
                               break;
@@ -1932,7 +1959,7 @@ export default function MyCampaign() {
                       if (!cleanDataCode && lead.data) {
                         for (const [k, v] of Object.entries(lead.data)) {
                           const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                          if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK === 'code' || cleanK === 'datano') {
+                          if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK.includes('datano') || cleanK === 'code' || cleanK === 'dcode') {
                             if (v && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).toUpperCase()) && String(v).trim()) {
                               cleanDataCode = String(v).trim();
                               break;
@@ -1968,7 +1995,7 @@ export default function MyCampaign() {
                       if (!cleanFirm && lead.data) {
                         for (const [k, v] of Object.entries(lead.data)) {
                           const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                          if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('employer')) {
+                          if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('employer') || cleanK.includes('organization') || cleanK.includes('business')) {
                             if (v && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).toUpperCase()) && String(v).trim()) {
                               cleanFirm = String(v).trim();
                               break;
