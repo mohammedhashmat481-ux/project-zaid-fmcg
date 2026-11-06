@@ -531,9 +531,12 @@ export default function RecordForm() {
     reset,
     watch,
     setValue,
+    clearErrors,
+    trigger,
     formState: { errors }
   } = useForm({
-    resolver: zodResolver(formSchema)
+    resolver: zodResolver(formSchema),
+    mode: 'onChange'
   });
 
   // Watch fields for conditional visibility evaluation
@@ -610,7 +613,9 @@ export default function RecordForm() {
     }
 
     if (resolvedPsms.length > 0) {
-      setValue('psm', resolvedPsms.join(', '));
+      const psmVal = resolvedPsms.join(', ').trim();
+      setValue('psm', psmVal, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      clearErrors('psm');
       setPsmAutoFilled(true);
       if (unmappedBanks.length > 0) {
         setPsmWarningMessage(`No PSM has been assigned for: ${unmappedBanks.join(', ')} for this Loan Type. Please configure it in Settings → Bank Partner.`);
@@ -618,11 +623,18 @@ export default function RecordForm() {
         setPsmWarningMessage('');
       }
     } else {
-      setValue('psm', '');
+      setValue('psm', '', { shouldValidate: true });
       setPsmAutoFilled(false);
       setPsmWarningMessage('No PSM has been assigned for any of the selected Banks and Loan Type. Please configure it in Settings → Bank Partner.');
     }
-  }, [watchedValues.loanType, watchedValues.businessPartner, bankPartnerMappings, loading]);
+  }, [watchedValues.loanType, watchedValues.businessPartner, bankPartnerMappings, loading, setValue, clearErrors]);
+
+  // Reactive error clearer whenever PSM is populated
+  useEffect(() => {
+    if (watchedValues.psm && String(watchedValues.psm).trim() !== '') {
+      clearErrors('psm');
+    }
+  }, [watchedValues.psm, clearErrors]);
 
   useEffect(() => {
     if (Object.keys(errors).length > 0) {
@@ -886,8 +898,8 @@ export default function RecordForm() {
           {psmWarningMessage && (
             <p className="text-[11px] text-amber-600 font-bold mt-1 leading-normal">{psmWarningMessage}</p>
           )}
-          {errors[field.name] && (
-            <p className="text-[11px] text-rose-550 font-bold mt-1">{(errors[field.name]?.message as string)}</p>
+          {errors[field.name] && !String(watchedValues[field.name] || '').trim() && (
+            <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors[field.name]?.message as string)}</p>
           )}
         </div>
       );
@@ -1999,13 +2011,20 @@ export default function RecordForm() {
                   <input
                     type="text"
                     placeholder="PSM"
-                    {...register('psm')}
+                    value={watchedValues.psm || ''}
+                    {...register('psm', {
+                      onChange: (e) => {
+                        if (e.target.value?.trim()) {
+                          clearErrors('psm');
+                        }
+                      }
+                    })}
                     className={inputClass}
                   />
                   {psmWarningMessage && (
                     <p className="text-[11px] text-amber-600 font-bold mt-1 leading-normal">{psmWarningMessage}</p>
                   )}
-                  {errors.psm && (
+                  {errors.psm && !String(watchedValues.psm || '').trim() && (
                     <p className="text-[11px] text-rose-500 font-bold mt-1">{(errors.psm?.message as string)}</p>
                   )}
                 </div>

@@ -127,7 +127,8 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   const [period, setPeriod] = useState<PeriodType>(initialPeriod);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('callsMade'); // Card 5 default active like Image 5!
   const [selectedCampaign, setSelectedCampaign] = useState<string>('ALL');
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
+  
+  const getTodayStr = () => {
     try {
       return new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Kolkata',
@@ -138,7 +139,11 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
     } catch (_) {
       return new Date().toISOString().slice(0, 10);
     }
-  });
+  };
+
+  const [fromDate, setFromDate] = useState<string>(getTodayStr);
+  const [toDate, setToDate] = useState<string>(getTodayStr);
+
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const m = new Date().getMonth() + 1;
     return m < 10 ? `0${m}` : `${m}`;
@@ -166,6 +171,40 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
     };
     fetchDropdownData();
   }, []);
+
+  // Filter users by selected role: "1st select role then select users"
+  const filteredUsers = useMemo(() => {
+    if (!selectedRole || selectedRole === 'ALL') {
+      return usersList;
+    }
+    return usersList.filter((u: any) => {
+      const rId = String(u.roleId?._id || u.roleId?.id || u.roleId || '');
+      const rName = String(u.roleId?.name || u.role?.name || u.role || '').toLowerCase();
+      const selRoleObj = rolesList.find((r: any) => String(r._id || r.id) === String(selectedRole));
+      const selRoleName = (selRoleObj?.name || '').toLowerCase();
+      
+      return rId === String(selectedRole) || (selRoleName && rName === selRoleName);
+    });
+  }, [usersList, selectedRole, rolesList]);
+
+  // When selectedRole changes, reset user if currently selected user does not belong to new role
+  const handleRoleChange = (newRole: string) => {
+    setSelectedRole(newRole);
+    if (newRole !== 'ALL' && selectedUser !== 'ALL') {
+      const stillValid = usersList.some((u: any) => {
+        const uId = String(u._id || u.id);
+        if (uId !== String(selectedUser)) return false;
+        const rId = String(u.roleId?._id || u.roleId?.id || u.roleId || '');
+        const rName = String(u.roleId?.name || u.role?.name || u.role || '').toLowerCase();
+        const selRoleObj = rolesList.find((r: any) => String(r._id || r.id) === String(newRole));
+        const selRoleName = (selRoleObj?.name || '').toLowerCase();
+        return rId === String(newRole) || (selRoleName && rName === selRoleName);
+      });
+      if (!stillValid) {
+        setSelectedUser('ALL');
+      }
+    }
+  };
 
   useEffect(() => {
     if (initialPeriod) {
@@ -197,7 +236,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
 
   // Fast React Query with client & server cache (60s staleTime)
   const { data: matrixResponse, isLoading: loading, refetch: refetchMatrixReport } = useQuery({
-    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, selectedDate, selectedMonth, selectedYear, selectedUser, selectedRole],
+    queryKey: ['campaign-matrix-report', period, selectedMetric, selectedCampaign, fromDate, toDate, selectedMonth, selectedYear, selectedUser, selectedRole],
     queryFn: async () => {
       const metricParam = activeCardConfig.metricParam;
       const res = await api.get('/reports/campaign-matrix', {
@@ -205,7 +244,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
           period,
           metric: metricParam,
           campaignName: selectedCampaign,
-          date: selectedDate,
+          date: fromDate,
+          fromDate,
+          toDate,
           month: selectedMonth,
           year: selectedYear,
           userId: selectedUser,
@@ -294,7 +335,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
               {period === 'daily'
-                ? `Hourly calling matrix, dial attempts, and outbound contact progress for ${selectedDate}.`
+                ? (fromDate === toDate 
+                    ? `Hourly calling matrix, dial attempts, and outbound contact progress for ${fromDate}.`
+                    : `Daily calling matrix, dial attempts, and outbound contact progress from ${fromDate} to ${toDate}.`)
                 : period === 'monthly'
                 ? `Day-by-day calling matrix, dial attempts, and outbound contact progress for ${months.find((m) => m.val === selectedMonth)?.label || selectedMonth} ${selectedYear}.`
                 : `Month-by-month calling matrix, dial attempts, and outbound contact progress for ${selectedYear}.`}
@@ -388,17 +431,49 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               <Icons.ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
             </div>
 
-            {/* Date Select (for daily report) */}
+            {/* From Date Pill */}
             {period === 'daily' && (
-              <div className="relative">
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl px-2.5 h-8 shadow-sm hover:border-purple-400 transition-colors">
+                <Icons.Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 pointer-events-none flex-shrink-0" />
+                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">From:</span>
                 <input
                   type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="h-8 pl-8 pr-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
-                  title="Filter single day report"
+                  value={fromDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                      setFromDate(val);
+                      if (val > toDate) setToDate(val);
+                    }
+                  }}
+                  onClick={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                  onFocus={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                  className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-transparent focus:outline-none cursor-pointer w-[118px]"
+                  title="From Date"
                 />
-                <Icons.Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              </div>
+            )}
+
+            {/* To Date Pill */}
+            {period === 'daily' && (
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl px-2.5 h-8 shadow-sm hover:border-purple-400 transition-colors">
+                <Icons.Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 pointer-events-none flex-shrink-0" />
+                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">To:</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                      setToDate(val);
+                      if (val < fromDate) setFromDate(val);
+                    }
+                  }}
+                  onClick={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                  onFocus={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                  className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-transparent focus:outline-none cursor-pointer w-[118px]"
+                  title="To Date"
+                />
               </div>
             )}
 
@@ -474,8 +549,10 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                   {period === 'daily'
-                    ? `Single-day metrics across all ${usersList.length || 0} users for selected date (${selectedDate})`
-                    : `Filter metrics across all ${usersList.length || 0} users by ${period === 'monthly' ? 'month and year' : 'year'}`}
+                    ? (fromDate === toDate 
+                        ? `Single-day metrics across all ${filteredUsers.length || 0} users for selected date (${fromDate})`
+                        : `Date range metrics across all ${filteredUsers.length || 0} users from ${fromDate} to ${toDate}`)
+                    : `Filter metrics across all ${filteredUsers.length || 0} users by ${period === 'monthly' ? 'month and year' : 'year'}`}
                 </p>
               </div>
             </div>
@@ -491,26 +568,58 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </button>
           </div>
 
-          <div className={`grid gap-4 pt-4 ${period === 'monthly' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
+          <div className={`grid gap-4 pt-4 ${period === 'monthly' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : (period === 'daily' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4')}`}>
             {period === 'daily' ? (
               <>
-                {/* 1. Select Date */}
+                {/* 1. From Date */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
                     <Icons.Calendar className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                    Select Date (Single Day)
+                    From Date
                   </label>
                   <div className="relative">
                     <input
                       type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
+                      value={fromDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                          setFromDate(val);
+                          if (val > toDate) setToDate(val);
+                        }
+                      }}
+                      onClick={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                      onFocus={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
                       className="w-full h-10 px-3.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs cursor-pointer"
                     />
                   </div>
                 </div>
 
-                {/* 2. Select Campaign */}
+                {/* 2. To Date */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <Icons.Calendar className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    To Date
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                          setToDate(val);
+                          if (val < fromDate) setFromDate(val);
+                        }
+                      }}
+                      onClick={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                      onFocus={(e) => { try { e.currentTarget.showPicker(); } catch (_) {} }}
+                      className="w-full h-10 px-3.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Select Campaign */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Select Campaign
@@ -525,6 +634,53 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                       {campaignsList.map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 4. Select Role (3rd place role select filter) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Role
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Roles-</option>
+                      {rolesList.map((r: any) => (
+                        <option key={r._id || r.id} value={r._id || r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 5. Select User (4th place user select filter, filtered by role) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select User
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedUser}
+                      onChange={(e) => setSelectedUser(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Users-</option>
+                      {filteredUsers.map((u: any) => {
+                        const name = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+                        return (
+                          <option key={u._id || u.id} value={u._id || u.id}>
+                            {name}
+                          </option>
+                        );
+                      })}
                     </select>
                     <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                   </div>
@@ -576,7 +732,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                   </div>
                 </div>
 
-                {/* 3. Select Campaign (Monthly) */}
+                {/* 3. Select Campaign */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Select Campaign
@@ -591,6 +747,53 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                       {campaignsList.map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 4. Select Role (3rd place role select filter) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Role
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Roles-</option>
+                      {rolesList.map((r: any) => (
+                        <option key={r._id || r.id} value={r._id || r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 5. Select User (4th place user select filter, filtered by role) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select User
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedUser}
+                      onChange={(e) => setSelectedUser(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Users-</option>
+                      {filteredUsers.map((u: any) => {
+                        const name = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+                        return (
+                          <option key={u._id || u.id} value={u._id || u.id}>
+                            {name}
+                          </option>
+                        );
+                      })}
                     </select>
                     <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                   </div>
@@ -639,55 +842,55 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                     <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                   </div>
                 </div>
+
+                {/* 3. Select Role (3rd place role select filter) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select Role
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Roles-</option>
+                      {rolesList.map((r: any) => (
+                        <option key={r._id || r.id} value={r._id || r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 4. Select User (4th place user select filter, filtered by role) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Select User
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedUser}
+                      onChange={(e) => setSelectedUser(e.target.value)}
+                      className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
+                    >
+                      <option value="ALL">-All Users-</option>
+                      {filteredUsers.map((u: any) => {
+                        const name = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
+                        return (
+                          <option key={u._id || u.id} value={u._id || u.id}>
+                            {name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+                  </div>
+                </div>
               </>
             )}
-
-            {/* Select User */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Select User
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedUser}
-                  onChange={(e) => setSelectedUser(e.target.value)}
-                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
-                >
-                  <option value="ALL">-All Users-</option>
-                  {usersList.map((u: any) => {
-                    const name = u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : (u.name || u.username || u.email);
-                    return (
-                      <option key={u._id || u.id} value={u._id || u.id}>
-                        {name}
-                      </option>
-                    );
-                  })}
-                </select>
-                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* Select Role */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Select Role
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full h-10 pl-3.5 pr-8 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-3xs appearance-none cursor-pointer"
-                >
-                  <option value="ALL">-All Roles-</option>
-                  {rolesList.map((r: any) => (
-                    <option key={r._id || r.id} value={r._id || r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-                <Icons.ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-              </div>
-            </div>
           </div>
         </section>
 
@@ -777,7 +980,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
                 {activeCardConfig.label} — {period.toUpperCase()} CALLING MATRIX{' '}
                 {period === 'daily'
-                  ? `(${selectedDate})`
+                  ? (fromDate === toDate ? `(${fromDate})` : `(${fromDate} to ${toDate})`)
                   : period === 'monthly'
                   ? `(${months.find((m) => m.val === selectedMonth)?.label || selectedMonth} ${selectedYear})`
                   : `(${selectedYear})`}
@@ -788,7 +991,7 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </div>
 
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              Showing {period === 'daily' ? 'hourly ' : ''}breakdown across{' '}
+              Showing {period === 'daily' ? (fromDate === toDate ? 'hourly ' : 'daily ') : ''}breakdown across{' '}
               <strong className="text-slate-800 dark:text-slate-200 font-bold">
                 {matrixData.columns.length} intervals
               </strong>

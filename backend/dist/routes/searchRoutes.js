@@ -31,6 +31,10 @@ router.get('/', async (req, res) => {
             const matchConditions = [
                 { 'data.firstName': regex },
                 { 'data.lastName': regex },
+                { 'data.fullName': regex },
+                { 'data.customerName': regex },
+                { 'data.leadName': regex },
+                { 'data.name': regex },
                 { 'data.phone': regex },
                 { 'data.mobile': regex },
                 { 'data.contactNumber': regex },
@@ -41,13 +45,19 @@ router.get('/', async (req, res) => {
                 { 'data.allocatedNo': regex },
                 { 'data.allocatedNumber': regex },
                 { 'data.leadNo': regex },
+                { 'data.leadNumber': regex },
+                { 'data.lead_no': regex },
+                { 'data.leadId': regex },
                 { 'data.company': regex },
                 { 'data.firmName': regex },
                 { 'data.firm': regex },
                 { 'data.email': regex },
                 { 'data.city': regex },
                 { 'data.location': regex },
-                { 'data.status': regex }
+                { 'data.status': regex },
+                { 'data.loanType': regex },
+                { 'data.product': regex },
+                { 'data.caseDetails': regex }
             ];
             // If cleanQ is valid ID, match exact _id
             if (PgModel_1.PgObjectId.isValid(cleanQ)) {

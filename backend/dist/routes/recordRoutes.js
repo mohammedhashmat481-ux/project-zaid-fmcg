@@ -1945,18 +1945,22 @@ router.get('/:apiPath', async (req, res) => {
             const trimmedSearch = search.trim();
             const escSearch = trimmedSearch.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
             const searchRegex = { $regex: escSearch, $options: 'i' };
-            // 1. Find matching users for createdBy / updatedBy search
-            const matchedUsers = await User_1.default.find({
-                organizationId: req.organizationId,
-                $or: [
-                    { firstName: searchRegex },
-                    { lastName: searchRegex },
-                    { name: searchRegex },
-                    { email: searchRegex },
-                    { userCode: searchRegex }
-                ]
-            }).select('_id');
-            const matchedUserIds = matchedUsers.map((u) => u._id);
+            // 1. Find matching users for createdBy / updatedBy search safely
+            let matchedUserIds = [];
+            try {
+                const matchedUsers = await User_1.default.find({
+                    organizationId: req.organizationId,
+                    $or: [
+                        { firstName: searchRegex },
+                        { lastName: searchRegex },
+                        { email: searchRegex }
+                    ]
+                }).select('_id');
+                matchedUserIds = (matchedUsers || []).map((u) => u._id);
+            }
+            catch (err) {
+                console.warn('User matching skipped in record search:', err);
+            }
             const searchConditions = [
                 // Match module dynamic fields
                 ...moduleDef.fields
@@ -1966,6 +1970,7 @@ router.get('/:apiPath', async (req, res) => {
                 { 'data.name': searchRegex },
                 { 'data.firstName': searchRegex },
                 { 'data.lastName': searchRegex },
+                { 'data.fullName': searchRegex },
                 { 'data.customerName': searchRegex },
                 { 'data.leadName': searchRegex },
                 { 'data.applicantName': searchRegex },
@@ -1975,9 +1980,14 @@ router.get('/:apiPath', async (req, res) => {
                 { 'data.lead_no': searchRegex },
                 { 'data.leadId': searchRegex },
                 { 'data.leadCode': searchRegex },
+                { 'data.dataCode': searchRegex },
+                { 'data.data_code': searchRegex },
                 { 'data.firmName': searchRegex },
                 { 'data.company': searchRegex },
                 { 'data.companyName': searchRegex },
+                { 'data.location': searchRegex },
+                { 'data.city': searchRegex },
+                { 'data.leadCategory': searchRegex },
                 { 'data.phone': searchRegex },
                 { 'data.phoneNumber': searchRegex },
                 { 'data.mobile': searchRegex },
@@ -1986,6 +1996,12 @@ router.get('/:apiPath', async (req, res) => {
                 { 'data.source': searchRegex },
                 { 'data.campaign': searchRegex },
                 { 'data.campaignName': searchRegex },
+                { 'data.status': searchRegex },
+                { 'data.remarks': searchRegex },
+                { 'data.notes': searchRegex },
+                { 'data.caseDetails': searchRegex },
+                { 'data.psm': searchRegex },
+                { 'data.psmName': searchRegex },
                 { 'data.assignedTo': searchRegex }
             ];
             // Match createdBy / updatedBy users

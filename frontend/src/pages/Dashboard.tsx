@@ -912,217 +912,248 @@ export default function Dashboard() {
                 : (rec.data?.remarks || 'N/A');
 
               const rawPhone = extractLeadPhone(rec.data) || '';
-              const isRevealed = !!revealedPhones[rec._id];
               const displayedPhone = rawPhone && rawPhone !== 'N/A'
-                ? (isRevealed ? rawPhone : maskPhoneNumber(rawPhone, false))
+                ? maskPhoneNumber(rawPhone, false)
                 : 'N/A';
+
+              // Data Code
+              const rawDataCode = rec.data?.dataCode || rec.data?.data_code || rec.data?.code || rec.data?.datacode || '';
+              let cleanDataCode = (rawDataCode && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawDataCode).toUpperCase())) ? String(rawDataCode).trim() : '';
+              if (!cleanDataCode && rec.data) {
+                for (const [k, v] of Object.entries(rec.data)) {
+                  const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                  if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK.includes('datano') || cleanK === 'code' || cleanK === 'dcode') {
+                    if (v && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                      cleanDataCode = String(v).trim();
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Lead Category
+              const rawCategory = rec.data?.leadCategory || rec.data?.lead_category || rec.data?.category || '';
+              let cleanCategory = (rawCategory && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(rawCategory).toUpperCase())) ? String(rawCategory).trim() : '';
+              if (!cleanCategory && rec.data) {
+                for (const [k, v] of Object.entries(rec.data)) {
+                  const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                  if (cleanK.includes('category') || cleanK.includes('leadcat') || cleanK.includes('cattype') || cleanK.includes('leadtype')) {
+                    if (v && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                      cleanCategory = String(v).trim();
+                      break;
+                    }
+                  }
+                }
+              }
+
+              const pendingAtVal = rec.data?.assignToTeam || rec.data?.pendingAt || (rec.data?.assignedTo ? 'SALES MANAGER' : '—');
+              const currentStatus = rec.data?.status || 'NEW';
 
               return (
                 <div 
                   key={rec._id} 
-                  className="relative rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-900/60 hover:border-indigo-400/90 dark:hover:border-indigo-500/80 shadow-[0_3px_12px_-2px_rgba(30,41,59,0.07),0_1px_3px_-1px_rgba(30,41,59,0.04)] hover:shadow-[0_8px_24px_-4px_rgba(79,70,229,0.12)] transition-all duration-200 p-3.5 sm:p-4 text-xs overflow-hidden mb-2.5 last:mb-0 text-left"
+                  className="relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 p-3 sm:px-4 sm:py-2.5 text-xs overflow-hidden mb-2 last:mb-0 text-left transition-all duration-150"
                 >
-                  {/* Classic Premium Top Accent Ribbon matching Image 2 */}
-                  <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-blue-700 via-indigo-600 to-sky-500" />
+                  {/* Top Red Accent Ribbon matching Target UI (Image 3) */}
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-red-500 via-rose-500 to-red-600 rounded-t-2xl" />
                   
-                  <div className="space-y-2.5">
-                    {/* 4-Column CSS Grid perfectly compact matching Image 2 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1.5 sm:gap-y-2 text-xs">
+                  <div>
+                    {/* 4-Column CSS Grid perfectly compact matching Target UI (Image 3) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3.5 gap-y-1 text-xs">
                       {/* ===== ROW 1 ===== */}
                       {/* Col 1: Sl No. */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Sl No.:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium">{idx + 1}</span>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Sl No.:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-white font-extrabold">{idx + 1}</span>
                       </div>
 
                       {/* Col 2: Lead Name */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
-                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <Link 
-                            to={`/modules/leads/${rec._id}`}
-                            className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[170px] hover:underline" 
-                            title={leadName}
-                          >
-                            {leadName}
-                          </Link>
-                          <Link
-                            to={`/modules/leads/${rec._id}`}
-                            title="Open lead profile"
-                            className="p-0.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex-shrink-0"
-                          >
-                            <Icons.ExternalLink className="w-3.5 h-3.5" />
-                          </Link>
-                        </div>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead Name:&nbsp;</span>
+                        <span 
+                          className="font-black text-sky-600 dark:text-sky-400 uppercase tracking-tight text-[12.5px] truncate max-w-[170px]" 
+                          title={leadName}
+                        >
+                          {leadName}
+                        </span>
                       </div>
 
                       {/* Col 3: Created On */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created On:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Created On:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDate(rec.createdAt)}</span>
                       </div>
 
                       {/* Col 4: Firm/Company */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
-                        <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || '—'}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Firm/Company:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[180px] text-[12px]" title={rec.data?.company || rec.data?.firm || '—'}>
                           {rec.data?.company || rec.data?.firm || '—'}
                         </span>
                       </div>
 
                       {/* ===== ROW 2 ===== */}
                       {/* Col 1: Lead No. */}
-                      <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead No.:&nbsp;</span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                      <div className="leading-tight min-h-[20px] flex items-center gap-1.5">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead No.:&nbsp;</span>
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-[10.5px] font-black border border-slate-300 dark:border-slate-650 shadow-3xs">
                           {leadNo}
                         </span>
                       </div>
 
                       {/* Col 2: Location */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[170px]" title={leadLocation}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Location:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-slate-100 font-extrabold uppercase truncate inline-block max-w-[165px]" title={leadLocation}>
                           {leadLocation || '—'}
                         </span>
                       </div>
 
-                      {/* Col 3: Created By */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created By:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[170px]" title={createdByName}>
+                      {/* Col 3: By */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">By:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[170px]" title={createdByName}>
                           {createdByName}
                         </span>
                       </div>
 
                       {/* Col 4: Modified On */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Modified On:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Modified On:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDate(rec.updatedAt)}</span>
                       </div>
 
                       {/* ===== ROW 3 ===== */}
-                      {/* Col 1: Product */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
-                        <span className="text-slate-800 dark:text-slate-200 font-medium uppercase truncate inline-block max-w-[170px]" title={rec.data?.loanType || rec.data?.product || '—'}>
-                          {rec.data?.loanType || rec.data?.product || '—'}
-                        </span>
+                      {/* Col 1: Data Code */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Data Code:&nbsp;</span>
+                        {cleanDataCode ? (
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-100/90 dark:bg-indigo-950 text-indigo-900 dark:text-indigo-200 font-mono text-[10.5px] font-black border border-indigo-300 dark:border-indigo-700 shadow-3xs">
+                            {cleanDataCode}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500 font-bold">—</span>
+                        )}
                       </div>
 
                       {/* Col 2: Mobile No. */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
-                            {displayedPhone}
-                          </span>
-                          {rawPhone && rawPhone !== 'N/A' && (
-                            <button
-                              type="button"
-                              onClick={() => togglePhoneReveal(rec._id)}
-                              title={isRevealed ? "Hide number" : "Show number"}
-                              className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                            >
-                              {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Mobile No.:&nbsp;</span>
+                        <span className="font-mono font-black text-slate-900 dark:text-white tracking-wide text-[11.5px]">
+                          {displayedPhone}
+                        </span>
                       </div>
 
                       {/* Col 3: Followup Date */}
-                      <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
-                        <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Followup Date:&nbsp;</span>
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-blue-100/90 dark:bg-blue-950 text-blue-900 dark:text-blue-200 font-mono text-[10.5px] font-bold border border-blue-300 dark:border-blue-700 shadow-3xs">
                           {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : '—'}
                         </span>
                       </div>
 
                       {/* Col 4: Assigned By */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned By:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={assignedByName}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Assigned By:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[170px]" title={assignedByName}>
                           {assignedByName}
                         </span>
                       </div>
 
                       {/* ===== ROW 4 ===== */}
-                      {/* Col 1: Status */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
-                        <span className="text-slate-800 dark:text-slate-100 font-bold uppercase truncate inline-block max-w-[170px]">
-                          {rec.data?.status || 'YET TO CALL'}
+                      {/* Col 1: Lead Category */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead Category:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-slate-100 font-extrabold uppercase truncate inline-block max-w-[155px]" title={cleanCategory || '—'}>
+                          {cleanCategory || '—'}
                         </span>
                       </div>
 
                       {/* Col 2: Amount */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
-                        <span className={formattedAmount !== 'N/A' && formattedAmount !== '—' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Amount:&nbsp;</span>
+                        <span className={formattedAmount !== 'N/A' && formattedAmount !== '—' ? "text-emerald-600 dark:text-emerald-400 font-black font-mono tracking-tight text-[12px]" : "text-slate-700 dark:text-slate-300"}>
                           {formattedAmount}
                         </span>
                       </div>
 
                       {/* Col 3: Pending at */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Pending at:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
-                          {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Pending at:&nbsp;</span>
+                        <span className="font-black uppercase truncate inline-block max-w-[170px] text-slate-800 dark:text-slate-200" title={pendingAtVal}>
+                          {pendingAtVal}
                         </span>
                       </div>
 
                       {/* Col 4: Assigned To */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned To:&nbsp;</span>
-                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[170px]" title={assignedToName}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Assigned To:&nbsp;</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-black truncate inline-block max-w-[170px]" title={assignedToName}>
                           {assignedToName}
                         </span>
                       </div>
 
                       {/* ===== ROW 5 ===== */}
-                      {/* Col 1: Bank Partner */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
-                        <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || '—'}>
+                      {/* Col 1: Product */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Product:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={rec.data?.loanType || rec.data?.product || '—'}>
+                          {rec.data?.loanType || rec.data?.product || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 2: Bank Partner */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Bank Partner:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={rec.data?.businessPartner || rec.data?.bankPartner || '—'}>
                           {rec.data?.businessPartner || rec.data?.bankPartner || '—'}
                         </span>
                       </div>
 
-                      {/* Col 2: Case Details */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={rec.data?.caseDetails || '—'}>
-                          {rec.data?.caseDetails || '—'}
-                        </span>
-                      </div>
-
                       {/* Col 3: PSM */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
-                        <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={psmName}>
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">PSM:&nbsp;</span>
+                        <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={psmName}>
                           {psmName || '—'}
                         </span>
                       </div>
 
-                      {/* Col 4: Remarks */}
-                      <div className="leading-snug min-h-[26px] flex items-center">
-                        <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
-                        <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[170px]" title={remarksText}>
+                      {/* Col 4: Case Details */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Case Details:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[150px]" title={rec.data?.caseDetails || '—'}>
+                          {rec.data?.caseDetails || '—'}
+                        </span>
+                      </div>
+
+                      {/* ===== ROW 6 ===== */}
+                      {/* Col 1: Source */}
+                      <div className="leading-tight min-h-[20px] flex items-center">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Source:&nbsp;</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-extrabold truncate inline-block max-w-[165px]" title={sourceVal}>
+                          {sourceVal || '—'}
+                        </span>
+                      </div>
+
+                      {/* Col 2, 3, 4: Remarks */}
+                      <div className="leading-tight min-h-[20px] flex items-center sm:col-span-3">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Remarks:&nbsp;</span>
+                        <span className="italic text-slate-700 dark:text-slate-300 font-semibold truncate inline-block max-w-[500px]" title={remarksText}>
                           {remarksText || '—'}
                         </span>
                       </div>
                     </div>
 
-                    {/* Card Footer: Action Toolbar matching Image 2 */}
-                    <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 shadow-3xs">
-                          <Icons.RotateCcw className="w-3.5 h-3.5" />
+                    {/* Card Footer: Action Toolbar matching Target UI (Image 3) */}
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10.5px] font-black uppercase tracking-wider ${statusBadgeStyle} shadow-3xs`}>
+                          <StatusBadgeIcon className="w-3.5 h-3.5" />
                           <span>{rec.data?.status || 'NEW'}</span>
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {/* WA Chat (Green) */}
                         <button 
                           type="button"
@@ -1138,7 +1169,7 @@ export default function Dashboard() {
                               showToast('No phone number available for this lead.', 'warning');
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                          className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-[11px] font-bold px-3 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(16,185,129,0.25)] hover:shadow-sm active:scale-97 cursor-pointer"
                         >
                           <Icons.MessageSquare className="w-3.5 h-3.5" />
                           <span>WA Chat</span>
@@ -1158,28 +1189,16 @@ export default function Dashboard() {
                               showToast('No phone number available for this lead.', 'warning');
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                          className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-[11px] font-bold px-3 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(79,70,229,0.25)] hover:shadow-sm active:scale-97 cursor-pointer"
                         >
                           <Icons.PhoneCall className="w-3.5 h-3.5" />
                           <span>Call</span>
                         </button>
                         
-                        {/* Save (Blue) */}
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            showToast('Lead details saved.', 'success');
-                          }}
-                          className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
-                        >
-                          <Icons.Save className="w-3.5 h-3.5" />
-                          <span>Save</span>
-                        </button>
-                        
                         {/* Edit (Outline button) */}
                         <Link 
                           to={`/modules/leads/${rec._id}`} 
-                          className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs"
+                          className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300/90 dark:border-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-sm active:scale-97"
                         >
                           <Icons.Edit3 className="w-3.5 h-3.5" />
                           <span>Edit</span>

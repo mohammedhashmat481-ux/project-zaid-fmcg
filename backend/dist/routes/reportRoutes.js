@@ -25,15 +25,25 @@ router.get('/campaign-matrix', async (req, res) => {
         const defaultMonth = String(istNow.getUTCMonth() + 1).padStart(2, '0');
         const defaultYear = String(istNow.getUTCFullYear());
         const istNowStr = `${defaultYear}-${defaultMonth}-${String(istNow.getUTCDate()).padStart(2, '0')}`;
-        const { campaignName = 'ALL', month = defaultMonth, year = defaultYear, date, period = 'daily', metric = 'callsMade', userId = 'ALL', roleId = 'ALL' } = req.query;
-        const selectedDateStr = (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
-            ? date
-            : istNowStr;
-        const [dYear, dMonth, dDay] = selectedDateStr.split('-').map(Number);
+        const { campaignName = 'ALL', month = defaultMonth, year = defaultYear, date, fromDate, toDate, startDate, endDate, period = 'daily', metric = 'callsMade', userId = 'ALL', roleId = 'ALL' } = req.query;
+        const rawFromDate = fromDate || startDate || date;
+        const rawToDate = toDate || endDate || date;
+        const fromDateStr = (typeof rawFromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawFromDate))
+            ? rawFromDate
+            : (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : istNowStr);
+        const toDateStr = (typeof rawToDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawToDate))
+            ? rawToDate
+            : fromDateStr;
+        const [startRangeStr, endRangeStr] = fromDateStr <= toDateStr
+            ? [fromDateStr, toDateStr]
+            : [toDateStr, fromDateStr];
+        const isSingleDay = startRangeStr === endRangeStr;
+        const [dYear, dMonth, dDay] = startRangeStr.split('-').map(Number);
         const dailyTargetDay = dDay; // 1 to 31
         const dailyTargetMonthIndex = dMonth - 1; // 0 to 11
         const dailyTargetYear = dYear;
-        const cacheKey = cache_1.CacheKeys.campaignMatrix(orgId, `${period}:${metric}:${campaignName}:${month}:${year}:${selectedDateStr}:${userId}:${roleId}`);
+        const selectedDateStr = isSingleDay ? startRangeStr : `${startRangeStr} to ${endRangeStr}`;
+        const cacheKey = cache_1.CacheKeys.campaignMatrix(orgId, `${period}:${metric}:${campaignName}:${month}:${year}:${startRangeStr}:${endRangeStr}:${userId}:${roleId}`);
         const cached = cache_1.serverCache.get(cacheKey);
         if (cached) {
             res.setHeader('X-Cache', 'HIT');
@@ -331,11 +341,15 @@ router.get('/campaign-matrix', async (req, res) => {
             const currentMs = Date.now();
             const validTimeMs = timeMs > currentMs ? currentMs : timeMs;
             const istDate = new Date(validTimeMs + IST_OFFSET_MS);
+            const y = istDate.getUTCFullYear();
+            const m = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+            const dayNumStr = String(istDate.getUTCDate()).padStart(2, '0');
             return {
-                year: istDate.getUTCFullYear(),
+                year: y,
                 month: istDate.getUTCMonth(), // 0 to 11
                 day: istDate.getUTCDate(), // 1 to 31
-                hour: istDate.getUTCHours() // 0 to 23
+                hour: istDate.getUTCHours(), // 0 to 23
+                dateStr: `${y}-${m}-${dayNumStr}`
             };
         };
         // Helper to check if lead matches a metric
@@ -374,9 +388,24 @@ router.get('/campaign-matrix', async (req, res) => {
             '07:00 PM',
             '08:00 PM'
         ];
+        // Build day range list if multiple days
+        const rangeDays = [];
+        if (!isSingleDay) {
+            const cur = new Date(startRangeStr + 'T00:00:00Z');
+            const end = new Date(endRangeStr + 'T00:00:00Z');
+            while (cur <= end && rangeDays.length < 90) {
+                const y = cur.getUTCFullYear();
+                const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+                const d = String(cur.getUTCDate()).padStart(2, '0');
+                const dStr = `${y}-${m}-${d}`;
+                const label = cur.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short' });
+                rangeDays.push({ dateStr: dStr, label });
+                cur.setUTCDate(cur.getUTCDate() + 1);
+            }
+        }
         let columns = [];
         if (period === 'daily') {
-            columns = HOURLY_COLUMNS;
+            columns = isSingleDay ? HOURLY_COLUMNS : rangeDays.map(d => d.label);
         }
         else if (period === 'monthly') {
             const daysInMonth = (isAllMonths || isAllYears) ? 31 : new Date(targetYear, targetMonthIndex + 1, 0).getDate();
@@ -412,40 +441,53 @@ router.get('/campaign-matrix', async (req, res) => {
             const relevantLeads = userLeads.filter(l => isLeadMetricMatch(l, String(metric)));
             // Bucket relevant leads by interval
             const leadsByHour = {};
+            const leadsByRangeDay = {};
             const leadsByDay = {};
             const leadsByMonth = {};
             HOURLY_COLUMNS.forEach(col => { leadsByHour[col] = []; });
+            rangeDays.forEach(d => { leadsByRangeDay[d.label] = []; });
             relevantLeads.forEach(l => {
                 const parts = getEventDateParts(l, String(metric));
                 if (parts) {
-                    // Strictly single date for daily
-                    if (parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay) {
-                        let colName = '09:00 AM';
-                        if (parts.hour <= 9)
-                            colName = '09:00 AM';
-                        else if (parts.hour === 10)
-                            colName = '10:00 AM';
-                        else if (parts.hour === 11)
-                            colName = '11:00 AM';
-                        else if (parts.hour === 12)
-                            colName = '12:00 PM';
-                        else if (parts.hour === 13)
-                            colName = '01:00 PM';
-                        else if (parts.hour === 14)
-                            colName = '02:00 PM';
-                        else if (parts.hour === 15)
-                            colName = '03:00 PM';
-                        else if (parts.hour === 16)
-                            colName = '04:00 PM';
-                        else if (parts.hour === 17)
-                            colName = '05:00 PM';
-                        else if (parts.hour === 18)
-                            colName = '06:00 PM';
-                        else if (parts.hour === 19)
-                            colName = '07:00 PM';
-                        else
-                            colName = '08:00 PM';
-                        leadsByHour[colName].push(l);
+                    if (isSingleDay) {
+                        // Strictly single date for daily
+                        if (parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay) {
+                            let colName = '09:00 AM';
+                            if (parts.hour <= 9)
+                                colName = '09:00 AM';
+                            else if (parts.hour === 10)
+                                colName = '10:00 AM';
+                            else if (parts.hour === 11)
+                                colName = '11:00 AM';
+                            else if (parts.hour === 12)
+                                colName = '12:00 PM';
+                            else if (parts.hour === 13)
+                                colName = '01:00 PM';
+                            else if (parts.hour === 14)
+                                colName = '02:00 PM';
+                            else if (parts.hour === 15)
+                                colName = '03:00 PM';
+                            else if (parts.hour === 16)
+                                colName = '04:00 PM';
+                            else if (parts.hour === 17)
+                                colName = '05:00 PM';
+                            else if (parts.hour === 18)
+                                colName = '06:00 PM';
+                            else if (parts.hour === 19)
+                                colName = '07:00 PM';
+                            else
+                                colName = '08:00 PM';
+                            leadsByHour[colName].push(l);
+                        }
+                    }
+                    else {
+                        // Multi-day date range
+                        if (parts.dateStr >= startRangeStr && parts.dateStr <= endRangeStr) {
+                            const matchedDay = rangeDays.find(rd => rd.dateStr === parts.dateStr);
+                            if (matchedDay && leadsByRangeDay[matchedDay.label]) {
+                                leadsByRangeDay[matchedDay.label].push(l);
+                            }
+                        }
                     }
                     const monthMatch = isAllMonths || parts.month === targetMonthIndex;
                     const yearMatch = isAllYears || parts.year === targetYear;
@@ -466,21 +508,41 @@ router.get('/campaign-matrix', async (req, res) => {
             columns.forEach((col, cIdx) => {
                 let val = 0;
                 if (period === 'daily') {
-                    const hourLeads = leadsByHour[col] || [];
-                    if (metric === 'callsMade' || metric === 'leadsCalled') {
-                        val = hourLeads.length;
-                    }
-                    else if (metric === 'targetAchievement' || metric === 'progressPct') {
-                        val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
-                    }
-                    else if (metric === 'yetToCall') {
-                        val = hourLeads.filter(l => !isLeadDialed(l)).length;
-                    }
-                    else if (metric === 'campaignsAssigned') {
-                        val = userAssigns.length > 0 ? 1 : 0;
+                    if (isSingleDay) {
+                        const hourLeads = leadsByHour[col] || [];
+                        if (metric === 'callsMade' || metric === 'leadsCalled') {
+                            val = hourLeads.length;
+                        }
+                        else if (metric === 'targetAchievement' || metric === 'progressPct') {
+                            val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+                        }
+                        else if (metric === 'yetToCall') {
+                            val = hourLeads.filter(l => !isLeadDialed(l)).length;
+                        }
+                        else if (metric === 'campaignsAssigned') {
+                            val = userAssigns.length > 0 ? 1 : 0;
+                        }
+                        else {
+                            val = hourLeads.length;
+                        }
                     }
                     else {
-                        val = hourLeads.length;
+                        const dayLeads = leadsByRangeDay[col] || [];
+                        if (metric === 'callsMade' || metric === 'leadsCalled') {
+                            val = dayLeads.length;
+                        }
+                        else if (metric === 'targetAchievement' || metric === 'progressPct') {
+                            val = userLeads.length > 0 ? Math.round((userDialed.length / userLeads.length) * 100) : 0;
+                        }
+                        else if (metric === 'yetToCall') {
+                            val = dayLeads.filter(l => !isLeadDialed(l)).length;
+                        }
+                        else if (metric === 'campaignsAssigned') {
+                            val = userAssigns.length > 0 ? 1 : 0;
+                        }
+                        else {
+                            val = dayLeads.length;
+                        }
                     }
                 }
                 else if (period === 'monthly') {
@@ -554,7 +616,12 @@ router.get('/campaign-matrix', async (req, res) => {
             if (!parts)
                 return false;
             if (period === 'daily') {
-                return parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay;
+                if (isSingleDay) {
+                    return parts.year === dailyTargetYear && parts.month === dailyTargetMonthIndex && parts.day === dailyTargetDay;
+                }
+                else {
+                    return parts.dateStr >= startRangeStr && parts.dateStr <= endRangeStr;
+                }
             }
             const monthMatch = isAllMonths || parts.month === targetMonthIndex;
             const yearMatch = isAllYears || parts.year === targetYear;
@@ -583,6 +650,8 @@ router.get('/campaign-matrix', async (req, res) => {
         }
         const responsePayload = {
             selectedDate: selectedDateStr,
+            fromDate: startRangeStr,
+            toDate: endRangeStr,
             summary: {
                 callsMade: periodCallsMade,
                 hotLeads: periodHotLeads,

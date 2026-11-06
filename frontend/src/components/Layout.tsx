@@ -76,7 +76,74 @@ export default function Layout({ children }: LayoutProps) {
     setIsSearching(true);
     try {
       const res = await api.get('/search', { params: { q: val } });
-      setSearchResults(res.data || []);
+      const rawResults = res.data || [];
+      const flatResults: any[] = [];
+
+      if (Array.isArray(rawResults)) {
+        for (const item of rawResults) {
+          if (item.records && Array.isArray(item.records)) {
+            const mod = item.module || {};
+            for (const rec of item.records) {
+              const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() ||
+                rec.data?.fullName ||
+                rec.data?.customerName ||
+                rec.data?.name ||
+                rec.data?.leadName ||
+                'Lead';
+              const leadNo = rec.data?.leadNo || rec.data?.leadNumber || rec.data?.lead_no || '';
+              const phone = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || '';
+              const maskedPhone = phone && String(phone).length >= 5
+                ? `${String(phone).slice(0, 5)}*****`
+                : (phone || '');
+              const status = rec.data?.status || 'NEW';
+              const company = rec.data?.company || rec.data?.firm || rec.data?.firmName || '';
+              const city = rec.data?.city || rec.data?.location || '';
+
+              flatResults.push({
+                _id: rec._id,
+                id: rec._id,
+                modulePath: mod.apiPath || 'leads',
+                moduleName: mod.singularLabel || 'Lead',
+                leadName,
+                leadNo,
+                status,
+                company,
+                phone: maskedPhone,
+                city,
+                rawRecord: rec
+              });
+            }
+          } else if (item._id || item.id) {
+            const rec = item;
+            const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() ||
+              rec.data?.fullName ||
+              rec.data?.customerName ||
+              rec.title ||
+              rec.name ||
+              'Lead';
+            const leadNo = rec.data?.leadNo || rec.data?.leadNumber || rec.leadNo || '';
+            const status = rec.data?.status || rec.status || 'NEW';
+            const company = rec.data?.company || rec.data?.firm || '';
+            const phone = rec.data?.phone || rec.data?.mobile || '';
+            const maskedPhone = phone && String(phone).length >= 5
+              ? `${String(phone).slice(0, 5)}*****`
+              : (phone || '');
+            flatResults.push({
+              _id: rec._id || rec.id,
+              id: rec._id || rec.id,
+              modulePath: rec.modulePath || 'leads',
+              moduleName: rec.moduleName || 'Lead',
+              leadName,
+              leadNo,
+              status,
+              company,
+              phone: maskedPhone,
+              city: rec.data?.city || rec.data?.location || ''
+            });
+          }
+        }
+      }
+      setSearchResults(flatResults);
     } catch (e) {
       console.error('Search error:', e);
     } finally {
@@ -909,7 +976,14 @@ export default function Layout({ children }: LayoutProps) {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => handleGlobalSearch(e.target.value)}
-                  placeholder="Type a command or search leads, deals, contacts..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && searchQuery.trim()) {
+                      e.preventDefault();
+                      setCommandPaletteOpen(false);
+                      navigate(`/modules/leads?search=${encodeURIComponent(searchQuery.trim())}`);
+                    }
+                  }}
+                  placeholder="Type a lead name, number, phone or command..."
                   className="w-full bg-transparent text-sm font-medium text-content-primary placeholder:text-content-muted focus:outline-none"
                 />
                 <kbd className="px-2 py-0.5 bg-surface-page text-[10px] font-semibold text-content-muted rounded border border-border-subtle">
@@ -919,6 +993,25 @@ export default function Layout({ children }: LayoutProps) {
 
               {/* Palette Results or Default Shortcuts */}
               <div className="max-h-80 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                {searchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommandPaletteOpen(false);
+                      navigate(`/modules/leads?search=${encodeURIComponent(searchQuery.trim())}`);
+                    }}
+                    className="w-full px-3 py-2 rounded-control text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 hover:bg-indigo-100/80 dark:bg-indigo-950/40 dark:hover:bg-indigo-950/70 border border-indigo-200/80 dark:border-indigo-800 flex items-center justify-between transition-colors cursor-pointer mb-1.5"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Icons.Search className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">Search in Leads Process for: <strong>"{searchQuery.trim()}"</strong></span>
+                    </div>
+                    <span className="text-[10px] font-bold flex items-center gap-1 flex-shrink-0 ml-2">
+                      Enter <Icons.ArrowRight className="w-3 h-3" />
+                    </span>
+                  </button>
+                )}
+
                 {isSearching ? (
                   <div className="p-6 text-center text-xs text-content-muted">Searching...</div>
                 ) : searchResults.length > 0 ? (
@@ -928,16 +1021,40 @@ export default function Layout({ children }: LayoutProps) {
                       type="button"
                       onClick={() => {
                         setCommandPaletteOpen(false);
-                        navigate(`/modules/${res.modulePath || 'leads'}/${res._id || res.id}`);
+                        const q = res.leadNo || res.leadName || searchQuery.trim();
+                        navigate(`/modules/${res.modulePath || 'leads'}?search=${encodeURIComponent(q)}`);
                       }}
-                      className="w-full px-3 py-2 rounded-control text-xs flex items-center justify-between hover:bg-brand-50 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer"
+                      className="w-full px-3 py-2 rounded-control text-xs flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700 group"
                     >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <Icons.FileText className="w-4 h-4 text-brand-500 flex-shrink-0" />
-                        <span className="font-semibold text-content-primary truncate">{res.title || res.name || res.fullName || 'Record'}</span>
-                        <span className="text-[10px] font-medium text-content-muted uppercase tracking-wider">{res.moduleName || 'Lead'}</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 flex-shrink-0">
+                          <Icons.User className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 uppercase text-[12px] truncate">
+                              {res.leadName}
+                            </span>
+                            {res.leadNo && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] font-bold border border-slate-200 dark:border-slate-700">
+                                #{res.leadNo}
+                              </span>
+                            )}
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800">
+                              {res.status}
+                            </span>
+                          </div>
+                          {(res.company || res.city || res.phone) && (
+                            <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              {[res.company, res.city, res.phone].filter(Boolean).join(' • ')}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <Icons.ChevronRight className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
+                      <div className="flex items-center gap-1.5 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex-shrink-0 ml-2">
+                        <span className="text-[10px] font-semibold hidden sm:inline">Open Lead</span>
+                        <Icons.ArrowRight className="w-3.5 h-3.5" />
+                      </div>
                     </button>
                   ))
                 ) : (

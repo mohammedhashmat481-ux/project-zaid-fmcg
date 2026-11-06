@@ -82,7 +82,7 @@ export default function ModuleView() {
         dashboardStatuses: ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP']
       };
     },
-    enabled: apiPath === 'campaigns',
+    enabled: apiPath === 'campaigns' || apiPath === 'leads',
     staleTime: 60000,
     placeholderData: keepPreviousData
   });
@@ -412,6 +412,199 @@ export default function ModuleView() {
       setLoadingHistory(false);
     }
   };
+
+  // Inline editing state for lead cards (matching My Campaign high-density target UI)
+  const [leadCardStates, setLeadCardStates] = useState<Record<string, Record<string, any>>>({});
+  const [editingLeadCards, setEditingLeadCards] = useState<Record<string, boolean>>({});
+
+  const handleLeadCardFieldChange = (recordId: string, field: string, value: any) => {
+    setLeadCardStates(prev => ({
+      ...prev,
+      [recordId]: {
+        ...(prev[recordId] || {}),
+        [field]: value
+      }
+    }));
+  };
+
+  const toggleLeadCardEdit = (recordId: string) => {
+    setEditingLeadCards(prev => ({
+      ...prev,
+      [recordId]: !prev[recordId]
+    }));
+  };
+
+  const handleSaveLeadCard = async (rec: any) => {
+    const currentOverrides = leadCardStates[rec._id] || {};
+    try {
+      const updatedData: Record<string, any> = {
+        ...(rec.data || {}),
+        ...currentOverrides
+      };
+
+      if (currentOverrides.leadName !== undefined) {
+        const parts = String(currentOverrides.leadName).trim().split(' ');
+        updatedData.firstName = parts[0] || '';
+        updatedData.lastName = parts.slice(1).join(' ');
+        updatedData.fullName = currentOverrides.leadName;
+        updatedData.customerName = currentOverrides.leadName;
+        updatedData.leadName = currentOverrides.leadName;
+      }
+
+      if (currentOverrides.location !== undefined) {
+        updatedData.location = currentOverrides.location;
+        updatedData.city = currentOverrides.location;
+      }
+
+      if (currentOverrides.firmName !== undefined) {
+        updatedData.company = currentOverrides.firmName;
+        updatedData.firm = currentOverrides.firmName;
+        updatedData.firmName = currentOverrides.firmName;
+      }
+
+      if (currentOverrides.dataCode !== undefined) {
+        updatedData.dataCode = currentOverrides.dataCode;
+        updatedData.data_code = currentOverrides.dataCode;
+      }
+
+      if (currentOverrides.leadCategory !== undefined) {
+        updatedData.leadCategory = currentOverrides.leadCategory;
+        updatedData.lead_category = currentOverrides.leadCategory;
+      }
+
+      if (currentOverrides.mobile !== undefined) {
+        updatedData.phone = currentOverrides.mobile;
+        updatedData.mobile = currentOverrides.mobile;
+        updatedData.contactNumber = currentOverrides.mobile;
+        updatedData.mobileNo = currentOverrides.mobile;
+      }
+
+      if (currentOverrides.amount !== undefined) {
+        const cleanAmt = String(currentOverrides.amount).replace(/[^0-9.]/g, '');
+        updatedData.loanAmount = cleanAmt ? Number(cleanAmt) : currentOverrides.amount;
+        updatedData.amount = cleanAmt ? Number(cleanAmt) : currentOverrides.amount;
+        updatedData.budget = cleanAmt ? Number(cleanAmt) : currentOverrides.amount;
+      }
+
+      if (currentOverrides.product !== undefined) {
+        updatedData.loanType = currentOverrides.product;
+        updatedData.product = currentOverrides.product;
+      }
+
+      if (currentOverrides.bankPartner !== undefined) {
+        updatedData.businessPartner = currentOverrides.bankPartner;
+        updatedData.bankPartner = currentOverrides.bankPartner;
+        updatedData.bank = currentOverrides.bankPartner;
+      }
+
+      if (currentOverrides.psm !== undefined) {
+        updatedData.psm = currentOverrides.psm;
+        updatedData.psmName = currentOverrides.psm;
+      }
+
+      if (currentOverrides.caseDetails !== undefined) {
+        updatedData.caseDetails = currentOverrides.caseDetails;
+      }
+
+      if (currentOverrides.remarks !== undefined) {
+        updatedData.remarks = currentOverrides.remarks;
+        updatedData.notes = currentOverrides.remarks;
+      }
+
+      if (currentOverrides.followupDate !== undefined) {
+        updatedData.followUpDate = currentOverrides.followupDate;
+        updatedData.followupDate = currentOverrides.followupDate;
+      }
+
+      if (currentOverrides.status !== undefined) {
+        updatedData.status = currentOverrides.status;
+      }
+
+      await api.put(`/records/${apiPath || 'leads'}/${rec._id}`, {
+        data: updatedData
+      });
+
+      showToast('Lead details saved successfully!', 'success');
+      setEditingLeadCards(prev => ({ ...prev, [rec._id]: false }));
+      refetch();
+    } catch (err: any) {
+      console.error('Failed to save lead:', err);
+      showToast(err?.response?.data?.message || 'Failed to save lead details.', 'error');
+    }
+  };
+
+  const handleStatusDropdownChange = async (rec: any, newStatus: string) => {
+    handleLeadCardFieldChange(rec._id, 'status', newStatus);
+    try {
+      await api.put(`/records/${apiPath || 'leads'}/${rec._id}`, {
+        data: {
+          ...(rec.data || {}),
+          status: newStatus
+        }
+      });
+      showToast(`Status updated to ${newStatus}`, 'success');
+      refetch();
+    } catch (err: any) {
+      console.error('Failed to update status:', err);
+      showToast('Failed to update status.', 'error');
+    }
+  };
+
+  const getLeadStatusMeta = (status: string) => {
+    const s = String(status || '').trim().toUpperCase();
+    if (s.includes('HOT')) {
+      return { color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-900/60', icon: Icons.Flame };
+    }
+    if (s.includes('WARM') || s.includes('DEMO')) {
+      return { color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-900/60', icon: Icons.Zap };
+    }
+    if (s.includes('COOL')) {
+      return { color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-900/60', icon: Icons.Snowflake };
+    }
+    if (s.includes('CEBIL') || s.includes('DOCUMENT')) {
+      return { color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40', border: 'border-blue-200 dark:border-blue-900/60', icon: Icons.FileWarning };
+    }
+    if (s.includes('APPROVAL') || s.includes('LOGIN')) {
+      return { color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-900/60', icon: Icons.Clock };
+    }
+    if (s.includes('DISBURS') || s.includes('APPROV') || s.includes('WON')) {
+      return { color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-900/60', icon: Icons.CheckCircle2 };
+    }
+    if (s.includes('REJECT') || s.includes('DROP') || s.includes('DEAD')) {
+      return { color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800', border: 'border-slate-300 dark:border-slate-700', icon: Icons.XCircle };
+    }
+    return { color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800', icon: Icons.RotateCcw };
+  };
+
+  const availableLeadStatuses = useMemo(() => {
+    const defaults = [
+      'HOT LEADS',
+      'WARM LEADS',
+      'COOL LEAD',
+      'CEBIL PENDING',
+      'DOCUMENT PENDING',
+      'LOGIN PENDING',
+      'APPROVAL PENDING',
+      'APPROVED BUT NOT DISBUSE',
+      'DISBURSED PENDING',
+      'DISBUSED',
+      'REJECT PENDING',
+      'DEAD LEADS',
+      'CLOSED',
+      'YET TO CALL',
+      'NEW'
+    ];
+    const list = [...defaults];
+    if (Array.isArray(campaignStatusConfig?.statuses)) {
+      campaignStatusConfig.statuses.forEach((s: string) => {
+        const trimmed = String(s).trim();
+        if (trimmed && !list.some(x => x.toUpperCase() === trimmed.toUpperCase())) {
+          list.push(trimmed);
+        }
+      });
+    }
+    return list;
+  }, [campaignStatusConfig]);
 
   // --- Campaign Assignment custom screen states ---
   const [caCampaigns, setCaCampaigns] = useState<any[]>([]);
@@ -1339,16 +1532,21 @@ export default function ModuleView() {
     });
   };
 
-  // Read ?status= and ?followup= from URL and apply as filter
+  // Read ?status=, ?followup=, and ?search= from URL and apply as filter
   const urlStatus = searchParams.get('status');
   const urlFollowup = searchParams.get('followup');
+  const urlSearch = searchParams.get('search');
 
   // Set Active Module in store on path mount/change
   useEffect(() => {
     if (apiPath) {
       setActiveModuleByPath(apiPath);
       setPage(1);
-      setSearchVal('');
+      if (urlSearch) {
+        setSearchVal(urlSearch);
+      } else {
+        setSearchVal('');
+      }
       if (urlStatus) {
         setFilterField('status');
         setFilterVal(urlStatus);
@@ -1360,7 +1558,7 @@ export default function ModuleView() {
         setFilterVal('');
       }
     }
-  }, [apiPath, urlStatus, urlFollowup, modules.length]);
+  }, [apiPath, urlStatus, urlFollowup, urlSearch, modules.length]);
 
   // Query records with 10 records per page for lightning fast performance
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -2600,7 +2798,9 @@ export default function ModuleView() {
                       ? "TODAY'S FOLLOWUPS"
                       : urlStatus 
                         ? (urlStatus.toUpperCase().endsWith('LEADS') ? urlStatus.toUpperCase() : `${urlStatus.toUpperCase()} LEADS`) 
-                        : 'ALL LEADS'}
+                        : urlSearch
+                          ? `SEARCH: ${urlSearch.toUpperCase()}`
+                          : 'ALL LEADS'}
                   </h1>
                   <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-3xs font-mono">
                     {data?.pagination?.total ?? data?.pagination?.totalRecords ?? (data?.records?.length || 0)} Total
@@ -2611,14 +2811,17 @@ export default function ModuleView() {
                     ? "Showing all leads scheduled for follow-up today."
                     : urlStatus 
                       ? `Filtering leads with status: ${urlStatus}` 
-                      : 'Search, manage, and track leads across all campaigns.'}
+                      : urlSearch
+                        ? `Showing results matching "${urlSearch}"`
+                        : 'Search, manage, and track leads across all campaigns.'}
                 </p>
               </div>
             </div>
 
-            {(urlStatus || urlFollowup) && (
+            {(urlStatus || urlFollowup || urlSearch) && (
               <Link
                 to="/modules/leads"
+                onClick={() => setSearchVal('')}
                 className="px-3.5 py-2 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5 shadow-3xs cursor-pointer"
               >
                 <Icons.X className="w-3.5 h-3.5" />
@@ -2819,287 +3022,378 @@ export default function ModuleView() {
                   const leadNo = rec.data?.leadNo || rec.data?.leadNumber
                     ? String(rec.data.leadNo || rec.data.leadNumber).padStart(2, '0')
                     : String(leadSerial).padStart(2, '0');
-                  const leadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || rec.data?.leadName || 'N/A';
-                  const leadLocation = rec.data?.location || [rec.data?.city, rec.data?.state].filter(Boolean).join(', ') || rec.data?.city || rec.data?.presentAddress || rec.data?.address || 'N/A';
-                  const amountVal = rec.data?.budget ?? rec.data?.loanAmount ?? rec.data?.amount;
-                  const currencySymbol = '₹';
-                  const formattedAmount = amountVal != null && amountVal !== '' ? `${currencySymbol}${Number(amountVal).toLocaleString('en-IN')}` : 'N/A';
+
+                  const isEditing = !!editingLeadCards[rec._id];
+                  const cardState = leadCardStates[rec._id] || {};
+
+                  // Lead Name
+                  const rawLeadName = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || rec.data?.leadName || '';
+                  const cleanLeadName = (rawLeadName && !['N/A', 'UNDEFINED', 'NULL'].includes(rawLeadName.toUpperCase())) ? rawLeadName : '';
+                  const currentLeadName = cardState.leadName !== undefined ? cardState.leadName : cleanLeadName;
+
+                  // Location
+                  const rawLocation = rec.data?.city || rec.data?.location || rec.data?.Location || rec.data?.LOCATION || rec.data?.place || rec.data?.area || rec.data?.state || '';
+                  let cleanLocation = (rawLocation && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(rawLocation).toUpperCase())) ? String(rawLocation).trim() : '';
+                  if (!cleanLocation && rec.data) {
+                    for (const [k, v] of Object.entries(rec.data)) {
+                      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                      if (
+                        cleanK.includes('location') || cleanK.includes('city') || cleanK.includes('place') ||
+                        cleanK.includes('district') || cleanK.includes('area') || cleanK.includes('address') ||
+                        cleanK.includes('branch') || cleanK.includes('state') || cleanK.includes('town') ||
+                        cleanK.includes('zone') || cleanK.includes('region')
+                      ) {
+                        if (v && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                          cleanLocation = String(v).trim();
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  const currentLocation = cardState.location !== undefined ? cardState.location : cleanLocation;
+
+                  // Firm / Company
+                  const rawFirm = rec.data?.company || rec.data?.firm || rec.data?.firmName || rec.data?.companyName || '';
+                  let cleanFirm = (rawFirm && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(rawFirm).toUpperCase())) ? String(rawFirm).trim() : '';
+                  if (!cleanFirm && rec.data) {
+                    for (const [k, v] of Object.entries(rec.data)) {
+                      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                      if (cleanK.includes('company') || cleanK.includes('firm') || cleanK.includes('employer') || cleanK.includes('organization') || cleanK.includes('business')) {
+                        if (v && !['N/A', 'UNDEFINED', 'NULL', '—', '-'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                          cleanFirm = String(v).trim();
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  const currentFirmCompany = cardState.firmName !== undefined ? cardState.firmName : cleanFirm;
+
+                  // Data Code
+                  const rawDataCode = rec.data?.dataCode || rec.data?.data_code || rec.data?.code || rec.data?.datacode || '';
+                  let cleanDataCode = (rawDataCode && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawDataCode).toUpperCase())) ? String(rawDataCode).trim() : '';
+                  if (!cleanDataCode && rec.data) {
+                    for (const [k, v] of Object.entries(rec.data)) {
+                      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                      if (cleanK.includes('datacode') || cleanK.includes('leadcode') || cleanK.includes('customercode') || cleanK.includes('datano') || cleanK === 'code' || cleanK === 'dcode') {
+                        if (v && !['N/A', 'UNDEFINED', 'NULL'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                          cleanDataCode = String(v).trim();
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  const currentDataCode = cardState.dataCode !== undefined ? cardState.dataCode : cleanDataCode;
+
+                  // Mobile Number
+                  const rawPhone = extractLeadPhone(rec.data) || extractLeadPhone(rec) || '';
+                  const cleanPhone = (rawPhone && !['N/A', 'UNDEFINED', 'NULL', 'XXXXXXXXXX'].includes(rawPhone.toUpperCase())) ? rawPhone : '';
+                  const currentMobile = cardState.mobile !== undefined ? cardState.mobile : cleanPhone;
+                  const displayedPhone = maskPhoneNumber(currentMobile || rawPhone, false);
+
+                  // Followup Date
+                  const rawFollowup = rec.data?.followUpDate || rec.data?.followupDate || rec.data?.follow_up_date || '';
+                  const cleanFollowup = (rawFollowup && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawFollowup).toUpperCase())) ? String(rawFollowup).trim() : '';
+                  const currentFollowupDate = cardState.followupDate !== undefined ? cardState.followupDate : cleanFollowup;
+
+                  // Lead Category
+                  const rawCategory = rec.data?.leadCategory || rec.data?.lead_category || rec.data?.category || '';
+                  let cleanCategory = (rawCategory && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(rawCategory).toUpperCase())) ? String(rawCategory).trim() : '';
+                  if (!cleanCategory && rec.data) {
+                    for (const [k, v] of Object.entries(rec.data)) {
+                      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                      if (cleanK.includes('category') || cleanK.includes('leadcat') || cleanK.includes('cattype') || cleanK.includes('leadtype')) {
+                        if (v && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN'].includes(String(v).toUpperCase()) && String(v).trim()) {
+                          cleanCategory = String(v).trim();
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  const currentLeadCategory = cardState.leadCategory !== undefined ? cardState.leadCategory : cleanCategory;
+
+                  // Amount
+                  const rawAmount = rec.data?.loanAmount || rec.data?.amount || rec.data?.loan_amount || rec.data?.budget;
+                  const cleanAmount = (rawAmount != null && !['N/A', 'UNDEFINED', 'NULL', ''].includes(String(rawAmount).toUpperCase())) ? String(rawAmount).trim() : '';
+                  const currentAmount = cardState.amount !== undefined ? cardState.amount : cleanAmount;
+
+                  // Pending at & Assigned To
+                  const pendingAtVal = rec.data?.assignToTeam || rec.data?.pendingAt || (rec.data?.assignedTo ? 'SALES MANAGER' : '—');
+                  const assignedToName = rec.data?.assignedToName || (rec.data?.assignedTo || rec.data?.assignTo || rec.assignedTo ? resolveUserDisplayName(rec.data?.assignedTo || rec.data?.assignTo || rec.assignedTo) : '—');
+
+                  // Product
+                  const rawProduct = rec.data?.loanType || rec.data?.product || rec.data?.loan_type || '';
+                  const cleanProduct = (rawProduct && !['N/A', 'UNDEFINED', 'NULL', 'PERSONAL LOAN', 'PERSONAL DETAILS'].includes(String(rawProduct).toUpperCase())) ? String(rawProduct).trim() : '';
+                  const currentProduct = cardState.product !== undefined ? cardState.product : cleanProduct;
+
+                  // Bank Partner
+                  const rawBankPartner = rec.data?.businessPartner || rec.data?.bankPartner || rec.data?.bank_partner || rec.data?.bank || '';
+                  const cleanBankPartner = (rawBankPartner && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawBankPartner).toUpperCase())) ? String(rawBankPartner).trim() : '';
+                  const currentBankPartner = cardState.bankPartner !== undefined ? cardState.bankPartner : cleanBankPartner;
+
+                  // PSM
+                  const rawPsm = rec.data?.psmName || (rec.data?.psm ? resolveUserDisplayName(rec.data.psm) : '');
+                  const cleanPsm = (rawPsm && !['N/A', 'UNDEFINED', 'NULL', 'UNASSIGNED'].includes(String(rawPsm).toUpperCase())) ? String(rawPsm).trim() : '';
+                  const currentPsm = cardState.psm !== undefined ? cardState.psm : cleanPsm;
+
+                  // Case Details
+                  const rawCaseDetails = rec.data?.caseDetails || rec.data?.case_details || '';
+                  const cleanCaseDetails = (rawCaseDetails && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawCaseDetails).toUpperCase())) ? String(rawCaseDetails).trim() : '';
+                  const currentCaseDetails = cardState.caseDetails !== undefined ? cardState.caseDetails : cleanCaseDetails;
+
+                  // Status
+                  const currentStatus = cardState.status !== undefined ? cardState.status : (rec.data?.status || 'NEW');
+                  const statusMeta = getLeadStatusMeta(currentStatus);
+                  const StatusIcon = statusMeta.icon;
+
+                  // Source & Created By
                   const createdByName = rec.createdBy?.firstName 
                     ? `${rec.createdBy.firstName} ${rec.createdBy.lastName || ''}`.trim()
                     : (rec.createdBy?.name || rec.createdBy?.email?.split('@')[0] || (typeof rec.createdBy === 'string' && rec.createdBy.length < 25 && !rec.createdBy.match(/^[0-9a-fA-F]{24}$/) ? rec.createdBy : '') || rec.data?.source || rec.data?.createdBy || 'Super Admin');
+                  const sourceNameDisplay = rec.data?.source || createdByName || 'Super Admin';
 
-                  const assignedToName = rec.data?.assignedToName || resolveUserDisplayName(rec.data?.assignedTo || rec.data?.assignTo || rec.assignedTo);
                   const assignedByName = rec.data?.assignedByName 
                     ? resolveUserDisplayName(rec.data.assignedByName) 
                     : (rec.data?.assignedBy 
                         ? resolveUserDisplayName(rec.data.assignedBy) 
-                        : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'System Router'));
-                  const psmName = rec.data?.psmName || resolveUserDisplayName(rec.data?.psm || rec.data?.assignedTo || 'Unassigned');
+                        : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'Super Admin'));
 
-                  const rawPhone = extractLeadPhone(rec.data) || '';
-                  const isRevealed = !!revealedPhones[rec._id];
-                  const displayedPhone = maskPhoneNumber(rawPhone, isRevealed);
-                  const statusTokens = getStatusTokens(rec.data?.status || 'HOT');
-                  const rawStatus = (rec.data?.status || 'NEW').toUpperCase();
-                  const statusBadgeText = rawStatus.endsWith('LEAD') || rawStatus.endsWith('LEADS') 
-                    ? rawStatus 
-                    : `${rawStatus} LEAD`;
-
-                  let statusBadgeStyle = 'border border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300';
-                  let StatusBadgeIcon: any = Icons.Sparkles;
-
-                  if (rawStatus.includes('HOT')) {
-                    statusBadgeStyle = 'border border-rose-200 bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400';
-                    StatusBadgeIcon = Icons.Flame;
-                  } else if (rawStatus.includes('CALL NOT CONNECT') || rawStatus.includes('NOT CONNECT')) {
-                    statusBadgeStyle = 'border border-sky-200 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:border-sky-900/60 dark:text-sky-400';
-                    StatusBadgeIcon = Icons.PhoneOff;
-                  } else if (rawStatus.includes('WARM') || rawStatus.includes('DEMO')) {
-                    statusBadgeStyle = 'border border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-400';
-                    StatusBadgeIcon = Icons.Zap;
-                  } else if (rawStatus.includes('DISBURS') || rawStatus.includes('APPROV') || rawStatus.includes('WON')) {
-                    statusBadgeStyle = 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-400';
-                    StatusBadgeIcon = Icons.CheckCircle2;
-                  } else if (rawStatus.includes('REJECT') || rawStatus.includes('DROP') || rawStatus.includes('DEAD')) {
-                    statusBadgeStyle = 'border border-slate-300 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400';
-                    StatusBadgeIcon = Icons.XCircle;
-                  } else {
-                    statusBadgeStyle = 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/60 dark:text-indigo-400';
-                    StatusBadgeIcon = Icons.PhoneCall;
-                  }
-
-                  const slNo = (page - 1) * 10 + idx + 1;
-                  const dataCodeVal = rec.data?.dataCode || rec.data?.data_code || rec.data?.code || (rec.data?.campaignName ? `${String(rec.data.campaignName).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-')}-DATA-${leadSerial}` : 'N/A');
-                  const leadCategoryVal = rec.data?.leadCategory || rec.data?.lead_category || 'N/A';
-                  const campaignVal = rec.data?.campaignName || rec.data?.campaign || 'N/A';
-                  const sourceVal = rec.data?.source || rec.data?.leadSource || 'Direct';
-
-                  const remarksText = rec.data?.notes 
-                    ? rec.data.notes.replace(/<[^>]*>/g, '') 
-                    : (rec.data?.remarks || 'N/A');
+                  // Remarks
+                  const rawRemarks = (rec.data?.remarks || rec.data?.notes || '').replace(/<[^>]*>/g, '');
+                  const cleanRemarks = (rawRemarks && !['N/A', 'UNDEFINED', 'NULL'].includes(String(rawRemarks).toUpperCase())) ? String(rawRemarks).trim() : '';
+                  const currentRemarks = cardState.remarks !== undefined ? cardState.remarks : cleanRemarks;
 
                   return (
                     <div 
                       key={rec._id} 
-                      className="relative rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-900/60 hover:border-indigo-400/90 dark:hover:border-indigo-500/80 shadow-[0_3px_12px_-2px_rgba(30,41,59,0.07),0_1px_3px_-1px_rgba(30,41,59,0.04)] hover:shadow-[0_8px_24px_-4px_rgba(79,70,229,0.12)] transition-all duration-200 p-3.5 sm:p-4 text-xs overflow-hidden mb-2.5 last:mb-0 text-left"
+                      className="relative rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 p-3 sm:px-4 sm:py-2.5 text-xs overflow-hidden mb-2 last:mb-0 text-left transition-all duration-150"
                     >
-                      {/* Classic Premium Top Accent Ribbon matching Image 2 */}
-                      <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-blue-700 via-indigo-600 to-sky-500" />
+                      {/* Top Red Accent Ribbon matching Target UI (Image 3) */}
+                      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-red-500 via-rose-500 to-red-600 rounded-t-2xl" />
                       
-                      <div className="space-y-2.5">
-                        {/* 4-Column CSS Grid perfectly compact matching Image 2 */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1.5 sm:gap-y-2 text-xs">
+                      <div>
+                        {/* 4-Column CSS Grid perfectly compact matching Target UI (Image 3) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3.5 gap-y-1 text-xs">
                           {/* ===== ROW 1 ===== */}
                           {/* Col 1: Sl No. */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Sl No.:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-medium">{slNo}</span>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Sl No.:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-white font-extrabold">{leadSerial}</span>
                           </div>
 
                           {/* Col 2: Lead Name */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead Name:&nbsp;</span>
-                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                              <Link 
-                                to={`/modules/leads/${rec._id}`}
-                                className="font-extrabold text-sky-600 dark:text-sky-400 uppercase truncate max-w-[170px] hover:underline" 
-                                title={leadName}
-                              >
-                                {leadName}
-                              </Link>
-                              <Link
-                                to={`/modules/leads/${rec._id}`}
-                                title="Open lead profile"
-                                className="p-0.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 flex-shrink-0"
-                              >
-                                <Icons.ExternalLink className="w-3.5 h-3.5" />
-                              </Link>
-                            </div>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead Name:&nbsp;</span>
+                            <span 
+                              className="font-black text-sky-600 dark:text-sky-400 uppercase tracking-tight text-[12.5px] truncate max-w-[170px]" 
+                              title={currentLeadName || '—'}
+                            >
+                              {currentLeadName || '—'}
+                            </span>
                           </div>
 
                           {/* Col 3: Created On */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created On:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.createdAt)}</span>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Created On:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDate(rec.createdAt)}</span>
                           </div>
 
                           {/* Col 4: Firm/Company */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Firm/Company:&nbsp;</span>
-                            <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[180px]" title={rec.data?.company || rec.data?.firm || '—'}>
-                              {rec.data?.company || rec.data?.firm || '—'}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Firm/Company:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[180px] text-[12px]" title={currentFirmCompany || '—'}>
+                              {currentFirmCompany || '—'}
                             </span>
                           </div>
 
                           {/* ===== ROW 2 ===== */}
                           {/* Col 1: Lead No. */}
-                          <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Lead No.:&nbsp;</span>
-                            <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200/60 dark:border-slate-600/60">
+                          <div className="leading-tight min-h-[20px] flex items-center gap-1.5">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead No.:&nbsp;</span>
+                            <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-[10.5px] font-black border border-slate-300 dark:border-slate-650 shadow-3xs">
                               {leadNo}
                             </span>
                           </div>
 
                           {/* Col 2: Location */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Location:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-medium uppercase truncate inline-block max-w-[170px]" title={leadLocation}>
-                              {leadLocation || '—'}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Location:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-slate-100 font-extrabold uppercase truncate inline-block max-w-[165px]" title={currentLocation || '—'}>
+                              {currentLocation || '—'}
                             </span>
                           </div>
 
-                          {/* Col 3: Created By */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Created By:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-medium truncate inline-block max-w-[170px]" title={createdByName}>
+                          {/* Col 3: By */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">By:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[170px]" title={createdByName}>
                               {createdByName}
                             </span>
                           </div>
 
                           {/* Col 4: Modified On */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Modified On:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-medium">{formatDate(rec.updatedAt)}</span>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Modified On:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-bold">{rec.updatedAt ? formatDate(rec.updatedAt) : 'N/A'}</span>
                           </div>
 
                           {/* ===== ROW 3 ===== */}
-                          {/* Col 1: Product */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Product:&nbsp;</span>
-                            <span className="text-slate-800 dark:text-slate-200 font-medium uppercase truncate inline-block max-w-[170px]" title={rec.data?.loanType || rec.data?.product || '—'}>
-                              {rec.data?.loanType || rec.data?.product || '—'}
-                            </span>
+                          {/* Col 1: Data Code */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Data Code:&nbsp;</span>
+                            {currentDataCode ? (
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-100/90 dark:bg-indigo-950 text-indigo-900 dark:text-indigo-200 font-mono text-[10.5px] font-black border border-indigo-300 dark:border-indigo-700 shadow-3xs">
+                                {currentDataCode}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500 font-bold">—</span>
+                            )}
                           </div>
 
                           {/* Col 2: Mobile No. */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Mobile No.:&nbsp;</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
-                                {displayedPhone}
-                              </span>
-                              {rawPhone && rawPhone !== 'N/A' && (
-                                <button
-                                  type="button"
-                                  onClick={() => togglePhoneReveal(rec._id)}
-                                  title={isRevealed ? "Hide number" : "Show number"}
-                                  className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                                >
-                                  {isRevealed ? <Icons.EyeOff className="w-3.5 h-3.5" /> : <Icons.Eye className="w-3.5 h-3.5" />}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Col 3: Followup Date */}
-                          <div className="leading-snug min-h-[26px] flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Followup Date:&nbsp;</span>
-                            <span className="inline-block px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
-                              {rec.data?.followUpDate ? formatDate(rec.data.followUpDate) : '—'}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Mobile No.:&nbsp;</span>
+                            <span className="font-mono font-black text-slate-900 dark:text-white tracking-wide text-[11.5px]">
+                              {displayedPhone || '—'}
                             </span>
                           </div>
 
+                          {/* Col 3: Followup Date */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Followup Date:&nbsp;</span>
+                            {currentFollowupDate ? (
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-blue-100/90 dark:bg-blue-950 text-blue-900 dark:text-blue-200 font-mono text-[10.5px] font-bold border border-blue-300 dark:border-blue-700 shadow-3xs">
+                                {formatDate(currentFollowupDate) || currentFollowupDate}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500 font-bold">—</span>
+                            )}
+                          </div>
+
                           {/* Col 4: Assigned By */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned By:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={assignedByName}>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Assigned By:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[170px]" title={assignedByName}>
                               {assignedByName}
                             </span>
                           </div>
 
                           {/* ===== ROW 4 ===== */}
-                          {/* Col 1: Status */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Status:&nbsp;</span>
-                            <span className="text-slate-800 dark:text-slate-100 font-bold uppercase truncate inline-block max-w-[170px]">
-                              {rec.data?.status || 'YET TO CALL'}
+                          {/* Col 1: Lead Category */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Lead Category:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-slate-100 font-extrabold uppercase truncate inline-block max-w-[155px]" title={currentLeadCategory || '—'}>
+                              {currentLeadCategory || '—'}
                             </span>
                           </div>
 
                           {/* Col 2: Amount */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Amount:&nbsp;</span>
-                            <span className={formattedAmount !== 'N/A' && formattedAmount !== '—' ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-300"}>
-                              {formattedAmount}
-                            </span>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Amount:&nbsp;</span>
+                            {currentAmount ? (
+                              <span className="font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight text-[12px] truncate inline-block max-w-[150px]">
+                                {String(currentAmount || '').startsWith('₹') ? currentAmount : (!isNaN(Number(currentAmount)) ? `₹${Number(currentAmount).toLocaleString('en-IN')}` : currentAmount)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-500 font-bold">—</span>
+                            )}
                           </div>
 
                           {/* Col 3: Pending at */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Pending at:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}>
-                              {rec.data?.assignToTeam || rec.data?.pendingAt || 'SALES MANAGER'}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Pending at:&nbsp;</span>
+                            <span className="font-black uppercase truncate inline-block max-w-[170px] text-slate-800 dark:text-slate-200" title={pendingAtVal}>
+                              {pendingAtVal}
                             </span>
                           </div>
 
                           {/* Col 4: Assigned To */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Assigned To:&nbsp;</span>
-                            <span className="text-indigo-600 dark:text-indigo-400 font-semibold truncate inline-block max-w-[170px]" title={assignedToName}>
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Assigned To:&nbsp;</span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-black truncate inline-block max-w-[170px]" title={assignedToName}>
                               {assignedToName}
                             </span>
                           </div>
 
                           {/* ===== ROW 5 ===== */}
-                          {/* Col 1: Bank Partner */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Bank Partner:&nbsp;</span>
-                            <span className="text-slate-800 dark:text-slate-200 font-semibold uppercase truncate inline-block max-w-[170px]" title={rec.data?.businessPartner || rec.data?.bankPartner || '—'}>
-                              {rec.data?.businessPartner || rec.data?.bankPartner || '—'}
+                          {/* Col 1: Product */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Product:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={currentProduct || '—'}>
+                              {currentProduct || '—'}
                             </span>
                           </div>
 
-                          {/* Col 2: Case Details */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Case Details:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={rec.data?.caseDetails || '—'}>
-                              {rec.data?.caseDetails || '—'}
+                          {/* Col 2: Bank Partner */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Bank Partner:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={currentBankPartner || '—'}>
+                              {currentBankPartner || '—'}
                             </span>
                           </div>
 
                           {/* Col 3: PSM */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">PSM:&nbsp;</span>
-                            <span className="text-slate-700 dark:text-slate-300 truncate inline-block max-w-[170px]" title={psmName}>
-                              {psmName || '—'}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">PSM:&nbsp;</span>
+                            <span className="text-slate-900 dark:text-white font-black uppercase truncate inline-block max-w-[165px]" title={currentPsm || '—'}>
+                              {currentPsm || '—'}
                             </span>
                           </div>
 
-                          {/* Col 4: Remarks */}
-                          <div className="leading-snug min-h-[26px] flex items-center">
-                            <span className="font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">Remarks:&nbsp;</span>
-                            <span className="italic text-slate-500 dark:text-slate-400 truncate inline-block max-w-[170px]" title={remarksText}>
-                              {remarksText || '—'}
+                          {/* Col 4: Case Details */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Case Details:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-bold truncate inline-block max-w-[150px]" title={currentCaseDetails || '—'}>
+                              {currentCaseDetails || '—'}
+                            </span>
+                          </div>
+
+                          {/* ===== ROW 6 ===== */}
+                          {/* Col 1: Source */}
+                          <div className="leading-tight min-h-[20px] flex items-center">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Source:&nbsp;</span>
+                            <span className="text-slate-800 dark:text-slate-200 font-extrabold truncate inline-block max-w-[165px]" title={sourceNameDisplay}>
+                              {sourceNameDisplay || '—'}
+                            </span>
+                          </div>
+
+                          {/* Col 2, 3, 4: Remarks */}
+                          <div className="leading-tight min-h-[20px] flex items-center sm:col-span-3">
+                            <span className="font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-[11px]">Remarks:&nbsp;</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-semibold italic truncate inline-block max-w-[500px]" title={currentRemarks || '—'}>
+                              {currentRemarks || '—'}
                             </span>
                           </div>
                         </div>
 
-                        {/* Card Footer: Action Toolbar matching Image 2 */}
-                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 shadow-3xs">
-                              <Icons.RotateCcw className="w-3.5 h-3.5" />
-                              <span>{rec.data?.status || 'NEW'}</span>
+                        {/* Card Footer: Action Toolbar matching Target UI (Image 3) */}
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-1.5">
+                          {/* Left: Status Pill Badge Button */}
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10.5px] font-black uppercase tracking-wider shadow-3xs ${statusMeta.color} ${statusMeta.bg} border ${statusMeta.border}`}
+                              title="Current Lead Status"
+                            >
+                              <StatusIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span>{currentStatus}</span>
                             </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
+                          {/* Right: Actions matching Target UI (Image 3) */}
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {/* WA Chat (Green) */}
                             <button 
                               type="button"
                               onClick={() => {
-                                const phoneNum = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                                const phoneNum = currentMobile || rawPhone;
                                 let cleanPhone = String(phoneNum).replace(/\D/g, '').trim();
                                 if (cleanPhone) {
-                                  if (cleanPhone.length === 10) {
-                                    cleanPhone = `91${cleanPhone}`;
-                                  }
+                                  if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
                                   window.open(`https://wa.me/${cleanPhone}`, '_blank');
                                 } else {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white text-[11px] font-bold px-3 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(16,185,129,0.25)] hover:shadow-sm active:scale-97 cursor-pointer"
                             >
                               <Icons.MessageSquare className="w-3.5 h-3.5" />
                               <span>WA Chat</span>
@@ -3109,42 +3403,54 @@ export default function ModuleView() {
                             <button 
                               type="button"
                               onClick={() => {
-                                const phoneNum = rec.data?.phone || rec.data?.mobile || rec.data?.contactNumber || rec.data?.contactNum || rec.data?.mobileNo || rec.data?.contact_num || '';
+                                const phoneNum = currentMobile || rawPhone;
                                 const cleanPhone = String(phoneNum).replace(/[^\d+]/g, '').trim();
                                 if (cleanPhone) {
-                                  const name = `${rec.data?.firstName || ''} ${rec.data?.lastName || ''}`.trim() || rec.data?.fullName || rec.data?.customerName || rec.data?.name || 'Lead';
+                                  const name = currentLeadName || 'Lead';
                                   showToast(`Calling ${name} (${cleanPhone})...`, 'info');
                                   window.location.href = `tel:${cleanPhone}`;
                                 } else {
                                   showToast('No phone number available for this lead.', 'warning');
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                              className="inline-flex items-center gap-1.5 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white text-[11px] font-bold px-3 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(79,70,229,0.25)] hover:shadow-sm active:scale-97 cursor-pointer"
                             >
                               <Icons.PhoneCall className="w-3.5 h-3.5" />
                               <span>Call</span>
                             </button>
-                            
-                            {/* Save (Blue) */}
+
+                            {/* Edit Button (White/Outline) */}
                             <button 
                               type="button"
-                              onClick={() => {
-                                showToast('Lead details saved.', 'success');
-                              }}
-                              className="inline-flex items-center gap-1.5 bg-[#0284c7] hover:bg-[#0369a1] active:bg-[#075985] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shadow-3xs cursor-pointer"
+                              onClick={() => navigate(`/modules/leads/${rec._id}`)}
+                              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300/90 dark:border-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-sm active:scale-97 cursor-pointer"
+                              title="Edit lead details"
                             >
-                              <Icons.Save className="w-3.5 h-3.5" />
-                              <span>Save</span>
-                            </button>
-                            
-                            {/* Edit (Outline button) */}
-                            <Link 
-                              to={`/modules/leads/${rec._id}`} 
-                              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold px-3 py-1 rounded-lg transition-all shadow-3xs"
-                            >
-                              <Icons.Edit3 className="w-3.5 h-3.5" />
+                              <Icons.Edit className="w-3.5 h-3.5" />
                               <span>Edit</span>
-                            </Link>
+                            </button>
+
+                            {/* Upload File (Outline) */}
+                            <button
+                              type="button"
+                              onClick={() => handleUploadClick(rec._id)}
+                              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300/90 dark:border-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-sm active:scale-97 cursor-pointer"
+                              title="Upload document for this lead"
+                            >
+                              <Icons.Upload className="w-3.5 h-3.5" />
+                              <span>Upload File</span>
+                            </button>
+
+                            {/* History (Outline) */}
+                            <button
+                              type="button"
+                              onClick={() => openHistory(rec)}
+                              className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300/90 dark:border-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-sm active:scale-97 cursor-pointer"
+                              title="View audit & call history"
+                            >
+                              <Icons.History className="w-3.5 h-3.5" />
+                              <span>History</span>
+                            </button>
                           </div>
                         </div>
                       </div>
