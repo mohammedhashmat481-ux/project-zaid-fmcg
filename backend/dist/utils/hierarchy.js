@@ -93,7 +93,9 @@ class HierarchyService {
         if (query.$or) {
             const existingOr = query.$or;
             delete query.$or;
+            const existingAnd = Array.isArray(query.$and) ? query.$and : [];
             query.$and = [
+                ...existingAnd,
                 { $or: existingOr },
                 hierarchyFilter
             ];

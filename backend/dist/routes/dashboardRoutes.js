@@ -8,7 +8,7 @@ const DashboardLayout_1 = __importDefault(require("../models/DashboardLayout"));
 const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition"));
 const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const Activity_1 = __importDefault(require("../models/Activity"));
-const Status_1 = __importDefault(require("../models/Status"));
+const leadStatusHelper_1 = require("../utils/leadStatusHelper");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const hierarchy_1 = require("../utils/hierarchy");
@@ -158,10 +158,8 @@ router.get('/metrics', async (req, res) => {
                     .sort({ createdAt: -1 })
                     .limit(10)
             ]);
-            // Retrieve all configured status names for this organization to guarantee dynamic statuses count
-            const configuredStatusRecords = await Status_1.default.find({ organizationId: orgId }).select('name').lean();
-            const configuredStatusNames = new Set(configuredStatusRecords.map((s) => (s.name || '').trim().toUpperCase()).filter(Boolean));
-            const pipelineRegex = /^(HOT(\s+LEADS?)?|WARM(\s+LEADS?)?|COOL(\s+LEADS?)?|NUMBER(\s*BUSY)?|OUT(\s*OF\s*SERVICE)?|NO(\s*INCOMING\s*CALLS?)?|SWITCH(\s*OFF)?|CE[BD]IL(\s+PENDING)?|DOC(UMENT)?S?(\s+PENDING)?|PROPOSAL|APPROVALS?(\s+PENDING)?|NEGOTIATION|APPROVED(\s+BUT\s+NOT\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|CALL(\s+REJECTED)?|NOT(\s+CONNECTED|\s+REACHABLE|\s+INTESTED|\s+INTERESTED|\s+EXISTS)?|NO(\s+ANSWER|\s+BUSINESS)?|WRONG(\s+NUMBER)?|REPEATED(\s+NUMBER)?|INK\s*WORLDWIDE)$/i;
+            // Retrieve real lead statuses (configured statuses from DB + standard pipeline statuses, excluding raw call dispositions)
+            const realLeadStatuses = await (0, leadStatusHelper_1.getRealLeadStatuses)(orgId);
             // Group into canonical status buckets without double-counting
             const canonicalMap = {};
             let totalPipelineLeads = 0;
@@ -184,13 +182,17 @@ router.get('/metrics', async (req, res) => {
                     else if (upper === 'CEDIL PENDING' || upper === 'CEBIL PENDING' || upper === 'CEDIL' || upper === 'CEBIL') {
                         canonical = 'CEBIL PENDING';
                     }
+                    else if (upper === 'GIVEN LOGIN' || upper === 'LOGIN') {
+                        canonical = 'GIVEN LOGIN';
+                    }
                     canonicalMap[canonical] = (canonicalMap[canonical] || 0) + count;
                     if (rawName !== canonical) {
                         statusCounts[rawName] = count;
                     }
-                    if (pipelineRegex.test(upper) ||
-                        configuredStatusNames.has(upper) ||
-                        configuredStatusNames.has(rawName)) {
+                    // Count strictly real pipeline leads (never raw campaign dialing dispositions)
+                    const isDisposition = leadStatusHelper_1.RAW_CAMPAIGN_DISPOSITIONS.has(upper);
+                    const isReal = !isDisposition && (realLeadStatuses.has(upper) || realLeadStatuses.has(rawName));
+                    if (isReal) {
                         totalPipelineLeads += count;
                     }
                 }
@@ -241,7 +243,7 @@ router.get('/metrics', async (req, res) => {
                 totalLeads: totalPipelineLeads,
                 recentActivities: recentActivitiesRes
             };
-            cache_1.serverCache.set(cacheKey, resultData, 5); // 5 seconds cache TTL for instantaneous UI sync
+            cache_1.serverCache.set(cacheKey, resultData, 60); // 60s cache TTL (automatically invalidated on any record mutation/dial/status update)
             res.setHeader('X-Cache', 'MISS');
             res.status(200).json(resultData);
             return;

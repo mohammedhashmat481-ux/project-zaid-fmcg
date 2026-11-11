@@ -1520,7 +1520,12 @@ export default function ModuleView() {
           });
           refetch();
           queryClient.invalidateQueries({ queryKey: ['records', 'campaigns'] });
+          queryClient.invalidateQueries({ queryKey: ['records', 'leads'] });
+          queryClient.invalidateQueries({ queryKey: ['my-campaigns-list'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-campaigns-list'] });
+          queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
           queryClient.invalidateQueries({ queryKey: ['campaign-allocation-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
         } catch (err: any) {
           showAlertModal({
             title: 'Delete Failed',
@@ -1690,6 +1695,12 @@ export default function ModuleView() {
       queryClient.invalidateQueries({ queryKey: ['records', apiPath] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['my-campaigns-list'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-campaigns-list'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-allocation-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['records', 'campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['records', 'leads'] });
     }
   });
 

@@ -207,9 +207,9 @@ export default function Layout({ children }: LayoutProps) {
       const res = await api.get('/dashboard/metrics');
       return res.data;
     },
-    staleTime: 5000,
-    refetchInterval: (query) => (query.state.error ? false : 30000),
-    refetchOnWindowFocus: true
+    staleTime: 60000,
+    refetchInterval: (query) => (query.state.error ? false : 60000),
+    refetchOnWindowFocus: false
   });
 
   // Notifications queries

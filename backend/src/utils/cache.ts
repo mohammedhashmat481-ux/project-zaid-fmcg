@@ -110,27 +110,27 @@ export const CacheKeys = {
 
 export const CacheInvalidators = {
   invalidateDashboard: (orgId: string) => {
-    return serverCache.invalidatePattern(`dash:metrics:${orgId}`);
+    return serverCache.invalidatePattern(new RegExp(`^dash:metrics:${orgId}(:|$)`));
   },
   invalidateCampaigns: (orgId: string) => {
-    serverCache.invalidatePattern(`campaigns:${orgId}`);
-    serverCache.invalidatePattern(`reports:matrix:${orgId}`);
-    return serverCache.invalidatePattern(`dash:metrics:${orgId}`);
+    serverCache.invalidatePattern(new RegExp(`^campaigns:.*:${orgId}(:|$)`));
+    serverCache.invalidatePattern(new RegExp(`^reports:matrix:${orgId}(:|$)`));
+    return serverCache.invalidatePattern(new RegExp(`^dash:metrics:${orgId}(:|$)`));
   },
   invalidateMaster: (orgId: string, apiPath?: string) => {
     if (apiPath) {
-      return serverCache.invalidatePattern(`master:records:${orgId}:${apiPath}`);
+      return serverCache.invalidatePattern(new RegExp(`^master:records:${orgId}:${apiPath}(:|$)`));
     }
-    return serverCache.invalidatePattern(`master:${orgId}`);
+    return serverCache.invalidatePattern(new RegExp(`^master:.*:${orgId}(:|$)`));
   },
   invalidateStatuses: (orgId: string) => {
-    return serverCache.invalidatePattern(`master:statuses:${orgId}`);
+    return serverCache.invalidatePattern(new RegExp(`^master:statuses:${orgId}(:|$)`));
   },
   invalidateModules: (orgId: string) => {
-    return serverCache.invalidatePattern(`master:modules:${orgId}`);
+    return serverCache.invalidatePattern(new RegExp(`^master:modules:${orgId}(:|$)`));
   },
   invalidateUsers: (orgId: string) => {
-    return serverCache.invalidatePattern(`users:dropdown:${orgId}`);
+    return serverCache.invalidatePattern(new RegExp(`^users:dropdown:${orgId}(:|$)`));
   },
   invalidateAllForOrg: (orgId: string) => {
     return serverCache.invalidatePattern(new RegExp(`:${orgId}(:|$)`));

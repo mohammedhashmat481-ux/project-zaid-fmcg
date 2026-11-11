@@ -14,6 +14,7 @@ const Organization_1 = __importDefault(require("../models/Organization"));
 const Activity_1 = __importDefault(require("../models/Activity"));
 const AuditLog_1 = __importDefault(require("../models/AuditLog"));
 const Status_1 = __importDefault(require("../models/Status"));
+const leadStatusHelper_1 = require("../utils/leadStatusHelper");
 const formulaEvaluator_1 = require("../services/formulaEvaluator");
 const workflowEngine_1 = require("../services/workflowEngine");
 const notificationHelper_1 = require("../utils/notificationHelper");
@@ -1147,6 +1148,13 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
             const d = c.data || {};
             return (d.campaignName || d.name || d.source || '').toString().trim().toLowerCase();
         }).filter(Boolean));
+        // If there are no registered campaigns in Campaigns list, return empty array immediately!
+        if (registeredCampaignNames.size === 0) {
+            cache_1.serverCache.set(cacheKey, [], 60);
+            res.setHeader('X-Cache', 'MISS');
+            res.status(200).json({ campaigns: [] });
+            return;
+        }
         // 2. Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         if (!leadModule) {
@@ -1201,8 +1209,16 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
         }
         const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
         const leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
-        // Group leads by campaign name — only include actual campaigns!
+        // Initialize campaignGroups for ALL registered campaigns so campaigns created in Campaigns list always appear
         const campaignGroups = {};
+        campaignRecords.forEach((c) => {
+            const d = c.data || {};
+            const name = (d.campaignName || d.name || d.source || '').toString().trim();
+            if (name) {
+                campaignGroups[name] = [];
+            }
+        });
+        // Group leads by registered campaign name strictly
         leads.forEach((lead) => {
             const d = lead.data || {};
             const rawSource = (d.campaignName ||
@@ -1211,10 +1227,9 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                 d.source)?.toString().trim();
             if (rawSource) {
                 const lower = rawSource.toLowerCase();
-                const genericSources = ['website', 'referral', 'cold call', 'social media', 'google ads', 'facebook ads', 'walk-in', 'direct'];
-                const isRegistered = registeredCampaignNames.size === 0 || registeredCampaignNames.has(lower);
-                if (isRegistered && (registeredCampaignNames.has(lower) || !genericSources.includes(lower))) {
-                    // Find canonical name from registered campaign or use raw
+                // A campaign lead MUST belong to an existing registered campaign!
+                if (registeredCampaignNames.has(lower)) {
+                    // Find canonical name from registered campaign
                     const canonical = campaignRecords.find(c => {
                         const cd = c.data || {};
                         return (cd.campaignName || cd.name || cd.source || '').toString().trim().toLowerCase() === lower;
@@ -1295,6 +1310,27 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
         const moduleId = leadModule?._id || leadModule?.id;
         const escName = decodedCampaignName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        // Verify the campaign exists in registered campaigns module
+        const campaignModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' });
+        if (campaignModule) {
+            const exists = await CustomRecord_1.default.findOne({
+                organizationId: orgId,
+                moduleId: campaignModule._id,
+                $or: [
+                    { 'data.campaignName': new RegExp(`^\\s*${escName}\\s*$`, 'i') },
+                    { 'data.name': new RegExp(`^\\s*${escName}\\s*$`, 'i') },
+                    { 'data.source': new RegExp(`^\\s*${escName}\\s*$`, 'i') }
+                ]
+            });
+            if (!exists) {
+                res.status(200).json({
+                    leads: [],
+                    stats: { totalAllocated: 0, dialed: 0, yetToDial: 0, overallRate: 0 },
+                    pagination: { total: 0, page: 1, limit, totalPages: 1 }
+                });
+                return;
+            }
+        }
         // 1. Ultra-fast indexed PostgreSQL direct execution (<25ms)
         try {
             const baseParams = [orgId];
@@ -1824,10 +1860,26 @@ function getStatusSynonyms(statusVal) {
         synonyms.add('INKWORLDWIDE');
         synonyms.add('Ink Worldwide');
     }
+    // COOL
+    if (upper.includes('COOL')) {
+        synonyms.add('COOL');
+        synonyms.add('COOL LEAD');
+        synonyms.add('COOL LEADS');
+        synonyms.add('Cool');
+        synonyms.add('Cool Lead');
+        synonyms.add('Cool Leads');
+    }
+    // GIVEN LOGIN / LOGIN
+    if (upper.includes('LOGIN')) {
+        synonyms.add('GIVEN LOGIN');
+        synonyms.add('Given Login');
+        synonyms.add('LOGIN');
+        synonyms.add('Login');
+    }
     return Array.from(synonyms).filter(Boolean);
 }
-// Regex matching only the 11 official Lead Pipeline Stages (strictly excludes Campaign telecalling contacts)
-exports.PIPELINE_LEAD_STATUS_REGEX = '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|CE[BD]IL(\\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\\s*WORLDWIDE)$';
+// Regex matching official Lead Pipeline Stages (strictly excludes Campaign telecalling contacts)
+exports.PIPELINE_LEAD_STATUS_REGEX = '^(HOT(\\s+LEADS?)?|WARM(\\s+LEADS?)?|COOL(\\s+LEADS?)?|GIVEN\\s+LOGIN|LOGIN|CE[BD]IL(\\s+PENDING)?|DOC(UMENT)?S?(\\s+PENDING)?|PROPOSAL|APPROVALS?(\\s+PENDING)?|NEGOTIATION|APPROVED(\\s+BUT\\s+NOT\\s+DISBU(RS|S)E?D?)?|DISBU(RS|S)E?D?|REJECT(ED)?|FOLLOW[- ]?UP|DROP(PED)?|PENDING|INK\\s*WORLDWIDE)$';
 // 1. LIST RECORDS FOR A DYNAMIC MODULE
 router.get('/:apiPath', async (req, res) => {
     try {
@@ -1871,8 +1923,9 @@ router.get('/:apiPath', async (req, res) => {
         // Raw campaign contacts (dial status 'Yet To Call', 'Not Connected', 'Wrong Number', etc.) belong strictly to Campaigns,
         // NOT to Leads Process. Only directly created leads and campaign contacts converted via Hot/Warm lead appear in Leads Process.
         if (apiPath.toLowerCase() === 'leads') {
+            const realLeadRegexStr = await (0, leadStatusHelper_1.getRealLeadRegex)(req.organizationId);
             const realLeadFilter = {
-                'data.status': { $regex: exports.PIPELINE_LEAD_STATUS_REGEX }
+                'data.status': { $regex: realLeadRegexStr, $options: 'i' }
             };
             if (query.$and) {
                 query.$and.push(realLeadFilter);
@@ -1963,7 +2016,7 @@ router.get('/:apiPath', async (req, res) => {
             }
             const searchConditions = [
                 // Match module dynamic fields
-                ...moduleDef.fields
+                ...(moduleDef?.fields || [])
                     .filter((f) => ['text', 'email', 'phone', 'rich-text', 'url', 'select', 'number'].includes(f.type))
                     .map((f) => ({ [`data.${f.name}`]: searchRegex })),
                 // Match standard lead name and number fields
@@ -2506,6 +2559,42 @@ router.delete('/:apiPath/:id', async (req, res) => {
             return;
         }
         await CustomRecord_1.default.findByIdAndDelete(record._id);
+        // If deleting a campaign record from the Campaigns module:
+        // CASCADE DELETE all associated contacts, uploaded leads, and campaign assignments
+        if (apiPath.toLowerCase() === 'campaigns') {
+            const campData = record.data || {};
+            const deletedCampName = (campData.campaignName || campData.name || campData.source || '').toString().trim();
+            if (deletedCampName) {
+                const escCampName = deletedCampName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const campRegex = new RegExp(`^\\s*${escCampName}\\s*$`, 'i');
+                // 1. Delete all assigned contacts and leads associated with this campaign
+                const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: req.organizationId, apiPath: 'leads' });
+                if (leadModule) {
+                    await CustomRecord_1.default.deleteMany({
+                        organizationId: req.organizationId,
+                        moduleId: leadModule._id,
+                        $or: [
+                            { 'data.campaignName': campRegex },
+                            { 'data.campaign': campRegex },
+                            { 'data.campaign_name': campRegex },
+                            { 'data.source': campRegex }
+                        ]
+                    });
+                }
+                // 2. Delete all campaign assignments for this campaign
+                const assignModule = await ModuleDefinition_1.default.findOne({ organizationId: req.organizationId, apiPath: 'campaignassignments' });
+                if (assignModule) {
+                    await CustomRecord_1.default.deleteMany({
+                        organizationId: req.organizationId,
+                        moduleId: assignModule._id,
+                        $or: [
+                            { 'data.campaignName': campRegex },
+                            { 'data.campaign': campRegex }
+                        ]
+                    });
+                }
+            }
+        }
         // Audit logs
         await AuditLog_1.default.create({
             organizationId: req.organizationId,
@@ -2520,6 +2609,8 @@ router.delete('/:apiPath/:id', async (req, res) => {
         cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
         cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
         cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId, 'leads');
+        cache_1.CacheInvalidators.invalidateMaster(req.organizationId, 'campaignassignments');
         res.status(200).json({ message: 'Record deleted successfully.' });
     }
     catch (error) {

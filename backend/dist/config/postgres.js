@@ -249,6 +249,10 @@ const initPostgresSchema = async () => {
     CREATE INDEX IF NOT EXISTS idx_cr_lower_assigned ON custom_records (lower(data->>'assignedTo'));
     CREATE INDEX IF NOT EXISTS idx_cr_lower_dial_status ON custom_records (lower(data->>'dialStatus'));
     CREATE INDEX IF NOT EXISTS idx_cr_lower_status ON custom_records (lower(data->>'status'));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_lower_status ON custom_records (organization_id, module_id, lower(data->>'status'));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_leadno ON custom_records (organization_id, module_id, (data->>'leadNo'));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_datacode ON custom_records (organization_id, module_id, lower(data->>'dataCode'));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_leadname ON custom_records (organization_id, module_id, lower(data->>'leadName'));
     CREATE INDEX IF NOT EXISTS idx_cr_created_asc ON custom_records (created_at ASC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_cr_data_gin ON custom_records USING gin (data);
 
