@@ -276,6 +276,25 @@ export default function Dashboard() {
     }
   }, [metricsData]);
 
+  // Canonical key resolver for status matching
+  const getCanonicalKey = (name: string): string => {
+    const upper = (name || '').toUpperCase().trim();
+    if (upper === 'HOT' || upper === 'HOT LEAD' || upper === 'HOT LEADS') return 'HOT LEADS';
+    if (upper === 'WARM' || upper === 'WARM LEAD' || upper === 'WARM LEADS' || upper === 'DEMO') return 'WARM LEADS';
+    if (upper === 'COOL' || upper === 'COOL LEAD' || upper === 'COOL LEADS') return 'COOL LEAD';
+    if (upper === 'CEDIL PENDING' || upper === 'CEBIL PENDING' || upper === 'CEDIL' || upper === 'CEBIL') return 'CEBIL PENDING';
+    if (upper === 'DOCUMENT PENDING' || upper === 'DOCUMENTS PENDING' || upper === 'DOCS PENDING') return 'DOCUMENT PENDING';
+    if (upper === 'APPROVAL PENDING' || upper === 'APPROVALS PENDING') return 'APPROVAL PENDING';
+    if (upper === 'APPROVED BUT NOT DISBUSE' || upper === 'APPROVED BUT NOT DISBUSED' || upper === 'APPROVED BUT NOT DISBURSE') return 'APPROVED BUT NOT DISBUSE';
+    if (upper === 'DISBUSED' || upper === 'DISBURSED' || upper === 'DISBURSED PENDING') return 'DISBUSED';
+    if (upper === 'REJECTED' || upper === 'REJECT' || upper === 'REJECT PENDING') return 'REJECTED';
+    if (upper === 'FOLLOWUP' || upper === 'FOLLOW-UP' || upper === 'FOLLOW UP') return 'FOLLOWUP';
+    if (upper === 'DROPPED' || upper === 'DROP' || upper === 'DEAD LEADS' || upper === 'CLOSED') return 'DROPPED';
+    if (upper === 'PENDING') return 'PENDING';
+    if (upper === 'GIVEN LOGIN' || upper === 'LOGIN' || upper === 'LOGIN PENDING') return 'GIVEN LOGIN';
+    return upper;
+  };
+
   const getStatusCount = (lbl: string) => {
     if (!metricsData?.statusCounts) return 0;
     const raw = (lbl || '').trim();
@@ -286,40 +305,64 @@ export default function Dashboard() {
       return metricsData.todayFollowupsCount || 0;
     }
 
-    // 1. Direct exact match (matches exact or uppercase)
-    if (metricsData.statusCounts[upper] !== undefined) {
-      return Number(metricsData.statusCounts[upper]);
+    const canonical = getCanonicalKey(raw);
+    const counts = metricsData.statusCounts;
+
+    // 1. Direct canonical lookup
+    if (counts[canonical] !== undefined) {
+      return Number(counts[canonical]);
     }
-    if (metricsData.statusCounts[raw] !== undefined) {
-      return Number(metricsData.statusCounts[raw]);
+    // 2. Direct uppercase / raw lookup
+    if (counts[upper] !== undefined) {
+      return Number(counts[upper]);
+    }
+    if (counts[raw] !== undefined) {
+      return Number(counts[raw]);
     }
 
-    // 2. Singular / Plural variation tolerance (e.g. "COOL LEAD" <-> "COOL LEADS")
+    // 3. Stripped variations (e.g. "COOL" <-> "COOL LEAD")
+    const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
+    if (stripped && counts[stripped] !== undefined) {
+      return Number(counts[stripped]);
+    }
+    if (stripped && counts[`${stripped} LEAD`] !== undefined) {
+      return Number(counts[`${stripped} LEAD`]);
+    }
+    if (stripped && counts[`${stripped} LEADS`] !== undefined) {
+      return Number(counts[`${stripped} LEADS`]);
+    }
+
+    // 4. Singular / Plural variation tolerance
     const withoutS = upper.endsWith('S') ? upper.slice(0, -1) : upper;
     const withS = upper.endsWith('S') ? upper : `${upper}S`;
-    if (metricsData.statusCounts[withoutS] !== undefined) {
-      return Number(metricsData.statusCounts[withoutS]);
+    if (counts[withoutS] !== undefined) {
+      return Number(counts[withoutS]);
     }
-    if (metricsData.statusCounts[withS] !== undefined) {
-      return Number(metricsData.statusCounts[withS]);
-    }
-
-    // 3. LEAD / LEADS suffix variation tolerance (e.g. "COOL" <-> "COOL LEAD")
-    const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
-    if (stripped && metricsData.statusCounts[stripped] !== undefined) {
-      return Number(metricsData.statusCounts[stripped]);
-    }
-    if (stripped && metricsData.statusCounts[`${stripped} LEAD`] !== undefined) {
-      return Number(metricsData.statusCounts[`${stripped} LEAD`]);
-    }
-    if (stripped && metricsData.statusCounts[`${stripped} LEADS`] !== undefined) {
-      return Number(metricsData.statusCounts[`${stripped} LEADS`]);
+    if (counts[withS] !== undefined) {
+      return Number(counts[withS]);
     }
 
     return 0;
   };
 
-  // Construct dynamic metric cards from configured statuses in Settings, plus Today's Followups
+  // Standard 13 Pipeline Stage Cards in accurate CRM workflow order
+  const STANDARD_PIPELINE_CARDS = [
+    { key: 'HOT LEADS', label: 'HOT LEADS', rawName: 'HOT LEADS', icon: Icons.Flame, accentColor: '#EF4444', sub: 'Stage #2', category: 'pipeline' },
+    { key: 'WARM LEADS', label: 'WARM LEADS', rawName: 'WARM LEADS', icon: Icons.Sun, accentColor: '#F59E0B', sub: 'Stage #3', category: 'pipeline' },
+    { key: 'COOL LEAD', label: 'COOL LEAD', rawName: 'COOL LEAD', icon: Icons.Snowflake, accentColor: '#06B6D4', sub: 'Stage #4', category: 'pipeline' },
+    { key: 'CEBIL PENDING', label: 'CEBIL PENDING', rawName: 'CEBIL PENDING', icon: Icons.FileWarning, accentColor: '#E11D48', sub: 'Stage #5', category: 'followups' },
+    { key: 'DOCUMENT PENDING', label: 'DOCUMENT PENDING', rawName: 'DOCUMENT PENDING', icon: Icons.FileText, accentColor: '#0284C7', sub: 'Stage #6', category: 'followups' },
+    { key: 'APPROVAL PENDING', label: 'APPROVAL PENDING', rawName: 'APPROVAL PENDING', icon: Icons.Clock, accentColor: '#EA580C', sub: 'Stage #7', category: 'followups' },
+    { key: 'APPROVED BUT NOT DISBUSE', label: 'APPROVED BUT NOT DISBUSE', rawName: 'APPROVED BUT NOT DISBUSE', icon: Icons.CheckCircle, accentColor: '#F59E0B', sub: 'Stage #8', category: 'pipeline' },
+    { key: 'DISBUSED', label: 'DISBUSED', rawName: 'DISBUSED', icon: Icons.Banknote, accentColor: '#16A34A', sub: '✔ Closed Won', category: 'pipeline' },
+    { key: 'REJECTED', label: 'REJECTED', rawName: 'REJECTED', icon: Icons.XOctagon, accentColor: '#E11D48', sub: '✕ Closed Final', category: 'pipeline' },
+    { key: 'FOLLOWUP', label: 'FOLLOWUP', rawName: 'FOLLOWUP', icon: Icons.PhoneCall, accentColor: '#0284C7', sub: 'Stage #11', category: 'followups' },
+    { key: 'DROPPED', label: 'DROPPED', rawName: 'DROPPED', icon: Icons.ArrowDownCircle, accentColor: '#EA580C', sub: '✕ Closed Final', category: 'pipeline' },
+    { key: 'PENDING', label: 'PENDING', rawName: 'PENDING', icon: Icons.Hourglass, accentColor: '#F59E0B', sub: 'Stage #13', category: 'followups' },
+    { key: 'GIVEN LOGIN', label: 'GIVEN LOGIN', rawName: 'GIVEN LOGIN', icon: Icons.KeyRound, accentColor: '#8B5CF6', sub: 'Stage #14', category: 'pipeline' }
+  ];
+
+  // Construct metric cards: guarantees standard 13 stages + custom stages + Today's Followups
   const getDynamicMetricCards = () => {
     const todaysFollowupsCard = {
       label: "TODAY'S FOLLOWUPS",
@@ -332,115 +375,44 @@ export default function Dashboard() {
 
     const cardMap = new Map<string, any>();
 
-    const baseList = (configuredStatuses && configuredStatuses.length > 0)
-      ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-      : [
-          { name: 'HOT LEADS', icon: 'Flame', color: '#EF4444', pipelinePosition: 2, order: 1 },
-          { name: 'WARM LEADS', icon: 'Sun', color: '#F59E0B', pipelinePosition: 3, order: 2 },
-          { name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4', pipelinePosition: 4, order: 3 },
-          { name: 'CEBIL PENDING', icon: 'FileWarning', color: '#E11D48', pipelinePosition: 5, order: 4 },
-          { name: 'DOCUMENT PENDING', icon: 'FileText', color: '#0284C7', pipelinePosition: 6, order: 5 },
-          { name: 'APPROVAL PENDING', icon: 'Clock', color: '#EA580C', pipelinePosition: 7, order: 6 },
-          { name: 'APPROVED BUT NOT DISBUSE', icon: 'CheckCircle', color: '#F59E0B', pipelinePosition: 8, order: 7 },
-          { name: 'DISBUSED', icon: 'Banknote', color: '#16A34A', pipelinePosition: 9, isFinal: true, isSuccess: true, order: 8 },
-          { name: 'REJECTED', icon: 'XOctagon', color: '#E11D48', pipelinePosition: 10, isFinal: true, isSuccess: false, order: 9 },
-          { name: 'FOLLOWUP', icon: 'PhoneCall', color: '#0284C7', pipelinePosition: 11, order: 10 },
-          { name: 'DROPPED', icon: 'ArrowDownCircle', color: '#EA580C', pipelinePosition: 12, isFinal: true, isSuccess: false, order: 11 },
-          { name: 'PENDING', icon: 'Hourglass', color: '#F59E0B', pipelinePosition: 13, order: 12 },
-          { name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6', pipelinePosition: 14, order: 13 }
-        ];
-
-    baseList.forEach((st: any) => {
-      const IconComp = (Icons as any)[st.icon] || Icons.Circle;
-      const upperName = (st.name || '').toUpperCase().trim();
-
-      let category = 'overview';
-      if (st.pipelinePosition > 0) category = 'pipeline';
-      if (upperName.includes('FOLLOW') || upperName.includes('WARM') || upperName.includes('PENDING') || upperName.includes('REACHABLE')) {
-        category = 'followups';
-      }
-
-      const themeTokens = getStatusTokens(st);
-
-      cardMap.set(upperName, {
-        label: upperName,
-        rawName: st.name,
-        category,
-        accentColor: st.color || themeTokens.accentHex,
-        icon: IconComp,
-        sub: st.isFinal 
-          ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') 
-          : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Configured Status')
-      });
+    // 1. Initialize with standard 13 pipeline cards
+    STANDARD_PIPELINE_CARDS.forEach(card => {
+      cardMap.set(card.key, { ...card });
     });
 
-    // Ensure standard essential cards COOL LEAD and GIVEN LOGIN are always present
-    if (!cardMap.has('COOL LEAD') && !cardMap.has('COOL LEADS') && !cardMap.has('COOL')) {
-      cardMap.set('COOL LEAD', {
-        label: 'COOL LEAD',
-        rawName: 'COOL LEAD',
-        category: 'pipeline',
-        accentColor: '#06B6D4',
-        icon: Icons.Snowflake,
-        sub: 'Stage #12'
-      });
-    }
+    // 2. Overlay or add configured statuses from database
+    if (Array.isArray(configuredStatuses)) {
+      configuredStatuses
+        .filter((s: any) => s.dashboardVisibility !== false)
+        .forEach((st: any) => {
+          const upper = (st.name || '').toUpperCase().trim();
+          const canonical = getCanonicalKey(upper);
+          const IconComp = (Icons as any)[st.icon];
+          const themeTokens = getStatusTokens(st);
 
-    if (!cardMap.has('GIVEN LOGIN') && !cardMap.has('LOGIN')) {
-      cardMap.set('GIVEN LOGIN', {
-        label: 'GIVEN LOGIN',
-        rawName: 'GIVEN LOGIN',
-        category: 'pipeline',
-        accentColor: '#8B5CF6',
-        icon: Icons.KeyRound,
-        sub: 'Stage #13'
-      });
-    }
-
-    // Proactively scan metricsData.statusCounts: If any real pipeline status has leads > 0, ensure it has a card!
-    if (metricsData?.statusCounts) {
-      const RAW_CALL_DISPOSITIONS = new Set([
-        'NEW', 'YET TO CALL', 'NOT CALLED', 'UNASSIGNED', 'NUMBER BUSY', 'BUSY',
-        'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF', 'SWITCHED OFF',
-        'CALL REJECTED', 'NOT CONNECTED', 'NOT REACHABLE', 'NOT INTESTED',
-        'NOT INTERESTED', 'NOT EXISTS', 'DOES NOT EXIST', 'NO ANSWER',
-        'NO BUSINESS', 'WRONG NUMBER', 'REPEATED NUMBER'
-      ]);
-
-      Object.entries(metricsData.statusCounts).forEach(([stName, cnt]) => {
-        const count = Number(cnt || 0);
-        if (count > 0) {
-          const upper = stName.toUpperCase().trim();
-          if (RAW_CALL_DISPOSITIONS.has(upper) || upper === "TODAY'S FOLLOWUPS") return;
-
-          const alreadyCovered = Array.from(cardMap.keys()).some(k => {
-            const kUpper = k.toUpperCase().trim();
-            if (kUpper === upper) return true;
-            const strippedK = kUpper.replace(/\s+LEADS?$/i, '').trim();
-            const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
-            return strippedK === strippedUpper || kUpper === `${upper}S` || `${kUpper}S` === upper;
-          });
-
-          if (!alreadyCovered) {
-            let iconComp: any = Icons.Layers;
-            let accentColor = '#0284C7';
-            if (upper.includes('COOL')) { iconComp = Icons.Snowflake; accentColor = '#06B6D4'; }
-            else if (upper.includes('LOGIN')) { iconComp = Icons.KeyRound; accentColor = '#8B5CF6'; }
-            else if (upper.includes('HOT')) { iconComp = Icons.Flame; accentColor = '#EF4444'; }
-            else if (upper.includes('WARM')) { iconComp = Icons.Sun; accentColor = '#F59E0B'; }
-            else if (upper.includes('CEBIL') || upper.includes('CEDIL')) { iconComp = Icons.FileWarning; accentColor = '#E11D48'; }
-
-            cardMap.set(upper, {
-              label: upper,
-              rawName: stName,
-              category: 'pipeline',
-              accentColor,
-              icon: iconComp,
-              sub: 'Active Pipeline'
-            });
+          if (cardMap.has(canonical)) {
+            // Overlay customized styling/icon if user configured it
+            const existing = cardMap.get(canonical);
+            if (st.color) existing.accentColor = st.color;
+            if (IconComp) existing.icon = IconComp;
+            if (st.isFinal !== undefined) {
+              existing.sub = st.isFinal ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') : existing.sub;
+            }
+          } else {
+            // Truly new custom status (e.g. INK WORLDWIDE) - skip raw call dispositions
+            const isRawDisp = upper.startsWith('NEW') || upper.startsWith('NO ANSWER') || upper.startsWith('NOT CONNECTED') || upper.startsWith('NOT REACHABLE') || upper.startsWith('SWITCH');
+            if (!isRawDisp) {
+              cardMap.set(canonical, {
+                label: canonical,
+                rawName: st.name,
+                category: st.pipelinePosition > 0 ? 'pipeline' : 'overview',
+                accentColor: st.color || themeTokens.accentHex,
+                icon: IconComp || Icons.Circle,
+                sub: st.isFinal ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Configured Stage')
+              });
+            }
           }
-        }
-      });
+        });
     }
 
     return [...Array.from(cardMap.values()), todaysFollowupsCard];

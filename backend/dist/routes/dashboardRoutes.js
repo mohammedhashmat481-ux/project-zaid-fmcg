@@ -168,33 +168,59 @@ router.get('/metrics', async (req, res) => {
                     const rawName = item._id.toString().trim();
                     const upper = rawName.toUpperCase();
                     const count = Number(item.count || 0);
-                    // Canonicalize status: "HOT LEAD" and "HOT LEADS" -> "HOT LEADS"
+                    // Canonicalize status to match standard dashboard cards
                     let canonical = upper;
                     if (upper === 'HOT' || upper === 'HOT LEAD' || upper === 'HOT LEADS') {
                         canonical = 'HOT LEADS';
                     }
-                    else if (upper === 'WARM' || upper === 'WARM LEAD' || upper === 'WARM LEADS') {
+                    else if (upper === 'WARM' || upper === 'WARM LEAD' || upper === 'WARM LEADS' || upper === 'DEMO') {
                         canonical = 'WARM LEADS';
                     }
                     else if (upper === 'COOL' || upper === 'COOL LEAD' || upper === 'COOL LEADS') {
-                        canonical = 'COOL LEADS';
+                        canonical = 'COOL LEAD';
                     }
                     else if (upper === 'CEDIL PENDING' || upper === 'CEBIL PENDING' || upper === 'CEDIL' || upper === 'CEBIL') {
                         canonical = 'CEBIL PENDING';
                     }
-                    else if (upper === 'GIVEN LOGIN' || upper === 'LOGIN') {
+                    else if (upper === 'DOCUMENT PENDING' || upper === 'DOCUMENTS PENDING' || upper === 'DOCS PENDING') {
+                        canonical = 'DOCUMENT PENDING';
+                    }
+                    else if (upper === 'APPROVAL PENDING' || upper === 'APPROVALS PENDING') {
+                        canonical = 'APPROVAL PENDING';
+                    }
+                    else if (upper === 'APPROVED BUT NOT DISBUSE' || upper === 'APPROVED BUT NOT DISBUSED' || upper === 'APPROVED BUT NOT DISBURSE') {
+                        canonical = 'APPROVED BUT NOT DISBUSE';
+                    }
+                    else if (upper === 'DISBUSED' || upper === 'DISBURSED' || upper === 'DISBURSED PENDING') {
+                        canonical = 'DISBUSED';
+                    }
+                    else if (upper === 'REJECTED' || upper === 'REJECT' || upper === 'REJECT PENDING') {
+                        canonical = 'REJECTED';
+                    }
+                    else if (upper === 'FOLLOWUP' || upper === 'FOLLOW-UP' || upper === 'FOLLOW UP') {
+                        canonical = 'FOLLOWUP';
+                    }
+                    else if (upper === 'DROPPED' || upper === 'DROP' || upper === 'DEAD LEADS' || upper === 'CLOSED') {
+                        canonical = 'DROPPED';
+                    }
+                    else if (upper === 'PENDING') {
+                        canonical = 'PENDING';
+                    }
+                    else if (upper === 'GIVEN LOGIN' || upper === 'LOGIN' || upper === 'LOGIN PENDING') {
                         canonical = 'GIVEN LOGIN';
                     }
+                    // Strictly exclude raw campaign dialing dispositions (e.g. NEW, NOT CONNECTED, NO ANSWER) from pipeline counts
+                    const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
+                    const isDisposition = leadStatusHelper_1.RAW_CAMPAIGN_DISPOSITIONS.has(upper) || leadStatusHelper_1.RAW_CAMPAIGN_DISPOSITIONS.has(strippedUpper) || upper === 'NEW' || upper === 'NEWS';
+                    if (isDisposition) {
+                        return;
+                    }
+                    const isReal = realLeadStatuses.has(upper) || realLeadStatuses.has(rawName) || realLeadStatuses.has(strippedUpper) || realLeadStatuses.has(canonical);
+                    if (!isReal) {
+                        return;
+                    }
+                    totalPipelineLeads += count;
                     canonicalMap[canonical] = (canonicalMap[canonical] || 0) + count;
-                    if (rawName !== canonical) {
-                        statusCounts[rawName] = count;
-                    }
-                    // Count strictly real pipeline leads (never raw campaign dialing dispositions)
-                    const isDisposition = leadStatusHelper_1.RAW_CAMPAIGN_DISPOSITIONS.has(upper);
-                    const isReal = !isDisposition && (realLeadStatuses.has(upper) || realLeadStatuses.has(rawName));
-                    if (isReal) {
-                        totalPipelineLeads += count;
-                    }
                 }
             });
             // Populate statusCounts from canonical buckets: each bucket distributes to its synonyms

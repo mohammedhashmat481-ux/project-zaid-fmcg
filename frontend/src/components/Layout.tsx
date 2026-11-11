@@ -263,62 +263,58 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6' }
   ];
 
+  const getCanonicalKey = (name: string): string => {
+    const upper = (name || '').toUpperCase().trim();
+    if (upper === 'HOT' || upper === 'HOT LEAD' || upper === 'HOT LEADS') return 'HOT LEADS';
+    if (upper === 'WARM' || upper === 'WARM LEAD' || upper === 'WARM LEADS' || upper === 'DEMO') return 'WARM LEADS';
+    if (upper === 'COOL' || upper === 'COOL LEAD' || upper === 'COOL LEADS') return 'COOL LEAD';
+    if (upper === 'CEDIL PENDING' || upper === 'CEBIL PENDING' || upper === 'CEDIL' || upper === 'CEBIL') return 'CEBIL PENDING';
+    if (upper === 'DOCUMENT PENDING' || upper === 'DOCUMENTS PENDING' || upper === 'DOCS PENDING') return 'DOCUMENT PENDING';
+    if (upper === 'APPROVAL PENDING' || upper === 'APPROVALS PENDING') return 'APPROVAL PENDING';
+    if (upper === 'APPROVED BUT NOT DISBUSE' || upper === 'APPROVED BUT NOT DISBUSED' || upper === 'APPROVED BUT NOT DISBURSE') return 'APPROVED BUT NOT DISBUSE';
+    if (upper === 'DISBUSED' || upper === 'DISBURSED' || upper === 'DISBURSED PENDING') return 'DISBUSED';
+    if (upper === 'REJECTED' || upper === 'REJECT' || upper === 'REJECT PENDING') return 'REJECTED';
+    if (upper === 'FOLLOWUP' || upper === 'FOLLOW-UP' || upper === 'FOLLOW UP') return 'FOLLOWUP';
+    if (upper === 'DROPPED' || upper === 'DROP' || upper === 'DEAD LEADS' || upper === 'CLOSED') return 'DROPPED';
+    if (upper === 'PENDING') return 'PENDING';
+    if (upper === 'GIVEN LOGIN' || upper === 'LOGIN' || upper === 'LOGIN PENDING') return 'GIVEN LOGIN';
+    return upper;
+  };
+
   const leadStatusesToRender = useMemo(() => {
-    const list = (configuredStatuses && configuredStatuses.length > 0)
-      ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-      : fallbackLeadStatuses;
+    const map = new Map<string, any>();
 
-    const namesSet = new Set(list.map((s: any) => (s.name || '').toUpperCase().trim()));
-    const result = [...list];
+    // 1. Initialize fallback stages in order
+    fallbackLeadStatuses.forEach(st => {
+      map.set(st.name, { ...st });
+    });
 
-    if (!namesSet.has('COOL LEAD') && !namesSet.has('COOL LEADS') && !namesSet.has('COOL')) {
-      result.push({ name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4' });
-      namesSet.add('COOL LEAD');
-    }
-    if (!namesSet.has('GIVEN LOGIN') && !namesSet.has('LOGIN')) {
-      result.push({ name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6' });
-      namesSet.add('GIVEN LOGIN');
-    }
+    // 2. Overlay / add configured statuses from database
+    if (Array.isArray(configuredStatuses)) {
+      configuredStatuses
+        .filter((s: any) => s.dashboardVisibility !== false)
+        .forEach((st: any) => {
+          const upper = (st.name || '').toUpperCase().trim();
+          const canonical = getCanonicalKey(upper);
+          const isRawDisp = upper.startsWith('NEW') || upper.startsWith('NO ANSWER') || upper.startsWith('NOT CONNECTED') || upper.startsWith('NOT REACHABLE') || upper.startsWith('SWITCH');
+          if (isRawDisp) return;
 
-    if (metricsData?.statusCounts) {
-      const RAW_CALL_DISPOSITIONS = new Set([
-        'NEW', 'YET TO CALL', 'NOT CALLED', 'UNASSIGNED', 'NUMBER BUSY', 'BUSY',
-        'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF', 'SWITCHED OFF',
-        'CALL REJECTED', 'NOT CONNECTED', 'NOT REACHABLE', 'NOT INTESTED',
-        'NOT INTERESTED', 'NOT EXISTS', 'DOES NOT EXIST', 'NO ANSWER',
-        'NO BUSINESS', 'WRONG NUMBER', 'REPEATED NUMBER'
-      ]);
-
-      Object.entries(metricsData.statusCounts).forEach(([stName, cnt]) => {
-        const count = Number(cnt || 0);
-        if (count > 0) {
-          const upper = stName.toUpperCase().trim();
-          if (RAW_CALL_DISPOSITIONS.has(upper) || upper === "TODAY'S FOLLOWUPS") return;
-
-          const alreadyCovered = Array.from(namesSet).some(k => {
-            const strippedK = k.replace(/\s+LEADS?$/i, '').trim();
-            const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
-            return strippedK === strippedUpper || k === `${upper}S` || `${k}S` === upper;
-          });
-
-          if (!alreadyCovered) {
-            let icon = 'Layers';
-            let color = '#0284C7';
-            if (upper.includes('COOL')) { icon = 'Snowflake'; color = '#06B6D4'; }
-            else if (upper.includes('LOGIN')) { icon = 'KeyRound'; color = '#8B5CF6'; }
-            else if (upper.includes('HOT')) { icon = 'Flame'; color = '#EF4444'; }
-            else if (upper.includes('WARM')) { icon = 'Sun'; color = '#F59E0B'; }
-            else if (upper.includes('CEBIL') || upper.includes('CEDIL')) { icon = 'FileWarning'; color = '#E11D48'; }
-
-            result.push({ name: stName, icon, color });
-            namesSet.add(upper);
+          if (map.has(canonical)) {
+            const existing = map.get(canonical);
+            if (st.color) existing.color = st.color;
+            if (st.icon) existing.icon = st.icon;
+          } else {
+            map.set(canonical, {
+              name: canonical,
+              icon: st.icon || 'Circle',
+              color: st.color || '#6366F1'
+            });
           }
-        }
-      });
+        });
     }
 
-    return result;
-  }, [configuredStatuses, metricsData?.statusCounts]);
+    return Array.from(map.values());
+  }, [configuredStatuses]);
 
   const handleMarkAsRead = async (id: string, link?: string) => {
     try {
@@ -470,8 +466,9 @@ export default function Layout({ children }: LayoutProps) {
                 const IconComp = (Icons as any)[st.icon] || Icons.Circle;
                 const statusTokens = getStatusTokens(st);
                 const upperName = (st.name || '').toUpperCase().trim();
+                const canonical = getCanonicalKey(upperName);
                 const counts = metricsData?.statusCounts || {};
-                let count = Number(counts[upperName] ?? counts[st.name] ?? 0);
+                let count = Number(counts[canonical] ?? counts[upperName] ?? counts[st.name] ?? 0);
                 if (count === 0) {
                   const noS = upperName.endsWith('S') ? upperName.slice(0, -1) : upperName;
                   const withS = upperName.endsWith('S') ? upperName : `${upperName}S`;

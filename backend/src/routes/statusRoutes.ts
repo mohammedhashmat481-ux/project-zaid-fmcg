@@ -168,37 +168,35 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       existingNames.add('GIVEN LOGIN');
     }
 
-    // Also auto-ensure any active statuses found on real lead records in the DB
-    try {
-      const leadModule = await ModuleDefinition.findOne({ organizationId: req.organizationId, apiPath: 'leads' });
-      if (leadModule) {
-        const leadAgg = await CustomRecord.aggregate([
-          { $match: { organizationId: req.organizationId, moduleId: leadModule._id, 'data.status': { $exists: true, $ne: '' } } },
-          { $group: { _id: '$data.status', count: { $sum: 1 } } }
-        ]);
-        for (const item of leadAgg) {
-          const rawSt = (item._id || '').toString().trim();
-          const upperSt = rawSt.toUpperCase();
-          if (!upperSt || RAW_CAMPAIGN_DISPOSITIONS.has(upperSt)) continue;
-          if (!existingNames.has(upperSt) && !existingNames.has(rawSt)) {
-            maxOrder++;
-            missingStandard.push({
-              organizationId: req.organizationId,
-              name: rawSt,
-              color: '#0284C7',
-              icon: 'Layers',
-              category: 'pipeline',
-              pipelinePosition: maxOrder,
-              order: maxOrder,
-              dashboardVisibility: true,
-              isFinal: false,
-              isSuccess: false
-            });
-            existingNames.add(upperSt);
-          }
-        }
+    // Automatically purge any raw dialing dispositions that may have been saved to statuses
+    const invalidStatuses = statuses.filter((s: any) => {
+      const u = (s.name || '').toUpperCase().trim();
+      const stripped = u.replace(/\s+LEADS?$/i, '').trim();
+      return RAW_CAMPAIGN_DISPOSITIONS.has(u) || RAW_CAMPAIGN_DISPOSITIONS.has(stripped) || u === 'NEWS' || u === 'NEW';
+    });
+    if (invalidStatuses.length > 0) {
+      const invalidIds = invalidStatuses.map((s: any) => s._id);
+      await Status.deleteMany({ _id: { $in: invalidIds } });
+      statuses = statuses.filter((s: any) => !invalidIds.includes(s._id));
+    }
+
+    // Deduplicate any duplicate status entries (e.g. "Warm Lead" and "WARM LEADS")
+    const seenCanonical = new Set<string>();
+    const duplicateIds: any[] = [];
+    for (const s of statuses) {
+      const u = (s.name || '').toUpperCase().trim();
+      const stripped = u.replace(/\s+LEADS?$/i, '').trim();
+      const canonicalKey = stripped || u;
+      if (seenCanonical.has(canonicalKey)) {
+        duplicateIds.push(s._id);
+      } else {
+        seenCanonical.add(canonicalKey);
       }
-    } catch (_) {}
+    }
+    if (duplicateIds.length > 0) {
+      await Status.deleteMany({ _id: { $in: duplicateIds } });
+      statuses = statuses.filter((s: any) => !duplicateIds.includes(s._id));
+    }
 
     if (missingStandard.length > 0) {
       try {

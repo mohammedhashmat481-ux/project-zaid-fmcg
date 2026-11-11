@@ -1925,7 +1925,10 @@ router.get('/:apiPath', async (req, res) => {
         if (apiPath.toLowerCase() === 'leads') {
             const realLeadRegexStr = await (0, leadStatusHelper_1.getRealLeadRegex)(req.organizationId);
             const realLeadFilter = {
-                'data.status': { $regex: realLeadRegexStr, $options: 'i' }
+                $or: [
+                    { 'data.status': { $regex: realLeadRegexStr, $options: 'i' } },
+                    { 'data.leadStatus': { $regex: realLeadRegexStr, $options: 'i' } }
+                ]
             };
             if (query.$and) {
                 query.$and.push(realLeadFilter);
