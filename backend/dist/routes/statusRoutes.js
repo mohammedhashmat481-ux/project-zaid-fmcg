@@ -6,9 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const Status_1 = __importDefault(require("../models/Status"));
 const Organization_1 = __importDefault(require("../models/Organization"));
+const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition"));
+const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const cache_1 = require("../utils/cache");
+const leadStatusHelper_1 = require("../utils/leadStatusHelper");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
 router.use(tenantMiddleware_1.requireTenant);
@@ -94,18 +97,19 @@ router.get('/', async (req, res) => {
         // Auto-seed default standard statuses if none exist yet for this organization
         if (statuses.length === 0) {
             const defaultStatuses = [
-                { name: 'New', color: '#4F46E5', icon: 'Sparkles', pipelinePosition: 1, order: 1 },
-                { name: 'Hot', color: '#EF4444', icon: 'Flame', pipelinePosition: 2, order: 2 },
-                { name: 'Warm', color: '#F59E0B', icon: 'Sun', pipelinePosition: 3, order: 3 },
-                { name: 'Cedil Pending', color: '#EC4899', icon: 'FileWarning', pipelinePosition: 4, order: 4 },
-                { name: 'Document Pending', color: '#14B8A6', icon: 'FileText', pipelinePosition: 5, order: 5 },
-                { name: 'Approval Pending', color: '#F97316', icon: 'Clock', pipelinePosition: 6, order: 6 },
-                { name: 'Approved', color: '#10B981', icon: 'CheckCircle', pipelinePosition: 7, order: 7 },
-                { name: 'Disbursed', color: '#84CC16', icon: 'Banknote', pipelinePosition: 8, order: 8, isFinal: true, isSuccess: true },
-                { name: 'Rejected', color: '#F43F5E', icon: 'XOctagon', pipelinePosition: 9, order: 9, isFinal: true, isSuccess: false },
-                { name: 'Followup', color: '#0EA5E9', icon: 'PhoneCall', pipelinePosition: 10, order: 10 },
-                { name: 'Dropped', color: '#EF4444', icon: 'ArrowDownCircle', pipelinePosition: 11, order: 11, isFinal: true, isSuccess: false },
-                { name: 'Pending', color: '#EAB308', icon: 'Hourglass', pipelinePosition: 12, order: 12 }
+                { name: 'HOT LEADS', color: '#EF4444', icon: 'Flame', pipelinePosition: 1, order: 1 },
+                { name: 'WARM LEADS', color: '#F59E0B', icon: 'Sun', pipelinePosition: 2, order: 2 },
+                { name: 'COOL LEAD', color: '#06B6D4', icon: 'Snowflake', pipelinePosition: 3, order: 3 },
+                { name: 'CEBIL PENDING', color: '#EC4899', icon: 'FileWarning', pipelinePosition: 4, order: 4 },
+                { name: 'DOCUMENT PENDING', color: '#14B8A6', icon: 'FileText', pipelinePosition: 5, order: 5 },
+                { name: 'APPROVAL PENDING', color: '#F97316', icon: 'Clock', pipelinePosition: 6, order: 6 },
+                { name: 'APPROVED BUT NOT DISBUSE', color: '#10B981', icon: 'CheckCircle', pipelinePosition: 7, order: 7 },
+                { name: 'DISBUSED', color: '#84CC16', icon: 'Banknote', pipelinePosition: 8, order: 8, isFinal: true, isSuccess: true },
+                { name: 'REJECTED', color: '#F43F5E', icon: 'XOctagon', pipelinePosition: 9, order: 9, isFinal: true, isSuccess: false },
+                { name: 'FOLLOWUP', color: '#0EA5E9', icon: 'PhoneCall', pipelinePosition: 10, order: 10 },
+                { name: 'DROPPED', color: '#EF4444', icon: 'ArrowDownCircle', pipelinePosition: 11, order: 11, isFinal: true, isSuccess: false },
+                { name: 'PENDING', color: '#EAB308', icon: 'Hourglass', pipelinePosition: 12, order: 12 },
+                { name: 'GIVEN LOGIN', color: '#8B5CF6', icon: 'KeyRound', pipelinePosition: 13, order: 13 }
             ];
             const toInsert = defaultStatuses.map(s => ({
                 organizationId: req.organizationId,
@@ -121,6 +125,83 @@ router.get('/', async (req, res) => {
                 // ignore duplicate key errors if already concurrently inserted
             }
             statuses = await Status_1.default.find({ organizationId: req.organizationId }).sort({ order: 1 });
+        }
+        // Auto-ensure standard statuses (COOL LEAD, GIVEN LOGIN) exist for this organization
+        const existingNames = new Set(statuses.map((s) => (s.name || '').toUpperCase().trim()));
+        const missingStandard = [];
+        let maxOrder = statuses.length > 0 ? Math.max(...statuses.map((s) => s.order || 0)) : 0;
+        if (!existingNames.has('COOL LEAD') && !existingNames.has('COOL LEADS') && !existingNames.has('COOL')) {
+            maxOrder++;
+            missingStandard.push({
+                organizationId: req.organizationId,
+                name: 'COOL LEAD',
+                color: '#06B6D4',
+                icon: 'Snowflake',
+                category: 'pipeline',
+                pipelinePosition: maxOrder,
+                order: maxOrder,
+                dashboardVisibility: true,
+                isFinal: false,
+                isSuccess: false
+            });
+            existingNames.add('COOL LEAD');
+            existingNames.add('COOL LEADS');
+        }
+        if (!existingNames.has('GIVEN LOGIN') && !existingNames.has('LOGIN')) {
+            maxOrder++;
+            missingStandard.push({
+                organizationId: req.organizationId,
+                name: 'GIVEN LOGIN',
+                color: '#8B5CF6',
+                icon: 'KeyRound',
+                category: 'pipeline',
+                pipelinePosition: maxOrder,
+                order: maxOrder,
+                dashboardVisibility: true,
+                isFinal: false,
+                isSuccess: false
+            });
+            existingNames.add('GIVEN LOGIN');
+        }
+        // Also auto-ensure any active statuses found on real lead records in the DB
+        try {
+            const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: req.organizationId, apiPath: 'leads' });
+            if (leadModule) {
+                const leadAgg = await CustomRecord_1.default.aggregate([
+                    { $match: { organizationId: req.organizationId, moduleId: leadModule._id, 'data.status': { $exists: true, $ne: '' } } },
+                    { $group: { _id: '$data.status', count: { $sum: 1 } } }
+                ]);
+                for (const item of leadAgg) {
+                    const rawSt = (item._id || '').toString().trim();
+                    const upperSt = rawSt.toUpperCase();
+                    if (!upperSt || leadStatusHelper_1.RAW_CAMPAIGN_DISPOSITIONS.has(upperSt))
+                        continue;
+                    if (!existingNames.has(upperSt) && !existingNames.has(rawSt)) {
+                        maxOrder++;
+                        missingStandard.push({
+                            organizationId: req.organizationId,
+                            name: rawSt,
+                            color: '#0284C7',
+                            icon: 'Layers',
+                            category: 'pipeline',
+                            pipelinePosition: maxOrder,
+                            order: maxOrder,
+                            dashboardVisibility: true,
+                            isFinal: false,
+                            isSuccess: false
+                        });
+                        existingNames.add(upperSt);
+                    }
+                }
+            }
+        }
+        catch (_) { }
+        if (missingStandard.length > 0) {
+            try {
+                await Status_1.default.insertMany(missingStandard, { ordered: false });
+                statuses = await Status_1.default.find({ organizationId: req.organizationId }).sort({ order: 1 });
+            }
+            catch (_) { }
         }
         cache_1.serverCache.set(cacheKey, statuses, 600); // 10 minutes cache
         res.setHeader('X-Cache', 'MISS');

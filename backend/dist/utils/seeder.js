@@ -60,7 +60,9 @@ const defaultStatuses = [
     { name: 'REJECTED', icon: 'XOctagon', color: '#E11D48', category: 'overview', pipelinePosition: 8, isFinal: true, isSuccess: false, dashboardVisibility: true, order: 8 },
     { name: 'FOLLOWUP', icon: 'PhoneCall', color: '#0284C7', category: 'followups', pipelinePosition: 9, isFinal: false, dashboardVisibility: true, order: 9 },
     { name: 'DROPPED', icon: 'ArrowDownCircle', color: '#EA580C', category: 'overview', pipelinePosition: 10, isFinal: true, isSuccess: false, dashboardVisibility: true, order: 10 },
-    { name: 'PENDING', icon: 'Hourglass', color: '#F59E0B', category: 'followups', pipelinePosition: 11, isFinal: false, dashboardVisibility: true, order: 11 }
+    { name: 'PENDING', icon: 'Hourglass', color: '#F59E0B', category: 'followups', pipelinePosition: 11, isFinal: false, dashboardVisibility: true, order: 11 },
+    { name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4', category: 'pipeline', pipelinePosition: 12, isFinal: false, dashboardVisibility: true, order: 12 },
+    { name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6', category: 'pipeline', pipelinePosition: 13, isFinal: false, dashboardVisibility: true, order: 13 }
 ];
 async function seedNewTenantData(organizationId, adminUserId) {
     logger_1.logger.info(`[Auto-Seeder] Seeding modules, roles, statuses and departments for organization: ${organizationId}`);

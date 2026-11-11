@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -250,6 +250,7 @@ export default function Layout({ children }: LayoutProps) {
   const fallbackLeadStatuses = [
     { name: 'HOT LEADS', icon: 'Flame', color: '#EF4444' },
     { name: 'WARM LEADS', icon: 'Sun', color: '#F59E0B' },
+    { name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4' },
     { name: 'CEBIL PENDING', icon: 'FileWarning', color: '#0284C7' },
     { name: 'DOCUMENT PENDING', icon: 'FileText', color: '#0D9488' },
     { name: 'APPROVAL PENDING', icon: 'Clock', color: '#F97316' },
@@ -258,12 +259,66 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'REJECTED', icon: 'XOctagon', color: '#F43F5E' },
     { name: 'FOLLOWUP', icon: 'PhoneCall', color: '#0284C7' },
     { name: 'DROPPED', icon: 'ArrowDownCircle', color: '#F43F5E' },
-    { name: 'PENDING', icon: 'Hourglass', color: '#8B5CF6' }
+    { name: 'PENDING', icon: 'Hourglass', color: '#8B5CF6' },
+    { name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6' }
   ];
 
-  const leadStatusesToRender = (configuredStatuses && configuredStatuses.length > 0)
-    ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-    : fallbackLeadStatuses;
+  const leadStatusesToRender = useMemo(() => {
+    const list = (configuredStatuses && configuredStatuses.length > 0)
+      ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+      : fallbackLeadStatuses;
+
+    const namesSet = new Set(list.map((s: any) => (s.name || '').toUpperCase().trim()));
+    const result = [...list];
+
+    if (!namesSet.has('COOL LEAD') && !namesSet.has('COOL LEADS') && !namesSet.has('COOL')) {
+      result.push({ name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4' });
+      namesSet.add('COOL LEAD');
+    }
+    if (!namesSet.has('GIVEN LOGIN') && !namesSet.has('LOGIN')) {
+      result.push({ name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6' });
+      namesSet.add('GIVEN LOGIN');
+    }
+
+    if (metricsData?.statusCounts) {
+      const RAW_CALL_DISPOSITIONS = new Set([
+        'NEW', 'YET TO CALL', 'NOT CALLED', 'UNASSIGNED', 'NUMBER BUSY', 'BUSY',
+        'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF', 'SWITCHED OFF',
+        'CALL REJECTED', 'NOT CONNECTED', 'NOT REACHABLE', 'NOT INTESTED',
+        'NOT INTERESTED', 'NOT EXISTS', 'DOES NOT EXIST', 'NO ANSWER',
+        'NO BUSINESS', 'WRONG NUMBER', 'REPEATED NUMBER'
+      ]);
+
+      Object.entries(metricsData.statusCounts).forEach(([stName, cnt]) => {
+        const count = Number(cnt || 0);
+        if (count > 0) {
+          const upper = stName.toUpperCase().trim();
+          if (RAW_CALL_DISPOSITIONS.has(upper) || upper === "TODAY'S FOLLOWUPS") return;
+
+          const alreadyCovered = Array.from(namesSet).some(k => {
+            const strippedK = k.replace(/\s+LEADS?$/i, '').trim();
+            const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
+            return strippedK === strippedUpper || k === `${upper}S` || `${k}S` === upper;
+          });
+
+          if (!alreadyCovered) {
+            let icon = 'Layers';
+            let color = '#0284C7';
+            if (upper.includes('COOL')) { icon = 'Snowflake'; color = '#06B6D4'; }
+            else if (upper.includes('LOGIN')) { icon = 'KeyRound'; color = '#8B5CF6'; }
+            else if (upper.includes('HOT')) { icon = 'Flame'; color = '#EF4444'; }
+            else if (upper.includes('WARM')) { icon = 'Sun'; color = '#F59E0B'; }
+            else if (upper.includes('CEBIL') || upper.includes('CEDIL')) { icon = 'FileWarning'; color = '#E11D48'; }
+
+            result.push({ name: stName, icon, color });
+            namesSet.add(upper);
+          }
+        }
+      });
+    }
+
+    return result;
+  }, [configuredStatuses, metricsData?.statusCounts]);
 
   const handleMarkAsRead = async (id: string, link?: string) => {
     try {

@@ -330,48 +330,120 @@ export default function Dashboard() {
       accentColor: '#4F46E5'
     };
 
-    if (configuredStatuses && configuredStatuses.length > 0) {
-      const visible = configuredStatuses
-        .filter((s: any) => s.dashboardVisibility !== false)
-        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+    const cardMap = new Map<string, any>();
 
-      if (visible.length > 0) {
-        const dynamicCards = visible.map((st: any) => {
-          const IconComp = (Icons as any)[st.icon] || Icons.Circle;
-          const upperName = (st.name || '').toUpperCase();
+    const baseList = (configuredStatuses && configuredStatuses.length > 0)
+      ? configuredStatuses.filter((s: any) => s.dashboardVisibility !== false).sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+      : [
+          { name: 'HOT LEADS', icon: 'Flame', color: '#EF4444', pipelinePosition: 2, order: 1 },
+          { name: 'WARM LEADS', icon: 'Sun', color: '#F59E0B', pipelinePosition: 3, order: 2 },
+          { name: 'COOL LEAD', icon: 'Snowflake', color: '#06B6D4', pipelinePosition: 4, order: 3 },
+          { name: 'CEBIL PENDING', icon: 'FileWarning', color: '#E11D48', pipelinePosition: 5, order: 4 },
+          { name: 'DOCUMENT PENDING', icon: 'FileText', color: '#0284C7', pipelinePosition: 6, order: 5 },
+          { name: 'APPROVAL PENDING', icon: 'Clock', color: '#EA580C', pipelinePosition: 7, order: 6 },
+          { name: 'APPROVED BUT NOT DISBUSE', icon: 'CheckCircle', color: '#F59E0B', pipelinePosition: 8, order: 7 },
+          { name: 'DISBUSED', icon: 'Banknote', color: '#16A34A', pipelinePosition: 9, isFinal: true, isSuccess: true, order: 8 },
+          { name: 'REJECTED', icon: 'XOctagon', color: '#E11D48', pipelinePosition: 10, isFinal: true, isSuccess: false, order: 9 },
+          { name: 'FOLLOWUP', icon: 'PhoneCall', color: '#0284C7', pipelinePosition: 11, order: 10 },
+          { name: 'DROPPED', icon: 'ArrowDownCircle', color: '#EA580C', pipelinePosition: 12, isFinal: true, isSuccess: false, order: 11 },
+          { name: 'PENDING', icon: 'Hourglass', color: '#F59E0B', pipelinePosition: 13, order: 12 },
+          { name: 'GIVEN LOGIN', icon: 'KeyRound', color: '#8B5CF6', pipelinePosition: 14, order: 13 }
+        ];
 
-          let category = 'overview';
-          if (st.pipelinePosition > 0) category = 'pipeline';
-          if (upperName.includes('FOLLOW') || upperName.includes('WARM') || upperName.includes('PENDING') || upperName.includes('REACHABLE')) {
-            category = 'followups';
-          }
+    baseList.forEach((st: any) => {
+      const IconComp = (Icons as any)[st.icon] || Icons.Circle;
+      const upperName = (st.name || '').toUpperCase().trim();
 
-          const themeTokens = getStatusTokens(st);
-
-          return {
-            label: st.name.toUpperCase(),
-            rawName: st.name,
-            category,
-            accentColor: st.color || themeTokens.accentHex,
-            icon: IconComp,
-            sub: st.isFinal 
-              ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') 
-              : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Configured Status')
-          };
-        });
-
-        return [...dynamicCards, todaysFollowupsCard];
+      let category = 'overview';
+      if (st.pipelinePosition > 0) category = 'pipeline';
+      if (upperName.includes('FOLLOW') || upperName.includes('WARM') || upperName.includes('PENDING') || upperName.includes('REACHABLE')) {
+        category = 'followups';
       }
+
+      const themeTokens = getStatusTokens(st);
+
+      cardMap.set(upperName, {
+        label: upperName,
+        rawName: st.name,
+        category,
+        accentColor: st.color || themeTokens.accentHex,
+        icon: IconComp,
+        sub: st.isFinal 
+          ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') 
+          : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Configured Status')
+      });
+    });
+
+    // Ensure standard essential cards COOL LEAD and GIVEN LOGIN are always present
+    if (!cardMap.has('COOL LEAD') && !cardMap.has('COOL LEADS') && !cardMap.has('COOL')) {
+      cardMap.set('COOL LEAD', {
+        label: 'COOL LEAD',
+        rawName: 'COOL LEAD',
+        category: 'pipeline',
+        accentColor: '#06B6D4',
+        icon: Icons.Snowflake,
+        sub: 'Stage #12'
+      });
     }
 
-    // Default fallback list of active cards + Today's Followups
-    return [
-      { label: 'HOT LEADS', rawName: 'HOT LEADS', category: 'pipeline', icon: Icons.Flame, sub: 'Stage #2', accentColor: '#EF4444' },
-      { label: 'WARM LEADS', rawName: 'WARM LEADS', category: 'pipeline', icon: Icons.Sun, sub: 'Stage #3', accentColor: '#F59E0B' },
-      { label: 'COOL LEAD', rawName: 'COOL LEAD', category: 'pipeline', icon: Icons.Snowflake, sub: 'Stage #4', accentColor: '#06B6D4' },
-      { label: 'FOLLOWUP', rawName: 'FOLLOWUP', category: 'followups', icon: Icons.PhoneCall, sub: 'Stage #5', accentColor: '#0284C7' },
-      todaysFollowupsCard
-    ];
+    if (!cardMap.has('GIVEN LOGIN') && !cardMap.has('LOGIN')) {
+      cardMap.set('GIVEN LOGIN', {
+        label: 'GIVEN LOGIN',
+        rawName: 'GIVEN LOGIN',
+        category: 'pipeline',
+        accentColor: '#8B5CF6',
+        icon: Icons.KeyRound,
+        sub: 'Stage #13'
+      });
+    }
+
+    // Proactively scan metricsData.statusCounts: If any real pipeline status has leads > 0, ensure it has a card!
+    if (metricsData?.statusCounts) {
+      const RAW_CALL_DISPOSITIONS = new Set([
+        'NEW', 'YET TO CALL', 'NOT CALLED', 'UNASSIGNED', 'NUMBER BUSY', 'BUSY',
+        'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF', 'SWITCHED OFF',
+        'CALL REJECTED', 'NOT CONNECTED', 'NOT REACHABLE', 'NOT INTESTED',
+        'NOT INTERESTED', 'NOT EXISTS', 'DOES NOT EXIST', 'NO ANSWER',
+        'NO BUSINESS', 'WRONG NUMBER', 'REPEATED NUMBER'
+      ]);
+
+      Object.entries(metricsData.statusCounts).forEach(([stName, cnt]) => {
+        const count = Number(cnt || 0);
+        if (count > 0) {
+          const upper = stName.toUpperCase().trim();
+          if (RAW_CALL_DISPOSITIONS.has(upper) || upper === "TODAY'S FOLLOWUPS") return;
+
+          const alreadyCovered = Array.from(cardMap.keys()).some(k => {
+            const kUpper = k.toUpperCase().trim();
+            if (kUpper === upper) return true;
+            const strippedK = kUpper.replace(/\s+LEADS?$/i, '').trim();
+            const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
+            return strippedK === strippedUpper || kUpper === `${upper}S` || `${kUpper}S` === upper;
+          });
+
+          if (!alreadyCovered) {
+            let iconComp: any = Icons.Layers;
+            let accentColor = '#0284C7';
+            if (upper.includes('COOL')) { iconComp = Icons.Snowflake; accentColor = '#06B6D4'; }
+            else if (upper.includes('LOGIN')) { iconComp = Icons.KeyRound; accentColor = '#8B5CF6'; }
+            else if (upper.includes('HOT')) { iconComp = Icons.Flame; accentColor = '#EF4444'; }
+            else if (upper.includes('WARM')) { iconComp = Icons.Sun; accentColor = '#F59E0B'; }
+            else if (upper.includes('CEBIL') || upper.includes('CEDIL')) { iconComp = Icons.FileWarning; accentColor = '#E11D48'; }
+
+            cardMap.set(upper, {
+              label: upper,
+              rawName: stName,
+              category: 'pipeline',
+              accentColor,
+              icon: iconComp,
+              sub: 'Active Pipeline'
+            });
+          }
+        }
+      });
+    }
+
+    return [...Array.from(cardMap.values()), todaysFollowupsCard];
   };
 
   // Convert pipeline stage data to array with dynamic percentage scaling
