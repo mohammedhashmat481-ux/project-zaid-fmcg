@@ -493,22 +493,13 @@ export default function Layout({ children }: LayoutProps) {
           )}
 
           {/* Campaigns accordion */}
-          {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments') || canAccessMenu('my_campaign')) && (
+          {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments')) && (
             <SidebarAccordion 
               label="Campaigns" 
               icon={Icons.Megaphone} 
-              defaultOpen={location.pathname.startsWith('/modules/campaign') || location.pathname.startsWith('/my-campaign')}
+              defaultOpen={location.pathname.startsWith('/modules/campaign')}
               isCollapsed={collapsed}
             >
-              {canAccessMenu('my_campaign') && (
-                <SidebarItem 
-                  to="/my-campaign" 
-                  label="My Campaign" 
-                  icon={Icons.Megaphone} 
-                  indent 
-                  isCollapsed={collapsed} 
-                />
-              )}
               {canAccessMenu('campaigns') && (
                 <SidebarItem 
                   to="/modules/campaigns" 
