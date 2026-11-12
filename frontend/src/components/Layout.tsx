@@ -418,6 +418,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Group 2: Main Menu */}
       {(canAccessMenu('dashboard') ||
         canAccessMenu('leads') ||
+        canAccessMenu('my_campaign') ||
         canAccessMenu('campaigns') ||
         canAccessMenu('campaignassignments') ||
         canAccessMenu('telecaller_reports') ||
@@ -492,13 +493,22 @@ export default function Layout({ children }: LayoutProps) {
           )}
 
           {/* Campaigns accordion */}
-          {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments')) && (
+          {(canAccessMenu('campaigns') || canAccessMenu('campaignassignments') || canAccessMenu('my_campaign')) && (
             <SidebarAccordion 
               label="Campaigns" 
               icon={Icons.Megaphone} 
               defaultOpen={location.pathname.startsWith('/modules/campaign') || location.pathname.startsWith('/my-campaign')}
               isCollapsed={collapsed}
             >
+              {canAccessMenu('my_campaign') && (
+                <SidebarItem 
+                  to="/my-campaign" 
+                  label="My Campaign" 
+                  icon={Icons.Megaphone} 
+                  indent 
+                  isCollapsed={collapsed} 
+                />
+              )}
               {canAccessMenu('campaigns') && (
                 <SidebarItem 
                   to="/modules/campaigns" 

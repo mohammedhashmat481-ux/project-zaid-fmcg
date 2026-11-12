@@ -787,7 +787,7 @@ router.post('/roles', authenticate, async (req: Request, res: Response): Promise
     }));
 
     const defaultMenus = [
-      'dashboard', 'leads', 'campaigns', 'campaignassignments',
+      'dashboard', 'leads', 'my_campaign', 'campaigns', 'campaignassignments',
       'lead_reports', 'telecaller_reports', 'telecaller_monthly',
       'funnel_daily', 'funnel_monthly', 'funnel_annual',
       'settings', 'access_privilege', 'lead_transfer', 'lead_import_delete', 'users_management'

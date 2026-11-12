@@ -37,6 +37,14 @@ const SYSTEM_MENU_CONFIG: MenuItemDefinition[] = [
     moduleName: 'leads'
   },
   {
+    key: 'my_campaign',
+    label: 'My Campaign',
+    category: 'Main Menu',
+    path: '/my-campaign',
+    icon: 'Megaphone',
+    description: 'Assigned calling queue, call dispositions, contact status, and dialing.'
+  },
+  {
     key: 'campaigns',
     label: 'Campaign List',
     category: 'Main Menu',

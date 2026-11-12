@@ -72,6 +72,7 @@ function ProtectedRoute({ children, menuKey }: { children: React.ReactNode; menu
 function DashboardGuard() {
   const { canAccessMenu } = useAuthStore();
   if (!canAccessMenu('dashboard')) {
+    if (canAccessMenu('my_campaign')) return <Navigate to="/my-campaign" replace />;
     if (canAccessMenu('leads')) return <Navigate to="/modules/leads" replace />;
     if (canAccessMenu('campaigns')) return <Navigate to="/modules/campaigns" replace />;
     if (canAccessMenu('lead_reports')) return <Navigate to="/reports/lead-reports" replace />;
@@ -288,7 +289,7 @@ export default function App() {
           <Route
             path="/my-campaign"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute menuKey="my_campaign">
                 <MyCampaign />
               </ProtectedRoute>
             }
