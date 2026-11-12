@@ -670,8 +670,6 @@ export default function ModuleView() {
         const campLower = (activeCampaign || '').trim().toLowerCase();
         if (campLower && agentStatsByCamp[campLower]) {
           setCaAllocatedStats(agentStatsByCamp[campLower]);
-        } else if (campLower && data.stats) {
-          setCaAllocatedStats(data.stats);
         } else {
           setCaAllocatedStats({});
         }
@@ -700,8 +698,11 @@ export default function ModuleView() {
     }
     if (campLower) {
       api.get(`/records/campaigns/allocation-stats?campaign=${encodeURIComponent(newCamp)}`).then(res => {
-        if (res.data?.stats) {
-          setCaAllocatedStats(res.data.stats);
+        const stats = res.data?.campaignAgentStats?.[campLower] || res.data?.stats;
+        if (stats && Object.keys(stats).length > 0) {
+          setCaAllocatedStats(stats);
+        } else {
+          setCaAllocatedStats({});
         }
       }).catch(() => {});
     }
@@ -968,7 +969,13 @@ export default function ModuleView() {
   const renderCampaignAssignments = () => {
     const totalAgentAllocated = caAgents.reduce((sum: number, agent: any) => {
       const fullName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.name || 'Agent';
-      return sum + (caAllocatedStats[fullName] || caAllocatedStats[agent.firstName] || 0);
+      const allocated = caAllocatedStats[fullName] || 
+                        (agent.firstName ? caAllocatedStats[agent.firstName] : 0) || 
+                        (agent.email ? caAllocatedStats[agent.email] : 0) || 
+                        (agent.userCode ? caAllocatedStats[agent.userCode] : 0) || 
+                        caAllocatedStats[agent._id] || 
+                        0;
+      return sum + allocated;
     }, 0);
 
     const equalPerAgent = (caSelectedAgents.length > 0 && caParsedLeads.length > 0)
@@ -1292,7 +1299,12 @@ export default function ModuleView() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {caAgents.map((agent: any) => {
                   const fullName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.name || 'Agent';
-                  const allocated = caAllocatedStats[fullName] || caAllocatedStats[agent.firstName] || 0;
+                  const allocated = caAllocatedStats[fullName] || 
+                                    (agent.firstName ? caAllocatedStats[agent.firstName] : 0) || 
+                                    (agent.email ? caAllocatedStats[agent.email] : 0) || 
+                                    (agent.userCode ? caAllocatedStats[agent.userCode] : 0) || 
+                                    caAllocatedStats[agent._id] || 
+                                    0;
                   const isChecked = caSelectedAgents.includes(agent._id);
                   const selectedIdx = isChecked ? caSelectedAgents.indexOf(agent._id) : -1;
                   const willReceive = (isChecked && caParsedLeads.length > 0 && caSelectedAgents.length > 0)

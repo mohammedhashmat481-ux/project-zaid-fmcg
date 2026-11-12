@@ -148,8 +148,8 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
     try {
       const statsSql = `
         SELECT 
-          LOWER(COALESCE(NULLIF(data->>'campaignName', ''), NULLIF(data->>'campaign', ''), NULLIF(data->>'source', ''), NULLIF(data->>'campaign_name', ''))) as camp_name,
-          COALESCE(NULLIF(data->>'assignedTo', ''), '') as assigned_to,
+          LOWER(TRIM(COALESCE(NULLIF(data->>'campaignName', ''), NULLIF(data->>'campaign', ''), NULLIF(data->>'source', ''), NULLIF(data->>'campaign_name', ''), ''))) as camp_name,
+          COALESCE(NULLIF(data->>'assignedTo', ''), NULLIF(data->>'telecaller', ''), '') as assigned_to,
           COUNT(*)::int as total_allocated,
           COUNT(CASE WHEN 
             (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
@@ -196,7 +196,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
 
       const effectiveStatsMap = targetCampaign 
         ? (campaignAgentStats[targetCampaign] || {})
-        : statsMap;
+        : {};
 
       const payload = {
         stats: effectiveStatsMap,
@@ -324,7 +324,7 @@ router.get('/campaigns/allocation-stats', async (req: Request, res: Response): P
     // If a specific campaign was queried, stats reflects ONLY that specific campaign's agent allocations!
     const effectiveStatsMap = targetCampaign 
       ? (campaignAgentStats[targetCampaign] || {})
-      : statsMap;
+      : {};
 
     const payload = {
       stats: effectiveStatsMap,
@@ -971,8 +971,9 @@ router.post('/campaigns/bulk-assign', async (req: Request, res: Response): Promi
     // Bulk insert custom records
     const result = await CustomRecord.insertMany(recordsToCreate);
 
-    // Invalidate allocation stats cache so counts refresh instantly
+    // Invalidate allocation stats cache and all campaign caches so counts and telecaller lists refresh instantly
     serverCache.invalidatePattern(`campaigns:alloc-stats:${orgId}`);
+    CacheInvalidators.invalidateCampaigns(orgId!);
 
     // Create Audit Log
     await AuditLog.create({
@@ -1281,34 +1282,34 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
       ]
     };
 
-    // Reporting managers see only their own campaigns, NOT their subordinates' campaigns!
-    // Subordinates' leads are visible in Leads Process, but NOT in Campaigns.
-    // Super admins see all campaigns across the organization.
+    // Strict assignment scoping: Telecallers only see leads allocated directly to them
     const isSuper = await HierarchyService.isSuperAdmin(req.user?.roleId);
     if (!isSuper) {
       const currentUser = await User.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
       const userFilters: any[] = [
-        { createdBy: userId },
-        { 'data.assignedTo': userId.toString() }
+        { 'data.assignedTo': userId.toString() },
+        { 'data.telecaller': userId.toString() }
       ];
 
       if (currentUser) {
         const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
         if (fullName) {
           const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escName + '\\s*$', 'i') });
-        }
-        if (currentUser.firstName) {
-          const escFirst = currentUser.firstName.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escFirst + '\\s*$', 'i') });
+          const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
+          userFilters.push({ 'data.assignedTo': regex });
+          userFilters.push({ 'data.telecaller': regex });
         }
         if (currentUser.email) {
           const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escEmail + '\\s*$', 'i') });
+          const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
+          userFilters.push({ 'data.assignedTo': regex });
+          userFilters.push({ 'data.telecaller': regex });
         }
         if (currentUser.userCode) {
           const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          userFilters.push({ 'data.assignedTo': new RegExp('^\\s*' + escCode + '\\s*$', 'i') });
+          const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
+          userFilters.push({ 'data.assignedTo': regex });
+          userFilters.push({ 'data.telecaller': regex });
         }
       }
 
@@ -1322,17 +1323,8 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
     const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
     const leads = await CustomRecord.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
 
-    // Initialize campaignGroups for ALL registered campaigns so campaigns created in Campaigns list always appear
+    // Group leads strictly by registered campaign
     const campaignGroups: Record<string, any[]> = {};
-    campaignRecords.forEach((c: any) => {
-      const d = c.data || {};
-      const name = (d.campaignName || d.name || d.source || '').toString().trim();
-      if (name) {
-        campaignGroups[name] = [];
-      }
-    });
-
-    // Group leads by registered campaign name strictly
     leads.forEach((lead: any) => {
       const d = lead.data || {};
       const rawSource = (
@@ -1344,9 +1336,7 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
 
       if (rawSource) {
         const lower = rawSource.toLowerCase();
-        // A campaign lead MUST belong to an existing registered campaign!
         if (registeredCampaignNames.has(lower)) {
-          // Find canonical name from registered campaign
           const canonical = campaignRecords.find(c => {
             const cd = c.data || {};
             return (cd.campaignName || cd.name || cd.source || '').toString().trim().toLowerCase() === lower;
@@ -1395,7 +1385,8 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
           createdAt,
           dailyTarget: 200
         };
-      });
+      })
+      .filter(c => c.totalAssigned > 0);
 
     serverCache.set(cacheKey, result, 60);
     res.setHeader('X-Cache', 'MISS');
@@ -1484,26 +1475,28 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
 
-      // Reporting managers see only their own assigned records in the telecalling view
-      // When exporting the full campaign (isAll = true) or for Super Admin, include all allocated records
-      if (!isSuper && !isAll) {
+      // Telecallers only see leads allocated directly to them in their campaign view and export.
+      // Super admins see all records.
+      if (!isSuper) {
         const userTerms = [
           userId.toString(),
           currentUser?.userCode,
           currentUser?.email,
-          `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
-          currentUser?.firstName
+          `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
         ].filter(Boolean) as string[];
 
         const userConds: string[] = [];
         userTerms.forEach(term => {
           baseParams.push(term);
-          userConds.push(`LOWER(data->>'assignedTo') = LOWER($${baseParams.length})`);
+          const pIdx = baseParams.length;
+          userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
         });
-        baseParams.push(userId.toString());
-        userConds.push(`created_by = $${baseParams.length}`);
 
-        baseConds.push(`(${userConds.join(' OR ')})`);
+        if (userConds.length > 0) {
+          baseConds.push(`(${userConds.join(' OR ')})`);
+        } else {
+          baseConds.push('1=0');
+        }
       }
 
       const baseWhere = baseConds.join(' AND ');

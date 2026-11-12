@@ -1206,7 +1206,7 @@ export default function MyCampaign() {
       {!activeCampaign ? (
         // CAMPAIGNS CARDS VIEW
         (() => {
-          const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
+          const safeCampaigns = (Array.isArray(campaigns) ? campaigns : []).filter(c => (c.totalAssigned || 0) > 0);
           const filteredCampaigns = safeCampaigns.filter(c => 
             c && c.campaignName && typeof c.campaignName === 'string'
               ? c.campaignName.toLowerCase().includes(searchQuery.trim().toLowerCase())
