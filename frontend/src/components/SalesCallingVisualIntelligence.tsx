@@ -70,13 +70,24 @@ export default function SalesCallingVisualIntelligence({
 
   // Compute Total Leads Count
   const totalLeads = useMemo(() => {
-    if (typeof totalLeadsCount === 'number' && totalLeadsCount > 0) return totalLeadsCount;
-    if (leads.length > 0) return leads.length;
-    const sum = Object.values(statusCounts).reduce((a, b) => a + (Number(b) || 0), 0);
-    return sum > 0 ? sum : 47;
+    if (typeof totalLeadsCount === 'number') return Math.max(0, totalLeadsCount);
+    if (leads && leads.length > 0) return leads.length;
+    if (statusCounts && Object.keys(statusCounts).length > 0) {
+      const KNOWN_CANONICAL_KEYS = [
+        'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+        'APPROVAL PENDING', 'APPROVED BUT NOT DISBUSE', 'DISBUSED', 'REJECTED',
+        'FOLLOWUP', 'DROPPED', 'PENDING', 'GIVEN LOGIN'
+      ];
+      let sum = 0;
+      KNOWN_CANONICAL_KEYS.forEach(k => {
+        sum += Number(statusCounts[k] || 0);
+      });
+      return sum;
+    }
+    return 0;
   }, [totalLeadsCount, leads, statusCounts]);
 
-  // Format compact number e.g. 2927 -> 2.9k, 47 -> 47
+  // Format compact number e.g. 2927 -> 2.9k, 0 -> 0
   const formattedCenterTotal = useMemo(() => {
     if (totalLeads >= 1000) {
       return `${(totalLeads / 1000).toFixed(1).replace(/\.0$/, '')}k`;
@@ -88,34 +99,54 @@ export default function SalesCallingVisualIntelligence({
   const { donutData, legendItems } = useMemo(() => {
     const countsMap: Record<string, number> = {};
 
-    if (leads.length > 0) {
+    if (leads && leads.length > 0) {
       leads.forEach((l) => {
-        const raw = (l.data?.status || l.status || 'NEW').toString().trim().toUpperCase();
-        countsMap[raw] = (countsMap[raw] || 0) + 1;
-      });
-    } else if (Object.keys(statusCounts).length > 0) {
-      Object.entries(statusCounts).forEach(([k, v]) => {
-        if (v > 0) {
-          countsMap[k.toUpperCase()] = v;
+        const raw = (l.data?.status || l.status || '').toString().trim().toUpperCase();
+        if (raw) {
+          countsMap[raw] = (countsMap[raw] || 0) + 1;
         }
       });
-    } else {
-      // Fallback distribution
-      countsMap['HOT LEADS'] = 8;
-      countsMap['WARM LEADS'] = 6;
-      countsMap['FOLLOWUP'] = 5;
-      countsMap['DISBUSED'] = 5;
-      countsMap['APPROVAL PENDING'] = 4;
-      countsMap['DOCUMENT PENDING'] = 4;
-      countsMap['CEBIL PENDING'] = 4;
-      countsMap['PENDING'] = 3;
-      countsMap['APPROVED'] = 3;
-      countsMap['REJECTED'] = 3;
-      countsMap['DROPPED'] = 2;
+    } else if (statusCounts && Object.keys(statusCounts).length > 0) {
+      // Use standard canonical keys from statusCounts to avoid duplicate synonym counting
+      const KNOWN_CANONICAL_KEYS = [
+        'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+        'APPROVAL PENDING', 'APPROVED BUT NOT DISBUSE', 'DISBUSED', 'REJECTED',
+        'FOLLOWUP', 'DROPPED', 'PENDING', 'GIVEN LOGIN'
+      ];
+      
+      const processed = new Set<string>();
+      
+      KNOWN_CANONICAL_KEYS.forEach(key => {
+        const val = Number(statusCounts[key] || 0);
+        if (val > 0) {
+          countsMap[key] = val;
+          processed.add(key);
+        }
+      });
+
+      // Also include any custom configured statuses present in statusCounts
+      Object.entries(statusCounts).forEach(([k, v]) => {
+        const upper = k.toUpperCase().trim();
+        const num = Number(v) || 0;
+        if (num > 0 && !processed.has(upper)) {
+          const alreadyCovered = Array.from(processed).some(p => p === upper || p.startsWith(upper) || upper.startsWith(p));
+          if (!alreadyCovered) {
+            countsMap[upper] = num;
+            processed.add(upper);
+          }
+        }
+      });
     }
 
-    const entries = Object.entries(countsMap).sort((a, b) => b[1] - a[1]);
-    const total = entries.reduce((acc, curr) => acc + curr[1], 0) || 1;
+    const entries = Object.entries(countsMap).filter(([_, val]) => val > 0).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((acc, curr) => acc + curr[1], 0);
+
+    if (entries.length === 0 || total === 0) {
+      return {
+        donutData: [],
+        legendItems: []
+      };
+    }
 
     const data = entries.map(([name, val], idx) => {
       let color = STATUS_COLOR_PALETTE[name];
@@ -131,7 +162,7 @@ export default function SalesCallingVisualIntelligence({
         color = FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
       }
 
-      const pct = ((val / total) * 100).toFixed(1);
+      const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
       return {
         name,
         value: val,
@@ -147,10 +178,11 @@ export default function SalesCallingVisualIntelligence({
   }, [leads, statusCounts]);
 
   // Aggregate Calling Velocity & Conversion Trend Data
-  const { trendData, peakText, activeScopeText } = useMemo(() => {
+  const { trendData, peakText, activeScopeText, hasActivity } = useMemo(() => {
     let result: { period: string; callsDialed: number; converted: number }[] = [];
-    let peakStr = 'Monday & September Drives';
+    let peakStr = 'No calling activity in this cycle';
     let scopeStr = 'Weekly Cycle';
+    let hasAct = false;
 
     if (timeScope === 'dow') {
       scopeStr = 'Weekly Cycle';
@@ -165,7 +197,7 @@ export default function SalesCallingVisualIntelligence({
         Sun: { calls: 0, converted: 0 }
       };
 
-      if (leads.length > 0) {
+      if (leads && leads.length > 0) {
         leads.forEach((l) => {
           const dtStr = l.createdAt || l.data?.createdAt || l.updatedAt;
           if (dtStr) {
@@ -177,21 +209,21 @@ export default function SalesCallingVisualIntelligence({
               const isConv = st.includes('HOT') || st.includes('APPROV') || st.includes('DISBURS');
               
               if (dayMap[dName]) {
-                dayMap[dName].calls += 2; // Each lead receives contact attempts
+                dayMap[dName].calls += 1;
                 if (isConv) dayMap[dName].converted += 1;
+                hasAct = true;
               }
             }
           }
         });
       }
 
-      // Find day with max calls
-      let maxDay = 'Tuesday';
-      let maxVal = -1;
+      let maxDay = '';
+      let maxVal = 0;
       result = days.map((day) => {
         const item = dayMap[day];
-        const calls = item.calls > 0 ? item.calls * 8 : Math.floor(Math.random() * 5 + 10) * 6;
-        const converted = item.converted > 0 ? item.converted : Math.floor(calls * 0.12);
+        const calls = item.calls;
+        const converted = item.converted;
         if (calls > maxVal) {
           maxVal = calls;
           maxDay = day === 'Mon' ? 'Monday' : day === 'Tue' ? 'Tuesday' : day === 'Wed' ? 'Wednesday' : day === 'Thu' ? 'Thursday' : day === 'Fri' ? 'Friday' : day;
@@ -199,18 +231,18 @@ export default function SalesCallingVisualIntelligence({
         return {
           period: day,
           callsDialed: calls,
-          converted: Math.max(1, converted)
+          converted: converted
         };
       });
 
-      peakStr = `${maxDay} Outbound Calling Peak`;
+      peakStr = maxVal > 0 ? `${maxDay} Outbound Calling Peak` : 'No calling activity in weekly cycle';
     } else if (timeScope === 'monthly') {
       scopeStr = 'Monthly Cycle';
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const monthMap: Record<string, { calls: number; converted: number }> = {};
       months.forEach((m) => (monthMap[m] = { calls: 0, converted: 0 }));
 
-      if (leads.length > 0) {
+      if (leads && leads.length > 0) {
         leads.forEach((l) => {
           const dtStr = l.createdAt || l.data?.createdAt || l.updatedAt;
           if (dtStr) {
@@ -220,20 +252,21 @@ export default function SalesCallingVisualIntelligence({
               const st = (l.data?.status || l.status || '').toUpperCase();
               const isConv = st.includes('HOT') || st.includes('APPROV') || st.includes('DISBURS');
               if (monthMap[mName]) {
-                monthMap[mName].calls += 3;
+                monthMap[mName].calls += 1;
                 if (isConv) monthMap[mName].converted += 1;
+                hasAct = true;
               }
             }
           }
         });
       }
 
-      let maxMonth = 'October';
-      let maxVal = -1;
+      let maxMonth = '';
+      let maxVal = 0;
       result = months.map((m) => {
         const item = monthMap[m];
-        const calls = item.calls > 0 ? item.calls * 12 : Math.floor(Math.random() * 8 + 8) * 8;
-        const converted = item.converted > 0 ? item.converted : Math.floor(calls * 0.14);
+        const calls = item.calls;
+        const converted = item.converted;
         if (calls > maxVal) {
           maxVal = calls;
           maxMonth = m;
@@ -241,18 +274,18 @@ export default function SalesCallingVisualIntelligence({
         return {
           period: m,
           callsDialed: calls,
-          converted: Math.max(1, converted)
+          converted: converted
         };
       });
 
-      peakStr = `${maxMonth} Conversion Drives`;
+      peakStr = maxVal > 0 ? `${maxMonth} Conversion Drives` : 'No activity in monthly cycle';
     } else {
       scopeStr = 'Annual Multi-Year Trend';
       const years = ['2023', '2024', '2025', '2026', '2027'];
       const yearMap: Record<string, { calls: number; converted: number }> = {};
       years.forEach((y) => (yearMap[y] = { calls: 0, converted: 0 }));
 
-      if (leads.length > 0) {
+      if (leads && leads.length > 0) {
         leads.forEach((l) => {
           const dtStr = l.createdAt || l.data?.createdAt || l.updatedAt;
           if (dtStr) {
@@ -262,32 +295,40 @@ export default function SalesCallingVisualIntelligence({
               const st = (l.data?.status || l.status || '').toUpperCase();
               const isConv = st.includes('HOT') || st.includes('APPROV') || st.includes('DISBURS');
               if (yearMap[yName]) {
-                yearMap[yName].calls += 5;
+                yearMap[yName].calls += 1;
                 if (isConv) yearMap[yName].converted += 1;
+                hasAct = true;
               }
             }
           }
         });
       }
 
+      let maxYear = '';
+      let maxVal = 0;
       result = years.map((y) => {
         const item = yearMap[y];
-        const calls = item.calls > 0 ? item.calls * 25 : Math.floor(Math.random() * 20 + 20) * 10;
-        const converted = item.converted > 0 ? item.converted * 3 : Math.floor(calls * 0.15);
+        const calls = item.calls;
+        const converted = item.converted;
+        if (calls > maxVal) {
+          maxVal = calls;
+          maxYear = y;
+        }
         return {
           period: y,
           callsDialed: calls,
-          converted: Math.max(2, converted)
+          converted: converted
         };
       });
 
-      peakStr = 'FY 2026 Active Portfolio';
+      peakStr = maxVal > 0 ? `${maxYear} Portfolio Peak` : 'No annual activity recorded';
     }
 
     return {
       trendData: result,
       peakText: peakStr,
-      activeScopeText: scopeStr
+      activeScopeText: scopeStr,
+      hasActivity: hasAct
     };
   }, [timeScope, leads]);
 
@@ -382,38 +423,55 @@ export default function SalesCallingVisualIntelligence({
           {/* Donut Chart with Center Total */}
           <div className="relative w-full h-[220px] flex items-center justify-center my-2">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <RechartsTooltip
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg border border-slate-700">
-                          <span className="font-bold block">{data.name}</span>
-                          <span className="text-slate-300">
-                            {data.value} leads ({data.percentage}%)
-                          </span>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Pie
-                  data={donutData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={68}
-                  outerRadius={95}
-                  paddingAngle={2.5}
-                  dataKey="value"
-                  strokeWidth={0}
-                >
-                  {donutData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
+              {donutData.length > 0 ? (
+                <PieChart>
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg border border-slate-700">
+                            <span className="font-bold block">{data.name}</span>
+                            <span className="text-slate-300">
+                              {data.value} leads ({data.percentage}%)
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Pie
+                    data={donutData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={68}
+                    outerRadius={95}
+                    paddingAngle={2.5}
+                    dataKey="value"
+                    strokeWidth={0}
+                  >
+                    {donutData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              ) : (
+                <PieChart>
+                  <Pie
+                    data={[{ name: 'Empty', value: 1 }]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={68}
+                    outerRadius={95}
+                    dataKey="value"
+                    strokeWidth={0}
+                    isAnimationActive={false}
+                  >
+                    <Cell fill="#E2E8F0" />
+                  </Pie>
+                </PieChart>
+              )}
             </ResponsiveContainer>
 
             {/* Center Text in Donut */}
@@ -428,29 +486,40 @@ export default function SalesCallingVisualIntelligence({
           </div>
 
           {/* 2-Column Legend with Percentages (Matching Image 1) */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
-            {legendItems.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between min-w-0 pr-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span 
-                    className="w-2 h-2 rounded-full flex-shrink-0" 
-                    style={{ backgroundColor: item.color }} 
-                  />
-                  <span className="font-semibold text-slate-700 dark:text-slate-300 truncate uppercase" title={item.name}>
-                    {item.name}
-                  </span>
+          {legendItems.length > 0 ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
+              {legendItems.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between min-w-0 pr-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span 
+                      className="w-2 h-2 rounded-full flex-shrink-0" 
+                      style={{ backgroundColor: item.color }} 
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300 truncate uppercase" title={item.name}>
+                      {item.name}
+                    </span>
+                  </div>
+                  <div className="text-right flex items-center gap-1 flex-shrink-0 tabular-nums ml-2">
+                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                      {item.value}
+                    </span>
+                    <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px]">
+                      ({item.percentage}%)
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right flex items-center gap-1 flex-shrink-0 tabular-nums ml-2">
-                  <span className="font-bold text-slate-900 dark:text-slate-100">
-                    {item.value}
-                  </span>
-                  <span className="text-slate-400 dark:text-slate-500 font-medium text-[10px]">
-                    ({item.percentage}%)
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-6 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-center">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                No active leads in pipeline
+              </span>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                Distribution breakdown will update automatically as leads are added
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ========================================================= */}
@@ -515,6 +584,8 @@ export default function SalesCallingVisualIntelligence({
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fontSize: 10, fill: '#94A3B8' }}
+                    allowDecimals={false}
+                    domain={[0, 'auto']}
                     tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
                   />
                   <RechartsTooltip
@@ -575,6 +646,8 @@ export default function SalesCallingVisualIntelligence({
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fontSize: 10, fill: '#94A3B8' }}
+                    allowDecimals={false}
+                    domain={[0, 'auto']}
                     tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
                   />
                   <RechartsTooltip

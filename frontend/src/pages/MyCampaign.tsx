@@ -209,32 +209,24 @@ export default function MyCampaign() {
   });
 
   const configuredStatuses: string[] = useMemo(() => {
-    const rawList = Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0
-      ? campaignStatusConfig.statuses
-      : CAMPAIGN_STATUSES;
-    const filtered = rawList.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()));
-    
-    // Ensure the 4 newly requested statuses are always present
-    const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
-    requiredStatuses.forEach(rs => {
-      const exists = filtered.some((s: string) => s.trim().toUpperCase() === rs.toUpperCase());
-      if (!exists) filtered.push(rs);
-    });
-    return filtered;
+    if (Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0) {
+      return campaignStatusConfig.statuses;
+    }
+    return CAMPAIGN_STATUSES;
   }, [campaignStatusConfig]);
 
   const triggerStatuses: string[] = useMemo(() => {
-    const rawTriggers = Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0
-      ? campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase())
-      : ['HOT LEADS', 'WARM LEADS'];
-    return rawTriggers.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+    if (Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0) {
+      return campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase());
+    }
+    return ['HOT LEADS', 'WARM LEADS', 'COOL LEAD'];
   }, [campaignStatusConfig]);
 
   const dashboardStatuses: string[] = useMemo(() => {
-    const rawDash = Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0
-      ? campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase())
-      : ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
-    return rawDash.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+    if (Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0) {
+      return campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase());
+    }
+    return ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
   }, [campaignStatusConfig]);
 
   // Merge built-in campaign statuses with custom statuses with strict deduplication (single Hot Leads, single Warm Leads)
@@ -751,13 +743,12 @@ export default function MyCampaign() {
     handleFieldChange(lead._id, 'status', newStatus);
 
     const normSelected = newStatus.trim().toUpperCase();
+    const stripSelected = normSelected.replace(/\s+LEADS?$/i, '').trim();
     // Only trigger Create Lead navigation if this status is explicitly marked as "Opens Create Lead" in settings
     const isTriggerStatus = triggerStatuses.some(ts => {
       const normTs = ts.trim().toUpperCase();
-      if (normTs === normSelected) return true;
-      if ((normTs === 'HOT LEADS' || normTs === 'HOT LEAD') && /^(HOT)(\s+LEADS?)?$/i.test(normSelected)) return true;
-      if ((normTs === 'WARM LEADS' || normTs === 'WARM LEAD') && /^(WARM)(\s+LEADS?)?$/i.test(normSelected)) return true;
-      return false;
+      const stripTs = normTs.replace(/\s+LEADS?$/i, '').trim();
+      return normTs === normSelected || stripTs === stripSelected || stripTs === normSelected || normTs === stripSelected;
     });
 
     const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
@@ -769,7 +760,7 @@ export default function MyCampaign() {
       ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
       : 'Super Admin';
 
-    // 2. ONLY for configured Trigger Statuses (e.g. Hot Leads, Warm Leads, or custom trigger statuses):
+    // 2. ONLY for configured Trigger Statuses (e.g. Hot Leads, Warm Leads, Cool Lead, or custom trigger statuses):
     // Auto-save status and immediately open Create Lead prefilled!
     if (isTriggerStatus) {
       try {
@@ -777,7 +768,7 @@ export default function MyCampaign() {
           ? 'HOT LEADS'
           : newStatus.toUpperCase().includes('WARM')
             ? 'WARM LEADS'
-            : newStatus;
+            : (newStatus.toUpperCase().includes('COOL') ? 'COOL LEAD' : newStatus);
         const payload = {
           status: normalizedStatus,
           dialStatus: newStatus,

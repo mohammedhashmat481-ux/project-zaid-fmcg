@@ -7,7 +7,7 @@ import Organization from '../models/Organization';
 import Activity from '../models/Activity';
 import AuditLog from '../models/AuditLog';
 import Status from '../models/Status';
-import { getRealLeadRegex } from '../utils/leadStatusHelper';
+import { getRealLeadRegex, RAW_CAMPAIGN_DISPOSITIONS } from '../utils/leadStatusHelper';
 import { FormulaEvaluator } from '../services/formulaEvaluator';
 import { WorkflowEngine } from '../services/workflowEngine';
 import { createNotification } from '../utils/notificationHelper';
@@ -1057,7 +1057,7 @@ const DEFAULT_CAMPAIGN_STATUSES = [
   'No Business'
 ];
 
-const DEFAULT_TRIGGER_STATUSES = ['HOT LEADS', 'WARM LEADS'];
+const DEFAULT_TRIGGER_STATUSES = ['HOT LEADS', 'WARM LEADS', 'COOL LEAD'];
 const DEFAULT_DASHBOARD_STATUSES = ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
 
 // GET campaign statuses, trigger statuses (Opens Create Lead), and dashboard statuses (Show in Dashboard)
@@ -1068,40 +1068,18 @@ router.get('/campaigns/statuses', async (req: Request, res: Response): Promise<v
     const config = org?.themeSettings?.campaignStatusConfig;
 
     let statuses = Array.isArray(config?.statuses) && config.statuses.length > 0
-      ? config.statuses.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
+      ? config.statuses
       : [...DEFAULT_CAMPAIGN_STATUSES];
 
-    // Ensure the new required statuses are present
-    const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
-    requiredStatuses.forEach(rs => {
-      const exists = statuses.some((s: string) => s.trim().toUpperCase() === rs.toUpperCase());
-      if (!exists) statuses.push(rs);
-    });
-
-    // Opens Create Lead triggers
+    // Opens Create Lead triggers (default: HOT LEADS, WARM LEADS, COOL LEAD)
     let triggerStatuses = Array.isArray(config?.triggerStatuses) && config.triggerStatuses.length > 0
-      ? config.triggerStatuses.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
+      ? config.triggerStatuses
       : [...DEFAULT_TRIGGER_STATUSES];
 
-    // Show in Dashboard statuses: synchronize with PostgreSQL 'statuses' table
-    const dbStatuses = await Status.find({ organizationId: orgId });
-    const dbDashboardVisibleNames = dbStatuses
-      .filter((st: any) => st.dashboardVisibility !== false && !EXCLUDED_CAMPAIGN_STATUSES.has(String(st.name || '').trim().toUpperCase()))
-      .map((st: any) => String(st.name || '').trim().toUpperCase());
-
-    let dashboardStatuses: string[];
-    if (Array.isArray(config?.dashboardStatuses)) {
-      dashboardStatuses = Array.from(new Set(
-        config.dashboardStatuses.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()))
-      ));
-    } else if (dbDashboardVisibleNames.length > 0) {
-      dashboardStatuses = Array.from(new Set([
-        ...dbDashboardVisibleNames,
-        'COOL LEAD'
-      ]));
-    } else {
-      dashboardStatuses = [...DEFAULT_DASHBOARD_STATUSES];
-    }
+    // Show in Dashboard statuses
+    let dashboardStatuses = Array.isArray(config?.dashboardStatuses) && config.dashboardStatuses.length > 0
+      ? config.dashboardStatuses
+      : [...DEFAULT_DASHBOARD_STATUSES];
 
     res.status(200).json({
       statuses,
@@ -1134,17 +1112,17 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
     const cleanedStatuses = Array.from(new Set(
       statuses
         .map((s: any) => String(s || '').trim())
-        .filter((s: string) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s.toUpperCase()))
+        .filter(Boolean)
     ));
     const cleanedTrigger = Array.from(new Set(
       (triggerStatuses || [])
         .map((s: any) => String(s || '').trim().toUpperCase())
-        .filter((s: string) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s))
+        .filter(Boolean)
     ));
     const cleanedDashboard: string[] = Array.from(new Set(
       (dashboardStatuses || [])
         .map((s: any) => String(s || '').trim().toUpperCase())
-        .filter((s: string) => Boolean(s) && !EXCLUDED_CAMPAIGN_STATUSES.has(s))
+        .filter(Boolean)
     ));
 
     const campaignStatusConfig = {
@@ -1160,7 +1138,7 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
 
     await org.save();
 
-    // 2-Way Synchronization with PostgreSQL 'statuses' table
+    // Synchronization with PostgreSQL 'statuses' table
     try {
       const existingDbStatuses = await Status.find({ organizationId: orgId });
       const existingMap = new Map<string, any>();
@@ -1168,10 +1146,16 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
         existingMap.set(String(st.name || '').trim().toUpperCase(), st);
       });
 
-      // Campaign statuses that are explicitly marked for Dashboard (e.g. COOL LEAD, FOLLOWUP)
+      // Campaign statuses that are explicitly marked for Dashboard
       for (const dashStatusName of cleanedDashboard) {
         const upper = dashStatusName.toUpperCase();
         const strippedUpper = upper.replace(/\s+LEADS?$/i, '').trim();
+
+        // Do not insert raw dialing queue dispositions into pipeline statuses table
+        if (RAW_CAMPAIGN_DISPOSITIONS.has(upper) || RAW_CAMPAIGN_DISPOSITIONS.has(strippedUpper) || upper === 'NEW' || upper === 'NEWS') {
+          continue;
+        }
+
         let existing = existingMap.get(upper);
         if (!existing && strippedUpper) {
           existing = existingMap.get(strippedUpper) || existingMap.get(`${strippedUpper} LEAD`) || existingMap.get(`${strippedUpper} LEADS`);
@@ -1183,7 +1167,7 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
             await existing.save();
           }
         } else {
-          // Create new status in statuses table ONLY because it was marked for Dashboard
+          // Create new status in statuses table ONLY if legitimate pipeline status
           let color = '#06B6D4';
           let icon = 'Snowflake';
           if (upper.includes('HOT')) { color = '#EF4444'; icon = 'Flame'; }
@@ -1204,18 +1188,12 @@ router.put('/campaigns/statuses', async (req: Request, res: Response): Promise<v
         }
       }
 
-      // If a campaign-only status is NOT in cleanedDashboard, and it exists in statuses table:
-      // Remove it from statuses table so Settings > Status stays clean!
-      const CAMPAIGN_NON_PIPELINE = new Set([
-        'YET TO CALL', 'NOT CALLED', 'NOT INTERESTED', 'CALL REJECTED', 'NOT CONNECTED',
-        'NO ANSWER', 'NUMBER BUSY', 'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF',
-        'NOT REACHABLE', 'WRONG NUMBER', 'NOT EXISTS', 'REPEATED NUMBER', 'NO BUSINESS',
-        'CALL LATER', 'DROPPED', 'PENDING'
-      ]);
-
+      // Purge any accidental raw call dispositions from statuses table (NEVER purge real pipeline stages!)
       for (const st of existingDbStatuses) {
         const u = String(st.name || '').trim().toUpperCase();
-        if (CAMPAIGN_NON_PIPELINE.has(u) && !cleanedDashboard.includes(u)) {
+        const stripped = u.replace(/\s+LEADS?$/i, '').trim();
+        const isRawCallDisp = RAW_CAMPAIGN_DISPOSITIONS.has(u) || RAW_CAMPAIGN_DISPOSITIONS.has(stripped) || u === 'NEW' || u === 'NEWS';
+        if (isRawCallDisp) {
           await queryPg('DELETE FROM statuses WHERE id = $1', [st._id || st.id]);
         }
       }

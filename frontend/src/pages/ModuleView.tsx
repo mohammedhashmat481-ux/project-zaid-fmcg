@@ -88,31 +88,24 @@ export default function ModuleView() {
   });
 
   const configuredStatuses: string[] = useMemo(() => {
-    const rawList = Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0
-      ? campaignStatusConfig.statuses
-      : CAMPAIGN_STATUSES;
-    const filtered = rawList.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(String(s).trim().toUpperCase()));
-    
-    const requiredStatuses = ['Number Busy', 'Out of Service', 'No Incoming Calls', 'Switch Off'];
-    requiredStatuses.forEach(rs => {
-      const exists = filtered.some((s: string) => s.trim().toUpperCase() === rs.toUpperCase());
-      if (!exists) filtered.push(rs);
-    });
-    return filtered;
+    if (Array.isArray(campaignStatusConfig?.statuses) && campaignStatusConfig.statuses.length > 0) {
+      return campaignStatusConfig.statuses;
+    }
+    return CAMPAIGN_STATUSES;
   }, [campaignStatusConfig]);
 
   const triggerStatuses: string[] = useMemo(() => {
-    const rawTriggers = Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0
-      ? campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase())
-      : ['HOT LEADS', 'WARM LEADS'];
-    return rawTriggers.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+    if (Array.isArray(campaignStatusConfig?.triggerStatuses) && campaignStatusConfig.triggerStatuses.length > 0) {
+      return campaignStatusConfig.triggerStatuses.map((s: string) => s.trim().toUpperCase());
+    }
+    return ['HOT LEADS', 'WARM LEADS', 'COOL LEAD'];
   }, [campaignStatusConfig]);
 
   const dashboardStatuses: string[] = useMemo(() => {
-    const rawDash = Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0
-      ? campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase())
-      : ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
-    return rawDash.filter((s: string) => !EXCLUDED_CAMPAIGN_STATUSES.has(s));
+    if (Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0) {
+      return campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase());
+    }
+    return ['HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'FOLLOWUP'];
   }, [campaignStatusConfig]);
 
   // Campaign Status Settings Modal State (Super Admin dynamic management)
@@ -583,22 +576,28 @@ export default function ModuleView() {
       'COOL LEAD',
       'CEBIL PENDING',
       'DOCUMENT PENDING',
-      'LOGIN PENDING',
       'APPROVAL PENDING',
       'APPROVED BUT NOT DISBUSE',
-      'DISBURSED PENDING',
       'DISBUSED',
-      'REJECT PENDING',
-      'DEAD LEADS',
-      'CLOSED',
-      'YET TO CALL',
-      'NEW'
+      'REJECTED',
+      'FOLLOWUP',
+      'DROPPED',
+      'PENDING',
+      'GIVEN LOGIN'
     ];
     const list = [...defaults];
     if (Array.isArray(campaignStatusConfig?.statuses)) {
+      const RAW_CALL_DISPOSITIONS = [
+        'NEW', 'YET TO CALL', 'NOT CALLED', 'UNASSIGNED', 'NUMBER BUSY', 'BUSY',
+        'OUT OF SERVICE', 'NO INCOMING CALLS', 'SWITCH OFF', 'SWITCHED OFF',
+        'CALL REJECTED', 'NOT CONNECTED', 'NOT REACHABLE', 'NOT INTESTED',
+        'NOT INTERESTED', 'NOT EXISTS', 'DOES NOT EXIST', 'NO ANSWER',
+        'NO BUSINESS', 'WRONG NUMBER', 'REPEATED NUMBER'
+      ];
       campaignStatusConfig.statuses.forEach((s: string) => {
         const trimmed = String(s).trim();
-        if (trimmed && !list.some(x => x.toUpperCase() === trimmed.toUpperCase())) {
+        const upper = trimmed.toUpperCase();
+        if (trimmed && !RAW_CALL_DISPOSITIONS.includes(upper) && !list.some(x => x.toUpperCase() === upper)) {
           list.push(trimmed);
         }
       });

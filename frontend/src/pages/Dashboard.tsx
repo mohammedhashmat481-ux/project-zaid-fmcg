@@ -219,14 +219,14 @@ export default function Dashboard() {
     placeholderData: keepPreviousData
   });
 
-    // Fetch live leads for Visual Intelligence charts (cached for 5 minutes)
+    // Fetch live leads for Visual Intelligence charts (cached for 30 seconds)
   const { data: visualLeads = [] } = useQuery({
     queryKey: ['dashboard-visual-leads'],
     queryFn: async () => {
       const res = await api.get('/records/leads?limit=100').catch(() => ({ data: { records: [] } }));
       return res.data?.records || res.data || [];
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
     gcTime: 15 * 60 * 1000,
     placeholderData: keepPreviousData
   });
@@ -422,56 +422,56 @@ export default function Dashboard() {
   const rawPipeline = [
     { 
       name: 'Lead Ingestion / New', 
-      val: metricsData?.pipelineData?.['Prospecting'] || getStatusCount('NEW') * 50000 || 50000, 
-      count: getStatusCount('NEW') || 10,
+      val: metricsData?.pipelineData?.['Prospecting'] ?? (getStatusCount('NEW') * 50000), 
+      count: getStatusCount('NEW'),
       icon: Icons.UserPlus,
       color: '#4F46E5',
       bgTint: 'rgba(79, 70, 229, 0.1)'
     },
     { 
       name: 'Qualification & Hot Leads', 
-      val: metricsData?.pipelineData?.['Qualification'] || 90000, 
-      count: getStatusCount('HOT') + getStatusCount('WARM') || 14,
+      val: metricsData?.pipelineData?.['Qualification'] ?? 0, 
+      count: getStatusCount('HOT') + getStatusCount('WARM') + getStatusCount('COOL LEAD'),
       icon: Icons.Flame,
       color: '#059669',
       bgTint: 'rgba(5, 150, 105, 0.1)'
     },
     { 
       name: 'Proposal & Documentation', 
-      val: metricsData?.pipelineData?.['Proposal'] || 150000, 
-      count: getStatusCount('DOCUMENT PENDING') + getStatusCount('CEDIL PENDING') || 8,
+      val: metricsData?.pipelineData?.['Proposal'] ?? 0, 
+      count: getStatusCount('DOCUMENT PENDING') + getStatusCount('CEBIL PENDING') + getStatusCount('CEDIL PENDING'),
       icon: Icons.FileText,
       color: '#D97706',
       bgTint: 'rgba(217, 119, 6, 0.1)'
     },
     { 
       name: 'Negotiation & Approval', 
-      val: metricsData?.pipelineData?.['Negotiation'] || 300000, 
-      count: getStatusCount('APPROVAL PENDING') || 6,
+      val: metricsData?.pipelineData?.['Negotiation'] ?? 0, 
+      count: getStatusCount('APPROVAL PENDING'),
       icon: Icons.TrendingUp,
       color: '#EA580C',
       bgTint: 'rgba(234, 88, 12, 0.1)'
     },
     { 
       name: 'Disbursed / Closed Won', 
-      val: metricsData?.pipelineData?.['Closed Won'] || 120000, 
-      count: getStatusCount('APPROVED') + getStatusCount('DISBURSED') || 12,
+      val: metricsData?.pipelineData?.['Closed Won'] ?? 0, 
+      count: getStatusCount('APPROVED') + getStatusCount('DISBURSED') + getStatusCount('DISBUSED'),
       icon: Icons.CheckCircle2,
       color: '#7C3AED',
       bgTint: 'rgba(124, 58, 237, 0.1)'
     }
   ];
 
-  const maxPipelineVal = Math.max(...rawPipeline.map(s => s.val), 1);
+  const maxPipelineVal = Math.max(...rawPipeline.map(s => Number(s.val) || 0), 1);
 
   const totalPipeline = rawPipeline.reduce((a, b) => a + Number(b.val), 0);
-  const activeDeals = metricsData?.dealStatus?.open || 12;
-  const avgDealSize = activeDeals > 0 ? Math.round(totalPipeline / activeDeals) : 25000;
+  const activeDeals = metricsData?.dealStatus?.open || 0;
+  const avgDealSize = activeDeals > 0 ? Math.round(totalPipeline / activeDeals) : 0;
 
-  const wonCount = metricsData?.dealStatus?.won || 4;
-  const lostCount = metricsData?.dealStatus?.lost || 1;
+  const wonCount = metricsData?.dealStatus?.won || 0;
+  const lostCount = metricsData?.dealStatus?.lost || 0;
   const totalClosed = wonCount + lostCount;
-  const winRate = totalClosed > 0 ? Math.round((wonCount / totalClosed) * 100) : 80;
+  const winRate = totalClosed > 0 ? Math.round((wonCount / totalClosed) * 100) : 0;
 
   if (showDelayedSkeleton && !metricsData) {
     return (

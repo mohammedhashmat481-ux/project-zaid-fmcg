@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const Status_1 = __importDefault(require("../models/Status"));
-const Organization_1 = __importDefault(require("../models/Organization"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
 const cache_1 = require("../utils/cache");
@@ -58,28 +57,8 @@ async function reorderAfterDelete(organizationId) {
 }
 // Helper function to sync organization dashboardStatuses with PostgreSQL statuses
 async function syncOrganizationDashboardStatuses(organizationId) {
-    try {
-        const org = await Organization_1.default.findById(organizationId);
-        if (!org)
-            return;
-        const allStatuses = await Status_1.default.find({ organizationId });
-        const dashNames = allStatuses
-            .filter((s) => s.dashboardVisibility !== false)
-            .map((s) => String(s.name || '').trim().toUpperCase())
-            .filter(Boolean);
-        const existingConfig = org.themeSettings?.campaignStatusConfig || {};
-        org.themeSettings = {
-            ...(org.themeSettings || {}),
-            campaignStatusConfig: {
-                ...existingConfig,
-                dashboardStatuses: Array.from(new Set(dashNames))
-            }
-        };
-        await org.save();
-    }
-    catch (e) {
-        console.warn('Failed to sync organization dashboard statuses:', e);
-    }
+    // No-op: campaign status configuration in Organization.themeSettings is managed independently
+    // by Campaign Status Settings and should never be overwritten by general status operations.
 }
 // 1. Get all statuses
 router.get('/', async (req, res) => {
@@ -124,42 +103,50 @@ router.get('/', async (req, res) => {
             }
             statuses = await Status_1.default.find({ organizationId: req.organizationId }).sort({ order: 1 });
         }
-        // Auto-ensure standard statuses (COOL LEAD, GIVEN LOGIN) exist for this organization
-        const existingNames = new Set(statuses.map((s) => (s.name || '').toUpperCase().trim()));
+        // Auto-ensure ALL standard pipeline stages exist and have dashboardVisibility: true
+        const standardPipelineList = [
+            { name: 'HOT LEADS', color: '#EF4444', icon: 'Flame', pipelinePosition: 1, order: 1 },
+            { name: 'WARM LEADS', color: '#F59E0B', icon: 'Sun', pipelinePosition: 2, order: 2 },
+            { name: 'COOL LEAD', color: '#06B6D4', icon: 'Snowflake', pipelinePosition: 3, order: 3 },
+            { name: 'CEBIL PENDING', color: '#EC4899', icon: 'FileWarning', pipelinePosition: 4, order: 4 },
+            { name: 'DOCUMENT PENDING', color: '#14B8A6', icon: 'FileText', pipelinePosition: 5, order: 5 },
+            { name: 'APPROVAL PENDING', color: '#F97316', icon: 'Clock', pipelinePosition: 6, order: 6 },
+            { name: 'APPROVED BUT NOT DISBUSE', color: '#10B981', icon: 'CheckCircle', pipelinePosition: 7, order: 7 },
+            { name: 'DISBUSED', color: '#84CC16', icon: 'Banknote', pipelinePosition: 8, order: 8, isFinal: true, isSuccess: true },
+            { name: 'REJECTED', color: '#F43F5E', icon: 'XOctagon', pipelinePosition: 9, order: 9, isFinal: true, isSuccess: false },
+            { name: 'FOLLOWUP', color: '#0EA5E9', icon: 'PhoneCall', pipelinePosition: 10, order: 10 },
+            { name: 'DROPPED', color: '#EF4444', icon: 'ArrowDownCircle', pipelinePosition: 11, order: 11, isFinal: true, isSuccess: false },
+            { name: 'PENDING', color: '#EAB308', icon: 'Hourglass', pipelinePosition: 12, order: 12 },
+            { name: 'GIVEN LOGIN', color: '#8B5CF6', icon: 'KeyRound', pipelinePosition: 13, order: 13 }
+        ];
         const missingStandard = [];
         let maxOrder = statuses.length > 0 ? Math.max(...statuses.map((s) => s.order || 0)) : 0;
-        if (!existingNames.has('COOL LEAD') && !existingNames.has('COOL LEADS') && !existingNames.has('COOL')) {
-            maxOrder++;
-            missingStandard.push({
-                organizationId: req.organizationId,
-                name: 'COOL LEAD',
-                color: '#06B6D4',
-                icon: 'Snowflake',
-                category: 'pipeline',
-                pipelinePosition: maxOrder,
-                order: maxOrder,
-                dashboardVisibility: true,
-                isFinal: false,
-                isSuccess: false
+        for (const std of standardPipelineList) {
+            const upper = std.name.toUpperCase();
+            const stripped = upper.replace(/\s+LEADS?$/i, '').trim();
+            let found = statuses.find((s) => {
+                const u = (s.name || '').toUpperCase().trim();
+                const sStripped = u.replace(/\s+LEADS?$/i, '').trim();
+                return u === upper || sStripped === stripped;
             });
-            existingNames.add('COOL LEAD');
-            existingNames.add('COOL LEADS');
-        }
-        if (!existingNames.has('GIVEN LOGIN') && !existingNames.has('LOGIN')) {
-            maxOrder++;
-            missingStandard.push({
-                organizationId: req.organizationId,
-                name: 'GIVEN LOGIN',
-                color: '#8B5CF6',
-                icon: 'KeyRound',
-                category: 'pipeline',
-                pipelinePosition: maxOrder,
-                order: maxOrder,
-                dashboardVisibility: true,
-                isFinal: false,
-                isSuccess: false
-            });
-            existingNames.add('GIVEN LOGIN');
+            if (!found) {
+                maxOrder++;
+                missingStandard.push({
+                    organizationId: req.organizationId,
+                    name: std.name,
+                    color: std.color,
+                    icon: std.icon,
+                    pipelinePosition: std.pipelinePosition,
+                    order: std.order || maxOrder,
+                    dashboardVisibility: true,
+                    isFinal: std.isFinal || false,
+                    isSuccess: std.isSuccess || false
+                });
+            }
+            else if (found.dashboardVisibility === false) {
+                found.dashboardVisibility = true;
+                await found.save();
+            }
         }
         // Automatically purge any raw dialing dispositions that may have been saved to statuses
         const invalidStatuses = statuses.filter((s) => {
