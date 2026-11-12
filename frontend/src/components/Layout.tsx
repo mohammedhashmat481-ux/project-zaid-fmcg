@@ -392,7 +392,7 @@ export default function Layout({ children }: LayoutProps) {
   const renderNavItems = (collapsed: boolean) => (
     <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar px-2 py-3 space-y-1">
       {/* Group 1: Quick Actions */}
-      {(((!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && canAccessMenu('leads')) || canAccessMenu('campaigns') || canAccessMenu('my_campaign')) && (
+      {(((!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && canAccessMenu('leads')) || canAccessMenu('my_campaign')) && (
         <SidebarGroup title="QUICK ACTIONS" isCollapsed={collapsed}>
           {(!branding || !branding.enabledModules || branding.enabledModules.includes('leads')) && canAccessMenu('leads') && (
             <SidebarItem 
@@ -403,7 +403,7 @@ export default function Layout({ children }: LayoutProps) {
               isCollapsed={collapsed}
             />
           )}
-          {(canAccessMenu('campaigns') || canAccessMenu('my_campaign')) && (
+          {canAccessMenu('my_campaign') && (
             <SidebarItem 
               to="/my-campaign" 
               label="My Campaign" 

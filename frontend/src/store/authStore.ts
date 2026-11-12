@@ -150,13 +150,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const roleName = (role.name || '').toLowerCase();
     const isSuperAdmin = roleName.includes('super admin') || roleName === 'main admin' || roleName === 'admin';
 
-    // Super Admin has full administrative access to all menus
-    if (isSuperAdmin) {
+    // Super Admin always maintains access to Security / Access Privilege & Settings to prevent lockout
+    if (isSuperAdmin && (normalizedKey === 'accessprivilege' || normalizedKey === 'access_privilege' || normalizedKey === 'settings')) {
       return true;
     }
 
     const allowedMenus = role.permissions?.menus;
-    // If no explicit menu list is defined on role (undefined/null), default to true
+    // If no explicit menu list is defined on role (undefined/null), default to true for super admin
     if (!Array.isArray(allowedMenus)) {
       return true;
     }
@@ -199,7 +199,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       leadimportdelete: ['lead_import_delete', 'leadimportdelete'],
       users_management: ['users_management', 'usersmanagement', 'users'],
       usersmanagement: ['users_management', 'usersmanagement', 'users'],
-      mycampaign: ['mycampaign', 'my_campaign', 'campaigns']
+      mycampaign: ['mycampaign', 'my_campaign'],
+      my_campaign: ['mycampaign', 'my_campaign']
     };
 
     const targetAliases = exactAliases[normalizedKey] || [normalizedKey];
