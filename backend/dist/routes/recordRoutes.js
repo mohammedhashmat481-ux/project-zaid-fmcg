@@ -145,10 +145,8 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
           COALESCE(NULLIF(data->>'assignedTo', ''), NULLIF(data->>'telecaller', ''), '') as assigned_to,
           COUNT(*)::int as total_allocated,
           COUNT(CASE WHEN 
-            (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
-            (data->>'callAttempts' IS NOT NULL AND (data->>'callAttempts')::int > 0) OR
-            (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new')) OR
-            (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+            (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial')) OR
+            (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial'))
           THEN 1 END)::int as dialed
         FROM custom_records
         WHERE organization_id = $1 AND module_id = $2
@@ -306,6 +304,98 @@ router.get('/campaigns/allocation-stats', async (req, res) => {
     catch (error) {
         console.error('Failed to get allocation stats:', error);
         res.status(500).json({ error: 'Failed to get allocation stats.' });
+    }
+});
+// ── Emergency Recovery Endpoint: Scan Audit Logs for Deleted Leads ──
+router.post('/leads/recover-deleted', async (req, res) => {
+    try {
+        const orgId = req.organizationId;
+        const userId = req.user?.id;
+        const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
+        if (!leadModule) {
+            res.status(404).json({ error: 'Leads module not found.' });
+            return;
+        }
+        // Query audit logs for any past lead creation or update snapshots
+        const auditLogs = await (0, postgres_1.queryPg)(`SELECT resource_id, action, old_value, new_value, created_at 
+       FROM audit_logs 
+       WHERE organization_id = $1 
+         AND LOWER(resource) IN ('lead', 'leads')
+       ORDER BY created_at ASC`, [orgId]);
+        if (!auditLogs || auditLogs.length === 0) {
+            res.status(200).json({
+                success: true,
+                recoveredCount: 0,
+                message: 'No lead creation/update snapshots found in audit logs. Please restore from Render database backup or re-import the source Excel sheet.'
+            });
+            return;
+        }
+        // Reconstruct latest known data for each unique lead
+        const latestDataMap = new Map();
+        for (const log of auditLogs) {
+            const recId = log.resource_id;
+            if (!recId)
+                continue;
+            let rawData = log.new_value || log.old_value;
+            if (typeof rawData === 'string') {
+                try {
+                    rawData = JSON.parse(rawData);
+                }
+                catch (_) { }
+            }
+            if (rawData && typeof rawData === 'object' && Object.keys(rawData).length > 0) {
+                latestDataMap.set(recId, rawData);
+            }
+        }
+        let recoveredCount = 0;
+        const recoveredLeads = [];
+        for (const [recId, data] of latestDataMap.entries()) {
+            const existing = await CustomRecord_1.default.findOne({
+                organizationId: orgId,
+                moduleId: leadModule._id,
+                _id: recId
+            });
+            if (!existing) {
+                // Also check if a lead with same phone already exists
+                let phoneMatch = null;
+                if (data.phone) {
+                    phoneMatch = await CustomRecord_1.default.findOne({
+                        organizationId: orgId,
+                        moduleId: leadModule._id,
+                        'data.phone': data.phone
+                    });
+                }
+                if (!phoneMatch) {
+                    await CustomRecord_1.default.create({
+                        _id: recId,
+                        organizationId: orgId,
+                        moduleId: leadModule._id,
+                        createdBy: userId,
+                        data
+                    });
+                    recoveredCount++;
+                    recoveredLeads.push({
+                        id: recId,
+                        name: data.firstName || data.name || data.customer || 'Customer',
+                        phone: data.phone || ''
+                    });
+                }
+            }
+        }
+        cache_1.CacheInvalidators.invalidateDashboard(orgId);
+        cache_1.CacheInvalidators.invalidateCampaigns(orgId);
+        res.status(200).json({
+            success: true,
+            recoveredCount,
+            leads: recoveredLeads,
+            message: recoveredCount > 0
+                ? `Successfully recovered ${recoveredCount} deleted lead(s) from audit trail!`
+                : 'All logged leads are already active in your database.'
+        });
+    }
+    catch (error) {
+        console.error('Lead recovery error:', error);
+        res.status(500).json({ error: error.message || 'Failed to recover deleted leads.' });
     }
 });
 // ── Lead Bulk Import Endpoint ──────────────────────────────────────────
@@ -1351,8 +1441,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         SELECT 
           COUNT(*)::int as total_allocated,
           COUNT(CASE WHEN 
-            (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
-            (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+            (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial'))
           THEN 1 END)::int as dialed
         FROM custom_records
         WHERE ${baseWhere}
@@ -1362,14 +1451,12 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             const filterConds = [...baseConds];
             if (tab === 'dialed') {
                 filterConds.push(`(
-          (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '') OR 
-          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new'))
+          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial'))
         )`);
             }
             else if (tab === 'yetToDial') {
                 filterConds.push(`(
-          (data->>'dialedAt' IS NULL OR data->>'dialedAt' = '') AND 
-          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) IN ('', 'yet to call', 'not called', 'new'))
+          (LOWER(COALESCE(data->>'dialStatus', data->>'status', '')) IN ('', 'yet to call', 'not called', 'new', 'yet to dial'))
         )`);
             }
             if (search) {
@@ -2542,28 +2629,15 @@ router.delete('/:apiPath/:id', async (req, res) => {
         }
         await CustomRecord_1.default.findByIdAndDelete(record._id);
         // If deleting a campaign record from the Campaigns module:
-        // CASCADE DELETE all associated contacts, uploaded leads, and campaign assignments
+        // IMPORTANT: NEVER delete leads! Only unassign or clean up campaign assignment records if needed,
+        // while keeping all created leads, contacts, status, and telecaller customer data 100% intact.
         if (apiPath.toLowerCase() === 'campaigns') {
             const campData = record.data || {};
             const deletedCampName = (campData.campaignName || campData.name || campData.source || '').toString().trim();
             if (deletedCampName) {
                 const escCampName = deletedCampName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
                 const campRegex = new RegExp(`^\\s*${escCampName}\\s*$`, 'i');
-                // 1. Delete all assigned contacts and leads associated with this campaign
-                const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: req.organizationId, apiPath: 'leads' });
-                if (leadModule) {
-                    await CustomRecord_1.default.deleteMany({
-                        organizationId: req.organizationId,
-                        moduleId: leadModule._id,
-                        $or: [
-                            { 'data.campaignName': campRegex },
-                            { 'data.campaign': campRegex },
-                            { 'data.campaign_name': campRegex },
-                            { 'data.source': campRegex }
-                        ]
-                    });
-                }
-                // 2. Delete all campaign assignments for this campaign
+                // Delete only campaign assignment quota records for this campaign, NEVER touch leads!
                 const assignModule = await ModuleDefinition_1.default.findOne({ organizationId: req.organizationId, apiPath: 'campaignassignments' });
                 if (assignModule) {
                     await CustomRecord_1.default.deleteMany({

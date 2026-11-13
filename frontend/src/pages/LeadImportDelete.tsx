@@ -92,9 +92,35 @@ export default function LeadImportDelete() {
   // Table selection
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteMode, setDeleteMode] = useState<'selected' | 'all_filtered'>('selected');
   const [confirmInputText, setConfirmInputText] = useState('');
+
+  const handleRecoverDeletedLeads = async () => {
+    setRecovering(true);
+    try {
+      const res = await api.post('/records/leads/recover-deleted');
+      if (res.data.recoveredCount > 0) {
+        showAlertModal({
+          title: 'Leads Successfully Recovered!',
+          message: `Successfully restored ${res.data.recoveredCount} deleted lead(s) into your CRM database!`,
+          type: 'success'
+        });
+        fetchFilterMeta();
+      } else {
+        showAlertModal({
+          title: 'No Recoverable Deleted Leads Found in Audit Trail',
+          message: res.data.message || 'No deleted lead snapshots were found in the recent audit logs. If the leads were uploaded from an Excel or CSV file, please re-upload the file directly through the Lead Import form below.',
+          type: 'info'
+        });
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.error || err.message || 'Failed to recover deleted leads.', 'error');
+    } finally {
+      setRecovering(false);
+    }
+  };
 
   // Load Users & Metadata
   useEffect(() => {
@@ -430,28 +456,40 @@ export default function LeadImportDelete() {
         </div>
 
         {/* Tab Navigation Switches */}
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setActiveTab('import')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                activeTab === 'import'
+                  ? 'bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Icons.FileSpreadsheet className="w-4 h-4" />
+              <span>Lead Import</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('delete')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                activeTab === 'delete'
+                  ? 'bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Icons.Trash2 className="w-4 h-4" />
+              <span>Lead Bulk Delete</span>
+            </button>
+          </div>
+
           <button
-            onClick={() => setActiveTab('import')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeTab === 'import'
-                ? 'bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
+            onClick={handleRecoverDeletedLeads}
+            disabled={recovering}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+            title="Scan system audit logs to recover deleted leads"
           >
-            <Icons.FileSpreadsheet className="w-4 h-4" />
-            <span>Lead Import</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('delete')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 cursor-pointer ${
-              activeTab === 'delete'
-                ? 'bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Icons.Trash2 className="w-4 h-4" />
-            <span>Lead Bulk Delete</span>
+            <Icons.RotateCcw className={`w-4 h-4 ${recovering ? 'animate-spin' : ''}`} />
+            <span>{recovering ? 'Recovering Leads...' : 'Recover Deleted Leads'}</span>
           </button>
         </div>
       </div>

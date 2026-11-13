@@ -45,6 +45,8 @@ interface LeadState {
   followupDate?: string;
   firmName?: string;
   psm?: string;
+  wasDialed?: boolean;
+  callAttempts?: number;
 }
 
 interface SaveSuccessModalData {
@@ -738,163 +740,10 @@ export default function MyCampaign() {
     }));
   };
 
-  const handleStatusSelect = async (lead: LeadRecord, newStatus: string) => {
-    // 1. Always update state locally so user sees the selected status immediately
+  const handleStatusSelect = (lead: LeadRecord, newStatus: string) => {
+    // 1. Update state locally so user sees the selected status immediately in dropdown & badge
     handleFieldChange(lead._id, 'status', newStatus);
-
-    const normSelected = newStatus.trim().toUpperCase();
-    const stripSelected = normSelected.replace(/\s+LEADS?$/i, '').trim();
-    // Only trigger Create Lead navigation if this status is explicitly marked as "Opens Create Lead" in settings
-    const isTriggerStatus = triggerStatuses.some(ts => {
-      const normTs = ts.trim().toUpperCase();
-      const stripTs = normTs.replace(/\s+LEADS?$/i, '').trim();
-      return normTs === normSelected || stripTs === stripSelected || stripTs === normSelected || normTs === stripSelected;
-    });
-
-    const currentRemarks = leadStates[lead._id]?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
-    const currentCaseDetails = leadStates[lead._id]?.caseDetails ?? (lead.data?.caseDetails || '');
-    const currentLeadCategory = leadStates[lead._id]?.leadCategory ?? (lead.data?.leadCategory || lead.data?.loanType || '');
-
-    // Current caller / creator identity
-    const loggedInCreatorName = user 
-      ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
-      : 'Super Admin';
-
-    // 2. ONLY for configured Trigger Statuses (e.g. Hot Leads, Warm Leads, Cool Lead, or custom trigger statuses):
-    // Auto-save status and immediately open Create Lead prefilled!
-    if (isTriggerStatus) {
-      try {
-        const normalizedStatus = newStatus.toUpperCase().includes('HOT')
-          ? 'HOT LEADS'
-          : newStatus.toUpperCase().includes('WARM')
-            ? 'WARM LEADS'
-            : (newStatus.toUpperCase().includes('COOL') ? 'COOL LEAD' : newStatus);
-        const payload = {
-          status: normalizedStatus,
-          dialStatus: newStatus,
-          dialedAt: new Date(),
-          dialedBy: loggedInCreatorName,
-          callerName: loggedInCreatorName,
-          callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
-          notes: currentRemarks,
-          caseDetails: currentCaseDetails,
-          leadCategory: currentLeadCategory
-        };
-
-        // Persist to database
-        await api.put(`/records/leads/${lead._id}`, payload);
-
-        // Update in-memory state so counters reflect immediately
-        setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
-
-        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
-        queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
-        queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
-
-        showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
-
-        const currentIndex = leads.findIndex(l => l._id === lead._id);
-        const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
-        
-        const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
-          .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
-        const displayedDataCode = lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${slNo}`;
-        const displayedFirmName = lead.data?.company || lead.data?.firmName || lead.data?.firm_name || lead.data?.companyName || '';
-        const rawCustomer = lead.data?.firstName || lead.data?.customerName || lead.data?.customer || lead.data?.name || lead.data?.fullName || '';
-        const custParts = String(rawCustomer).trim().split(' ');
-        const firstNameVal = lead.data?.firstName || custParts[0] || '';
-        const lastNameVal = lead.data?.lastName || custParts.slice(1).join(' ') || '';
-        const phoneVal = extractLeadPhone(lead.data) || extractLeadPhone(lead) || '';
-        const locationVal = lead.data?.city || lead.data?.location || lead.data?.presentAddress || 'BLORE';
-        const assignedToVal = lead.data?.assignedTo || (lead as any).assignedToName || '';
-
-        navigate('/modules/leads/new', {
-          state: {
-            ...lead.data,
-            dataCode: displayedDataCode,
-            data_code: displayedDataCode,
-            company: displayedFirmName,
-            firmName: displayedFirmName,
-            firm_name: displayedFirmName,
-            companyName: displayedFirmName,
-            firstName: firstNameVal,
-            lastName: lastNameVal,
-            customerName: rawCustomer,
-            customer: rawCustomer,
-            fullName: rawCustomer,
-            phone: phoneVal,
-            mobile: phoneVal,
-            contactNumber: phoneVal,
-            name_contact_num: phoneVal,
-            mobileNo: phoneVal,
-            city: locationVal,
-            location: locationVal,
-            presentAddress: lead.data?.presentAddress || locationVal,
-            assignedTo: assignedToVal,
-            assignedToName: assignedToVal,
-            status: normalizedStatus,
-            notes: currentRemarks,
-            remarks: currentRemarks,
-            caseDetails: currentCaseDetails,
-            leadCategory: '', // Completely empty by default; user types custom category
-            lead_category: '',
-            loanType: lead.data?.loanType || lead.data?.product || '',
-            source: loggedInCreatorName,
-            campaignName: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
-            fromCampaignLeadId: lead._id
-          }
-        });
-      } catch (err: any) {
-        console.error(err);
-        showToast(err.response?.data?.error || 'Failed to update status.', 'error');
-      }
-    } else {
-      // 3. For ALL other statuses (Cool Lead, Call Rejected, Not Connected, etc.):
-      // DO NOT navigate to Create Lead!
-      // Auto-save immediately to DB so Dashboard reflects +1 immediately!
-      const matchedStatus = statuses.find(s => s.trim().toUpperCase() === newStatus.trim().toUpperCase());
-      const finalStatusToSave = matchedStatus || newStatus;
-
-      try {
-        const payload = {
-          status: finalStatusToSave,
-          dialStatus: finalStatusToSave,
-          dialedAt: new Date(),
-          dialedBy: loggedInCreatorName,
-          callerName: loggedInCreatorName,
-          callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
-          notes: currentRemarks,
-          caseDetails: currentCaseDetails,
-          leadCategory: currentLeadCategory
-        };
-
-        // Persist to database
-        await api.put(`/records/leads/${lead._id}`, payload);
-
-        // Update in-memory state so counters and cards reflect immediately
-        setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
-
-        if (newStatus !== 'Yet To Call' && !isLeadDialed(lead)) {
-          setCampaignStats(prev => ({
-            ...prev,
-            dialed: prev.dialed + 1,
-            yetToDial: Math.max(0, prev.yetToDial - 1)
-          }));
-        }
-
-        // Invalidate queries so Dashboard, leads, and Reports sync instantly
-        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
-        queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
-        queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
-
-        showToast(`Status updated to ${newStatus}.`, 'success');
-      } catch (err: any) {
-        console.error(err);
-        showToast(err.response?.data?.error || 'Failed to update status.', 'error');
-      }
-    }
+    showToast(`Status changed to "${newStatus}". Complete fields and click Save.`, 'info');
   };
 
   const handleWhatsAppChat = (lead: LeadRecord) => {
@@ -910,7 +759,7 @@ export default function MyCampaign() {
     window.open(`https://wa.me/${cleanPhone}`, '_blank');
   };
 
-  const handleInitiateCall = async (lead: LeadRecord) => {
+  const handleInitiateCall = (lead: LeadRecord) => {
     const rawPhone = leadStates[lead._id]?.mobile || extractLeadPhone(lead.data) || extractLeadPhone(lead) || '';
     const cleanPhone = String(rawPhone).replace(/[^\d+]/g, '').trim();
     if (!cleanPhone) {
@@ -920,30 +769,31 @@ export default function MyCampaign() {
     const leadName = `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || lead.data?.fullName || lead.data?.customerName || lead.data?.name || 'Lead';
     showToast(`Calling ${leadName} (${cleanPhone})...`, 'info');
 
-    const loggedInCaller = user 
-      ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
-      : 'Super Admin';
-
-    // Track dial activity with explicit dialedBy attribution
-    try {
-      await api.put(`/records/leads/${lead._id}`, {
-        dialedAt: new Date(),
-        dialedBy: loggedInCaller,
-        callerName: loggedInCaller,
+    // DO NOT save to backend here or mark as dialed!
+    // The user has just dialed and hasn't spoken, updated status, or saved yet.
+    // Record the dial attempt in local state only so it persists when they click Save.
+    setLeadStates(prev => ({
+      ...prev,
+      [lead._id]: {
+        ...prev[lead._id],
+        wasDialed: true,
         callAttempts: ((lead.data?.callAttempts as number) || 0) + 1
-      });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
-    } catch (e) {}
+      }
+    }));
 
-    window.location.href = `tel:${cleanPhone}`;
+    // Trigger phone dialer cleanly using a temporary anchor element so the current page does not reload or navigate away
+    const telAnchor = document.createElement('a');
+    telAnchor.href = `tel:${cleanPhone}`;
+    telAnchor.rel = 'noopener noreferrer';
+    document.body.appendChild(telAnchor);
+    telAnchor.click();
+    document.body.removeChild(telAnchor);
   };
 
   const isLeadDialed = (lead: LeadRecord) => {
     const savedStatus = (lead.data?.status || lead.data?.dialStatus || '').toString().trim().toLowerCase();
-    const hasCalls = ((lead.data?.callAttempts as number) > 0) || !!lead.data?.dialedAt || !!lead.data?.lastCallDate;
-    const isDialedStatus = savedStatus && savedStatus !== 'yet to call' && savedStatus !== 'not called' && savedStatus !== 'new';
-    return Boolean(isDialedStatus || hasCalls);
+    const isDialedStatus = savedStatus && !['yet to call', 'not called', 'new', 'yet to dial'].includes(savedStatus);
+    return Boolean(isDialedStatus);
   };
 
   const totalAllocatedCount = campaignStats.totalAllocated || (activeCampaign?.totalAssigned || 0);
@@ -1042,7 +892,7 @@ export default function MyCampaign() {
         dialedBy: loggedInSaverName,
         callerName: loggedInSaverName,
         source: loggedInSaverName,
-        callAttempts: ((lead.data?.callAttempts as number) || 0) + 1,
+        callAttempts: Math.max(1, (state?.callAttempts as number) || ((lead.data?.callAttempts as number) || 0) + 1),
         notes: currentRemarks,
         remarks: currentRemarks,
         caseDetails: currentCaseDetails,
@@ -1101,7 +951,7 @@ export default function MyCampaign() {
       queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
-      const isNowDialed = currentStatus && currentStatus !== 'Yet To Call' && currentStatus !== 'Not Called';
+      const isNowDialed = currentStatus && !['yet to call', 'not called', 'new', 'yet to dial'].includes(currentStatus.trim().toLowerCase());
 
       // If dialing in 'yetToDial' tab, immediately remove dialed lead from the list so it moves to dialed tab
       if (filterTab === 'yetToDial' && isNowDialed) {
