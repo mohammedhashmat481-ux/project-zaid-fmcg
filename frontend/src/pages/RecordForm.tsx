@@ -106,9 +106,29 @@ export default function RecordForm() {
   const { branding } = useThemeStore();
   const isLeads = true; // Use light layout for all creation/edit forms
 
-  const loggedInCreatorName = user 
-    ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
-    : 'Super Admin';
+  const getLoggedInUserSafe = () => {
+    if (user && (user.firstName || user.lastName || (user as any).name || (user as any).fullName || user.email)) {
+      return user;
+    }
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && (parsed.firstName || parsed.lastName || parsed.name || parsed.fullName || parsed.email)) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+    return user || null;
+  };
+
+  const getLoggedInCreatorName = () => {
+    const u = getLoggedInUserSafe();
+    if (!u) return '';
+    return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.fullName || u.email?.split('@')[0] || '';
+  };
+
+  const loggedInCreatorName = getLoggedInCreatorName();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -321,12 +341,10 @@ export default function RecordForm() {
         if (f.defaultValue) defaults[f.name] = f.defaultValue;
       });
       defaults['country'] = 'INDIA';
-      const loggedInCreatorName = user 
-        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
-        : 'Super Admin';
+      const activeCreator = getLoggedInCreatorName() || 'Telecaller';
 
       if (apiPath === 'leads') {
-        defaults['source'] = loggedInCreatorName;
+        defaults['source'] = activeCreator;
         if (!defaults['status']) {
           defaults['status'] = dynamicStatuses.includes('HOT LEAD') ? 'HOT LEAD' : (dynamicStatuses.includes('HOT LEADS') ? 'HOT LEADS' : 'HOT LEAD');
         }
@@ -430,7 +448,7 @@ export default function RecordForm() {
           }
         }
 
-        finalDefaults['source'] = loggedInCreatorName;
+        finalDefaults['source'] = activeCreator;
 
         // Brand new lead creation MUST NOT inherit call attempts or dial timestamps!
         if (!id) {
@@ -648,16 +666,14 @@ export default function RecordForm() {
       const data = { ...formData };
 
       // Fixed Lead Creator Name: source is permanently locked to whoever created the lead
-      const loggedInCreatorName = user 
-        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || '')
-        : '';
+      const activeCreator = getLoggedInCreatorName();
       const assignedPerson = (data.assignedTo && typeof data.assignedTo === 'object')
         ? `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim()
         : (data.assignedTo || data.dialedBy || data.telecaller || '');
 
-      const creatorOrAssignee = (loggedInCreatorName && loggedInCreatorName.toLowerCase() !== 'super admin')
-        ? loggedInCreatorName
-        : (assignedPerson || loggedInCreatorName || 'Telecaller');
+      const creatorOrAssignee = (activeCreator && activeCreator.toLowerCase() !== 'super admin')
+        ? activeCreator
+        : (assignedPerson || activeCreator || 'Telecaller');
 
       if (apiPath === 'leads') {
         if (!id) {
@@ -669,7 +685,7 @@ export default function RecordForm() {
           data.leadCreated = true;
         } else {
           // Existing lead being edited: NEVER overwrite original creator! It remains fixed forever!
-          const existingCreator = originalCreatorSource || formData.source || formData.creatorName;
+          const existingCreator = originalCreatorSource || formData.source || formData.creatorName || formData.createdByName;
           const safeCreator = (existingCreator && existingCreator.toLowerCase() !== 'super admin')
             ? existingCreator
             : (assignedPerson || existingCreator || creatorOrAssignee);
@@ -1985,7 +2001,7 @@ export default function RecordForm() {
                     <input
                       type="text"
                       {...register('source')}
-                      value={id ? (watch('source') || originalCreatorSource || loggedInCreatorName) : loggedInCreatorName}
+                      value={id ? (watch('source') || originalCreatorSource || getLoggedInCreatorName() || 'Lead Creator') : (getLoggedInCreatorName() || watch('source') || 'Lead Creator')}
                       readOnly
                       title="Source is permanently fixed to the creator who created this lead and will never change."
                       placeholder="Lead Creator"

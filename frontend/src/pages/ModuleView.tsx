@@ -3168,21 +3168,6 @@ export default function ModuleView() {
                   const StatusIcon = statusMeta.icon;
 
                   // Source & Created By
-                  const rawCreatedBy = rec.createdBy;
-                  let resolvedCreator = '';
-                  if (rawCreatedBy && typeof rawCreatedBy === 'object') {
-                    const fullName = `${rawCreatedBy.firstName || ''} ${rawCreatedBy.lastName || ''}`.trim();
-                    resolvedCreator = fullName || rawCreatedBy.name || rawCreatedBy.email?.split('@')[0] || '';
-                  } else if (typeof rawCreatedBy === 'string' && rawCreatedBy.length < 25 && !rawCreatedBy.match(/^[0-9a-fA-F]{24}$/)) {
-                    resolvedCreator = rawCreatedBy;
-                  }
-                  if (!resolvedCreator && rec.data?.creatorName) {
-                    resolvedCreator = rec.data.creatorName;
-                  }
-                  if (!resolvedCreator && rec.data?.createdByName) {
-                    resolvedCreator = rec.data.createdByName;
-                  }
-
                   const isCampString = (str: string) => {
                     if (!str) return false;
                     const s = str.trim();
@@ -3193,11 +3178,6 @@ export default function ModuleView() {
                     return false;
                   };
 
-                  let validSource = rec.data?.source ? String(rec.data.source).trim() : '';
-                  if (isCampString(validSource)) {
-                    validSource = '';
-                  }
-
                   const assignedPerson = String(
                     (rec.data?.assignedTo && typeof rec.data.assignedTo === 'object' ? `${rec.data.assignedTo.firstName || ''} ${rec.data.assignedTo.lastName || ''}`.trim() : rec.data?.assignedTo) ||
                     rec.data?.dialedBy ||
@@ -3206,13 +3186,34 @@ export default function ModuleView() {
                     ''
                   ).trim();
 
-                  let finalSource = validSource || resolvedCreator || '';
-                  if (!finalSource || (finalSource.toLowerCase() === 'super admin' && assignedPerson && assignedPerson.toLowerCase() !== 'super admin')) {
-                    finalSource = assignedPerson || finalSource || 'Telecaller';
+                  let resolvedCreator = '';
+                  const explicitSource = rec.data?.source ? String(rec.data.source).trim() : '';
+                  const explicitCreator = rec.data?.creatorName ? String(rec.data.creatorName).trim() : '';
+                  const explicitCreatedBy = rec.data?.createdByName ? String(rec.data.createdByName).trim() : '';
+
+                  if (explicitSource && !isCampString(explicitSource) && explicitSource.toLowerCase() !== 'super admin') {
+                    resolvedCreator = explicitSource;
+                  } else if (explicitCreator && explicitCreator.toLowerCase() !== 'super admin') {
+                    resolvedCreator = explicitCreator;
+                  } else if (explicitCreatedBy && explicitCreatedBy.toLowerCase() !== 'super admin') {
+                    resolvedCreator = explicitCreatedBy;
+                  } else if (assignedPerson && assignedPerson.toLowerCase() !== 'super admin') {
+                    resolvedCreator = assignedPerson;
+                  } else {
+                    const rawCreatedBy = rec.createdBy;
+                    if (rawCreatedBy && typeof rawCreatedBy === 'object') {
+                      const fullName = `${rawCreatedBy.firstName || ''} ${rawCreatedBy.lastName || ''}`.trim();
+                      resolvedCreator = fullName || rawCreatedBy.name || rawCreatedBy.email?.split('@')[0] || '';
+                    } else if (typeof rawCreatedBy === 'string' && rawCreatedBy.length < 25 && !rawCreatedBy.match(/^[0-9a-fA-F]{24}$/)) {
+                      resolvedCreator = rawCreatedBy;
+                    }
+                    if (!resolvedCreator) {
+                      resolvedCreator = explicitSource || explicitCreator || 'Telecaller';
+                    }
                   }
 
-                  const createdByName = finalSource;
-                  const sourceNameDisplay = finalSource;
+                  const createdByName = resolvedCreator;
+                  const sourceNameDisplay = resolvedCreator;
 
                   const assignedByName = rec.data?.assignedByName 
                     ? resolveUserDisplayName(rec.data.assignedByName) 

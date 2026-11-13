@@ -522,11 +522,13 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
           phone: String(dataObj.phone || dataObj.mobile || dataObj.contact || dataObj.contact_num || dataObj.phone_number || '').trim(),
           email: String(dataObj.email || dataObj.mail || '').trim(),
           company: String(dataObj.company || dataObj.firm_name || dataObj.firmName || dataObj.firm || '').trim(),
-          status: dataObj.status || defaultStatus || 'New',
+          status: dataObj.status || defaultStatus || 'Yet To Call',
           dialStatus: dataObj.dialStatus || dataObj.status || 'Yet To Call',
-          source: creatorName,
-          creatorName: creatorName,
-          createdByName: creatorName,
+          source: assignedAgent || camp,
+          creatorName: assignedAgent || '',
+          createdByName: assignedAgent || '',
+          isLeadCreated: false,
+          leadCreated: false,
           campaignName: camp,
           campaign: camp,
           campaign_name: camp,
@@ -2071,10 +2073,18 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
           ''
         ).trim();
 
+        const existingCreator = String(d.creatorName || d.createdByName || '').trim();
         const dbCreator = (r.created_by && userMap[r.created_by.toString()]) || '';
-        const realCreator = (dbCreator && dbCreator.toLowerCase() !== 'super admin') 
-          ? dbCreator 
-          : (assignedPerson || (dbCreator && dbCreator.toLowerCase() !== 'super admin' ? dbCreator : '') || 'Telecaller');
+        let realCreator = '';
+        if (existingCreator && existingCreator.toLowerCase() !== 'super admin') {
+          realCreator = existingCreator;
+        } else if (assignedPerson && assignedPerson.toLowerCase() !== 'super admin') {
+          realCreator = assignedPerson;
+        } else if (dbCreator && dbCreator.toLowerCase() !== 'super admin') {
+          realCreator = dbCreator;
+        } else {
+          realCreator = assignedPerson || dbCreator || 'Telecaller';
+        }
 
         d.creatorName = realCreator;
         d.createdByName = realCreator;
@@ -2082,8 +2092,8 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         const s = String(d.source || '').trim();
         const camp = String(d.campaignName || d.campaign || d.campaign_name || decodedCampaignName || '').trim();
         const isCampSource = !s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
-        if (isCampSource || (s.toLowerCase() === 'super admin' && assignedPerson && assignedPerson.toLowerCase() !== 'super admin')) {
-          d.source = assignedPerson || realCreator;
+        if (isCampSource || s.toLowerCase() === 'super admin') {
+          d.source = (realCreator && realCreator.toLowerCase() !== 'super admin') ? realCreator : (assignedPerson || 'Telecaller');
         }
 
         // 1. Ensure customerName / leadName is populated from any available column
@@ -2874,22 +2884,41 @@ router.get('/:apiPath', async (req: Request, res: Response): Promise<void> => {
     if (apiPath.toLowerCase() === 'leads') {
       records.forEach((r: any) => {
         if (r.data) {
-          let creator = '';
-          if (r.createdBy && typeof r.createdBy === 'object') {
-            creator = [r.createdBy.firstName, r.createdBy.lastName].filter(Boolean).join(' ') || r.createdBy.name || r.createdBy.email?.split('@')[0] || '';
-          }
-          if (!creator && r.data.creatorName) creator = r.data.creatorName;
-          if (!creator && r.data.createdByName) creator = r.data.createdByName;
-          if (!creator) creator = 'Super Admin';
-
-          const s = String(r.data.source || '').trim();
-          const camp = String(r.data.campaignName || r.data.campaign || r.data.campaign_name || '').trim();
+          const d = r.data;
+          const s = String(d.source || '').trim();
+          const camp = String(d.campaignName || d.campaign || d.campaign_name || '').trim();
           const isCamp = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
-          if (!s || isCamp) {
-            r.data.source = creator;
+
+          const assignedPerson = String(
+            (d.assignedTo && typeof d.assignedTo === 'object' ? `${d.assignedTo.firstName || ''} ${d.assignedTo.lastName || ''}`.trim() : d.assignedTo) ||
+            d.dialedBy ||
+            d.callerName ||
+            d.telecaller ||
+            ''
+          ).trim();
+
+          let creator = '';
+          if (d.creatorName && String(d.creatorName).toLowerCase() !== 'super admin') {
+            creator = String(d.creatorName).trim();
+          } else if (d.createdByName && String(d.createdByName).toLowerCase() !== 'super admin') {
+            creator = String(d.createdByName).trim();
+          } else if (s && !isCamp && s.toLowerCase() !== 'super admin') {
+            creator = s;
+          } else if (d.dialedBy && String(d.dialedBy).toLowerCase() !== 'super admin') {
+            creator = String(d.dialedBy).trim();
+          } else if (assignedPerson && assignedPerson.toLowerCase() !== 'super admin') {
+            creator = assignedPerson;
+          } else if (r.createdBy && typeof r.createdBy === 'object') {
+            creator = [r.createdBy.firstName, r.createdBy.lastName].filter(Boolean).join(' ') || r.createdBy.name || r.createdBy.email?.split('@')[0] || '';
+          } else {
+            creator = d.creatorName || d.source || 'Telecaller';
           }
-          r.data.creatorName = creator;
-          r.data.createdByName = creator;
+
+          if (!s || isCamp || (s.toLowerCase() === 'super admin' && creator && creator.toLowerCase() !== 'super admin')) {
+            d.source = creator;
+          }
+          d.creatorName = creator;
+          d.createdByName = creator;
         }
       });
     }
@@ -2942,11 +2971,13 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
 
     // Lead Creator & Permanent Source enforcement
     if (apiPath.toLowerCase() === 'leads') {
-      let creatorName = 'Super Admin';
+      let creatorName = '';
       try {
-        const u = await User.findById(req.user?.id);
-        if (u) {
-          creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.email?.split('@')[0] || 'Super Admin';
+        if (req.user?.id) {
+          const u = await User.findById(req.user.id);
+          if (u) {
+            creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.email?.split('@')[0] || '';
+          }
         }
       } catch (_) {}
       
@@ -2954,11 +2985,21 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       const s = String(recordData.source || '').trim();
       const camp = String(recordData.campaignName || recordData.campaign || recordData.campaign_name || '').trim();
       const isCamp = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
-      if (!s || isCamp || s.toLowerCase() === 'ink crm' || s.toLowerCase() === 'direct') {
-        recordData.source = creatorName;
+      
+      let permanentCreator = '';
+      if (s && !isCamp && s.toLowerCase() !== 'ink crm' && s.toLowerCase() !== 'direct' && s.toLowerCase() !== 'super admin') {
+        permanentCreator = s;
+      } else if (creatorName && creatorName.toLowerCase() !== 'super admin') {
+        permanentCreator = creatorName;
+      } else if (recordData.assignedTo && typeof recordData.assignedTo === 'string' && recordData.assignedTo.toLowerCase() !== 'super admin') {
+        permanentCreator = recordData.assignedTo;
+      } else {
+        permanentCreator = creatorName || s || 'Telecaller';
       }
-      recordData.creatorName = creatorName;
-      recordData.createdByName = creatorName;
+
+      recordData.source = permanentCreator;
+      recordData.creatorName = permanentCreator;
+      recordData.createdByName = permanentCreator;
       recordData.isLeadCreated = true;
       recordData.leadCreated = true;
 
