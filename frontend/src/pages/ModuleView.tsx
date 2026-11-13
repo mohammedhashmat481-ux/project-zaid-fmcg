@@ -3198,14 +3198,27 @@ export default function ModuleView() {
                     validSource = '';
                   }
 
-                  const createdByName = resolvedCreator || validSource || 'Super Admin';
-                  const sourceNameDisplay = validSource || resolvedCreator || 'Super Admin';
+                  const assignedPerson = String(
+                    (rec.data?.assignedTo && typeof rec.data.assignedTo === 'object' ? `${rec.data.assignedTo.firstName || ''} ${rec.data.assignedTo.lastName || ''}`.trim() : rec.data?.assignedTo) ||
+                    rec.data?.dialedBy ||
+                    rec.data?.callerName ||
+                    rec.data?.telecaller ||
+                    ''
+                  ).trim();
+
+                  let finalSource = validSource || resolvedCreator || '';
+                  if (!finalSource || (finalSource.toLowerCase() === 'super admin' && assignedPerson && assignedPerson.toLowerCase() !== 'super admin')) {
+                    finalSource = assignedPerson || finalSource || 'Telecaller';
+                  }
+
+                  const createdByName = finalSource;
+                  const sourceNameDisplay = finalSource;
 
                   const assignedByName = rec.data?.assignedByName 
                     ? resolveUserDisplayName(rec.data.assignedByName) 
                     : (rec.data?.assignedBy 
                         ? resolveUserDisplayName(rec.data.assignedBy) 
-                        : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : 'Super Admin'));
+                        : (createdByName && createdByName !== 'System' && createdByName !== 'N/A' ? createdByName : (assignedPerson || 'Telecaller')));
 
                   // Remarks
                   const rawRemarks = (rec.data?.remarks || rec.data?.notes || '').replace(/<[^>]*>/g, '');

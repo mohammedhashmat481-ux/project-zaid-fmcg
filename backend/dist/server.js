@@ -136,79 +136,62 @@ const startServer = async () => {
         catch (stMigErr) {
             logger_1.logger.warn(`[Migration Warning] Could not migrate status names: ${stMigErr.message}`);
         }
-        // 5. One-time lead source cleanup: ensure source is permanently set to creator's name (e.g. Super Admin / user) and not campaign name
+        // 5. One-time lead source cleanup: ensure source is permanently set to telecaller / assigned agent names, NEVER Super Admin
         try {
-            await (0, postgres_1.queryPg)(`UPDATE custom_records cr
-         SET data = jsonb_set(
-           jsonb_set(
-             jsonb_set(
-               cr.data,
-               '{source}',
-               to_jsonb(
-                 COALESCE(
-                   NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''),
-                   NULLIF(u.name, ''),
-                   NULLIF(cr.data->>'creatorName', ''),
-                   NULLIF(cr.data->>'createdByName', ''),
-                   'Super Admin'
-                 )
-               )
-             ),
-             '{creatorName}',
-             to_jsonb(
-               COALESCE(
-                 NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''),
-                 NULLIF(u.name, ''),
-                 NULLIF(cr.data->>'creatorName', ''),
-                 NULLIF(cr.data->>'createdByName', ''),
-                 'Super Admin'
-               )
-             )
-           ),
-           '{createdByName}',
-           to_jsonb(
-             COALESCE(
-               NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''),
-               NULLIF(u.name, ''),
-               NULLIF(cr.data->>'createdByName', ''),
-               NULLIF(cr.data->>'creatorName', ''),
-               'Super Admin'
-             )
-           )
-         )
-         FROM users u
-         WHERE cr.created_by = u.id
-           AND (
-             cr.data->>'source' = cr.data->>'campaignName'
-             OR cr.data->>'source' = cr.data->>'campaign'
-             OR cr.data->>'source' = cr.data->>'campaign_name'
-             OR cr.data->>'source' ILIKE 'B2B-%'
-             OR cr.data->>'source' ILIKE '%-VC-%'
-             OR cr.data->>'source' ILIKE '%-G5-%'
-             OR cr.data->>'source' ILIKE 'HAVERI-%'
-           )`);
             await (0, postgres_1.queryPg)(`UPDATE custom_records
          SET data = jsonb_set(
            jsonb_set(
              jsonb_set(
                data,
                '{source}',
-               to_jsonb(COALESCE(NULLIF(data->>'creatorName', ''), NULLIF(data->>'createdByName', ''), 'Super Admin'))
+               to_jsonb(
+                 COALESCE(
+                   NULLIF(data->>'dialedBy', ''),
+                   NULLIF(data->>'callerName', ''),
+                   NULLIF(data->>'assignedTo', ''),
+                   NULLIF(data->>'telecaller', ''),
+                   'Telecaller'
+                 )
+               )
              ),
              '{creatorName}',
-             to_jsonb(COALESCE(NULLIF(data->>'creatorName', ''), NULLIF(data->>'createdByName', ''), 'Super Admin'))
+             to_jsonb(
+               COALESCE(
+                 NULLIF(data->>'dialedBy', ''),
+                 NULLIF(data->>'callerName', ''),
+                 NULLIF(data->>'assignedTo', ''),
+                 NULLIF(data->>'telecaller', ''),
+                 'Telecaller'
+               )
+             )
            ),
            '{createdByName}',
-           to_jsonb(COALESCE(NULLIF(data->>'createdByName', ''), NULLIF(data->>'creatorName', ''), 'Super Admin'))
+           to_jsonb(
+             COALESCE(
+               NULLIF(data->>'dialedBy', ''),
+               NULLIF(data->>'callerName', ''),
+               NULLIF(data->>'assignedTo', ''),
+               NULLIF(data->>'telecaller', ''),
+               'Telecaller'
+             )
+           )
          )
-         WHERE data->>'source' = data->>'campaignName'
-            OR data->>'source' = data->>'campaign'
-            OR data->>'source' = data->>'campaign_name'
-            OR data->>'source' ILIKE 'B2B-%'
-            OR data->>'source' ILIKE '%-VC-%'
-            OR data->>'source' ILIKE '%-G5-%'
-            OR data->>'source' ILIKE 'HAVERI-%'`);
-            logger_1.logger.info('[Migration] Lead sources permanently updated to creator names.');
+         WHERE (
+           data->>'source' = 'Super Admin'
+           OR data->>'source' = data->>'campaignName'
+           OR data->>'source' = data->>'campaign'
+           OR data->>'source' = data->>'campaign_name'
+           OR data->>'source' ILIKE 'B2B-%'
+           OR data->>'source' ILIKE '%-VC-%'
+           OR data->>'source' ILIKE '%-G5-%'
+           OR data->>'source' ILIKE 'HAVERI-%'
+         ) AND (
+           NULLIF(data->>'dialedBy', '') IS NOT NULL
+           OR NULLIF(data->>'callerName', '') IS NOT NULL
+           OR NULLIF(data->>'assignedTo', '') IS NOT NULL
+           OR NULLIF(data->>'telecaller', '') IS NOT NULL
+         )`);
+            logger_1.logger.info('[Migration] Lead sources permanently updated to telecaller / assigned agent names.');
         }
         catch (srcMigErr) {
             logger_1.logger.warn(`[Migration Warning] Could not migrate lead source names: ${srcMigErr.message}`);

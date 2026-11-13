@@ -884,15 +884,30 @@ export default function MyCampaign() {
       const dataCode = currentDataCode || lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '';
       const loggedInSaverName = user 
         ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
-        : 'Super Admin';
+        : '';
+
+      const assignedCaller = (lead.data?.assignedTo && typeof lead.data.assignedTo === 'object')
+        ? `${lead.data.assignedTo.firstName || ''} ${lead.data.assignedTo.lastName || ''}`.trim()
+        : (lead.data?.assignedTo || lead.data?.dialedBy || lead.data?.telecaller || '');
+
+      const effectiveSource = (loggedInSaverName && loggedInSaverName.toLowerCase() !== 'super admin')
+        ? loggedInSaverName
+        : (assignedCaller || loggedInSaverName || 'Telecaller');
+
+      const currentAmount = state?.amount !== undefined ? state.amount : (lead.data?.loanAmount || lead.data?.amount || lead.data?.loan_amount || lead.data?.budget || '');
+      const currentProduct = state?.product !== undefined ? state.product : (lead.data?.loanType || lead.data?.product || lead.data?.loan_type || '');
+      const currentBankPartner = state?.bankPartner !== undefined ? state.bankPartner : (lead.data?.businessPartner || lead.data?.bankPartner || lead.data?.bank_partner || lead.data?.bank || '');
+      const currentPsm = state?.psm !== undefined ? state.psm : (lead.data?.psm || lead.data?.psmName || lead.data?.psm_name || '');
 
       const payload: Record<string, any> = {
         status: finalStatusToSave,
         dialStatus: finalStatusToSave,
         dialedAt: new Date(),
-        dialedBy: loggedInSaverName,
-        callerName: loggedInSaverName,
-        source: loggedInSaverName,
+        dialedBy: effectiveSource,
+        callerName: effectiveSource,
+        source: effectiveSource,
+        creatorName: effectiveSource,
+        createdByName: effectiveSource,
         callAttempts: Math.max(1, (state?.callAttempts as number) || ((lead.data?.callAttempts as number) || 0) + 1),
         notes: currentRemarks,
         remarks: currentRemarks,
@@ -911,9 +926,9 @@ export default function MyCampaign() {
         payload.customer = state.leadName.trim();
         payload.name = state.leadName.trim();
       }
-      if (state?.product !== undefined) {
-        payload.loanType = state.product;
-        payload.product = state.product;
+      if (currentProduct) {
+        payload.loanType = currentProduct;
+        payload.product = currentProduct;
       }
       if (state?.location !== undefined) {
         payload.city = state.location;
@@ -924,14 +939,16 @@ export default function MyCampaign() {
         payload.mobile = state.mobile.trim();
         payload.contactNumber = state.mobile.trim();
       }
-      if (state?.amount !== undefined) {
-        payload.loanAmount = state.amount;
-        payload.amount = state.amount;
+      if (currentAmount) {
+        payload.loanAmount = currentAmount;
+        payload.amount = currentAmount;
+        payload.budget = currentAmount;
       }
-      if (state?.bankPartner !== undefined) {
-        payload.businessPartner = state.bankPartner;
-        payload.bankPartner = state.bankPartner;
-        payload.bank = state.bankPartner;
+      if (currentBankPartner) {
+        payload.businessPartner = currentBankPartner;
+        payload.bankPartner = currentBankPartner;
+        payload.bank = currentBankPartner;
+        payload.bankNames = currentBankPartner;
       }
       if (state?.followupDate !== undefined) {
         payload.followUpDate = state.followupDate;
@@ -940,8 +957,9 @@ export default function MyCampaign() {
         payload.company = state.firmName;
         payload.firmName = state.firmName;
       }
-      if (state?.psm !== undefined) {
-        payload.psm = state.psm;
+      if (currentPsm) {
+        payload.psm = currentPsm;
+        payload.psmName = currentPsm;
       }
 
       await api.put(`/records/leads/${leadId}`, payload);

@@ -649,18 +649,31 @@ export default function RecordForm() {
 
       // Fixed Lead Creator Name: source is permanently locked to whoever created the lead
       const loggedInCreatorName = user 
-        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || 'Super Admin')
-        : 'Super Admin';
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0] || '')
+        : '';
+      const assignedPerson = (data.assignedTo && typeof data.assignedTo === 'object')
+        ? `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim()
+        : (data.assignedTo || data.dialedBy || data.telecaller || '');
+
+      const creatorOrAssignee = (loggedInCreatorName && loggedInCreatorName.toLowerCase() !== 'super admin')
+        ? loggedInCreatorName
+        : (assignedPerson || loggedInCreatorName || 'Telecaller');
 
       if (apiPath === 'leads') {
         if (!id) {
-          // New lead being created: permanently set source & creatorName to the logged in creator
-          data.source = loggedInCreatorName;
-          data.creatorName = loggedInCreatorName;
+          // New lead being created: permanently set source & creatorName to the creator or assigned agent
+          data.source = creatorOrAssignee;
+          data.creatorName = creatorOrAssignee;
+          data.createdByName = creatorOrAssignee;
         } else {
           // Existing lead being edited: NEVER overwrite original creator! It remains fixed forever!
-          data.source = originalCreatorSource || formData.source || loggedInCreatorName;
-          data.creatorName = originalCreatorSource || formData.creatorName || loggedInCreatorName;
+          const existingCreator = originalCreatorSource || formData.source || formData.creatorName;
+          const safeCreator = (existingCreator && existingCreator.toLowerCase() !== 'super admin')
+            ? existingCreator
+            : (assignedPerson || existingCreator || creatorOrAssignee);
+          data.source = safeCreator;
+          data.creatorName = safeCreator;
+          data.createdByName = safeCreator;
         }
       }
 
@@ -682,12 +695,29 @@ export default function RecordForm() {
       if (data.notes) {
         data.remarks = data.notes;
       }
-      if (data.budget) {
-        data.loanAmount = data.budget;
+      if (data.loanAmount || data.budget || data.amount) {
+        const amt = data.loanAmount || data.budget || data.amount;
+        data.loanAmount = amt;
+        data.budget = amt;
+        data.amount = amt;
       }
-      if (data.businessPartner) {
-        data.bank = data.businessPartner;
-        data.bankName = data.businessPartner;
+      if (data.loanType || data.product) {
+        const lt = data.loanType || data.product;
+        data.loanType = lt;
+        data.product = lt;
+      }
+      if (data.businessPartner || data.bankPartner || data.bank || data.bankNames) {
+        const b = data.businessPartner || data.bankPartner || data.bank || data.bankNames;
+        data.bank = b;
+        data.bankName = b;
+        data.bankNames = b;
+        data.bankPartner = b;
+        data.businessPartner = b;
+      }
+      if (data.psm || data.psmName) {
+        const p = data.psm || data.psmName;
+        data.psm = p;
+        data.psmName = p;
       }
       if (!data.location && (data.city || data.presentAddress || data.state)) {
         data.location = [data.city, data.state].filter(Boolean).join(', ') || data.city || data.presentAddress || '';

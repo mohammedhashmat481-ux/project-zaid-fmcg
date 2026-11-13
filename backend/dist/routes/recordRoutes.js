@@ -1755,13 +1755,23 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             }
             const leads = rows.map((r) => {
                 const d = { ...(r.data || {}) };
-                const creatorName = (r.created_by && userMap[r.created_by.toString()]) || d.creatorName || d.createdByName || 'Super Admin';
-                d.creatorName = creatorName;
-                d.createdByName = creatorName;
+                // Resolve assigned telecaller or caller
+                const assignedPerson = String((d.assignedTo && typeof d.assignedTo === 'object' ? `${d.assignedTo.firstName || ''} ${d.assignedTo.lastName || ''}`.trim() : d.assignedTo) ||
+                    d.dialedBy ||
+                    d.callerName ||
+                    d.telecaller ||
+                    '').trim();
+                const dbCreator = (r.created_by && userMap[r.created_by.toString()]) || '';
+                const realCreator = (dbCreator && dbCreator.toLowerCase() !== 'super admin')
+                    ? dbCreator
+                    : (assignedPerson || (dbCreator && dbCreator.toLowerCase() !== 'super admin' ? dbCreator : '') || 'Telecaller');
+                d.creatorName = realCreator;
+                d.createdByName = realCreator;
                 const s = String(d.source || '').trim();
                 const camp = String(d.campaignName || d.campaign || d.campaign_name || decodedCampaignName || '').trim();
-                if (!s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s)) {
-                    d.source = creatorName;
+                const isCampSource = !s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
+                if (isCampSource || (s.toLowerCase() === 'super admin' && assignedPerson && assignedPerson.toLowerCase() !== 'super admin')) {
+                    d.source = assignedPerson || realCreator;
                 }
                 // 1. Ensure customerName / leadName is populated from any available column
                 let rawCust = String(d.customerName || d.firstName || '').trim();
@@ -1861,10 +1871,46 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                         }
                     }
                 }
+                // 7. Ensure loanAmount / amount / budget
+                const rawAmt = d.loanAmount || d.amount || d.budget || d['Loan Amount'] || d['Loan amount'] || d['loan amount'] || d['Amount'] || d['amount'] || d.loan_amount || d.requiredLoan;
+                if (rawAmt !== undefined && rawAmt !== null && String(rawAmt).trim() !== '') {
+                    d.loanAmount = rawAmt;
+                    d.amount = rawAmt;
+                }
+                // 8. Ensure loanType / product
+                const rawLt = d.loanType || d.product || d['Loan type'] || d['Loan Type'] || d['loan type'] || d.loan_type || d.productType || d.serviceType || d.loanProduct;
+                if (rawLt && String(rawLt).trim() !== '') {
+                    d.loanType = String(rawLt).trim();
+                    d.product = String(rawLt).trim();
+                }
+                // 9. Ensure bankNames / bankPartner
+                const rawBank = d.bankNames || d.bank || d.bankPartner || d.businessPartner || d['Bank Names'] || d['Bank Name'] || d['bank name'] || d.bankName || d.bank_partner;
+                if (rawBank && String(rawBank).trim() !== '') {
+                    d.bankNames = String(rawBank).trim();
+                    d.bankPartner = String(rawBank).trim();
+                    d.bank = String(rawBank).trim();
+                    d.businessPartner = String(rawBank).trim();
+                }
+                // 10. Ensure psm
+                const rawPsm = d.psm || d.psmName || d.psm_name || d['PSM'] || d['psm'] || d.manager;
+                if (rawPsm && String(rawPsm).trim() !== '') {
+                    d.psm = String(rawPsm).trim();
+                    d.psmName = String(rawPsm).trim();
+                }
+                // 11. Ensure caseDetails
+                const rawCd = d.caseDetails || d.case_details || d['CASE DEATAILS'] || d['CASE DETAILS'] || d['Case Details'] || d.caseStatus;
+                if (rawCd && String(rawCd).trim() !== '') {
+                    d.caseDetails = String(rawCd).trim();
+                }
+                // 12. Ensure remarks
+                const rawRem = d.remarks || d.notes || d.remark || d['Remarks'] || d['remarks'];
+                if (rawRem && String(rawRem).trim() !== '') {
+                    d.remarks = String(rawRem).trim();
+                }
                 const isDialed = d.dialedAt || d.lastCallDate || (d.callAttempts && Number(d.callAttempts) > 0) ||
                     (d.status && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL'].includes(String(d.status).trim().toUpperCase()));
                 if (!isDialed) {
-                    if (d.psm && (d.psm === d.assignedTo || d.psm === decodedCampaignName || String(d.psm).toUpperCase() === 'N/A' || String(d.psm).includes('DEMO'))) {
+                    if (d.psm && (d.psm === decodedCampaignName || String(d.psm).toUpperCase() === 'N/A' || String(d.psm).includes('DEMO'))) {
                         delete d.psm;
                         delete d.psmName;
                     }
@@ -2750,15 +2796,62 @@ router.put('/:apiPath/:id', async (req, res) => {
                 updateData.partnerName = `${updateData.bank || oldValues.bank || ''} - ${updateData.loanType || oldValues.loanType || ''} - ${updateData.psm || oldValues.psm || ''}`.trim() || 'Banking Partner';
             }
         }
-        // Lead Source is permanently immutable: never overwrite original creator (unless old source was just raw campaign drive name)
+        // Lead Source is permanently immutable: never overwrite original creator with Super Admin when handled by a telecaller
         if (apiPath.toLowerCase() === 'leads') {
             const camp = String(oldValues.campaignName || oldValues.campaign || oldValues.campaign_name || '').trim();
             const s = String(oldValues.source || '').trim();
-            const isRawCampSource = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
-            const originalCreator = oldValues.creatorName || oldValues.createdByName || (!isRawCampSource && s ? s : 'Super Admin');
-            updateData.source = originalCreator;
-            updateData.creatorName = originalCreator;
-            updateData.createdByName = originalCreator;
+            const isRawCampSource = !s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
+            const assignedPerson = String(updateData.dialedBy ||
+                updateData.callerName ||
+                updateData.assignedTo ||
+                oldValues.dialedBy ||
+                oldValues.callerName ||
+                oldValues.assignedTo ||
+                oldValues.telecaller ||
+                '').trim();
+            let permanentSource = '';
+            if (!isRawCampSource && s && s.toLowerCase() !== 'super admin') {
+                permanentSource = s;
+            }
+            else if (updateData.source && !/^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(String(updateData.source).trim()) && String(updateData.source).toLowerCase() !== 'super admin') {
+                permanentSource = String(updateData.source).trim();
+            }
+            else if (assignedPerson && assignedPerson.toLowerCase() !== 'super admin') {
+                permanentSource = assignedPerson;
+            }
+            else if (oldValues.creatorName && oldValues.creatorName.toLowerCase() !== 'super admin') {
+                permanentSource = oldValues.creatorName;
+            }
+            else {
+                permanentSource = assignedPerson || s || 'Telecaller';
+            }
+            updateData.source = permanentSource;
+            updateData.creatorName = permanentSource;
+            updateData.createdByName = permanentSource;
+            // Sync aliases on update
+            if (updateData.loanAmount || updateData.budget || updateData.amount) {
+                const amt = updateData.loanAmount || updateData.budget || updateData.amount;
+                updateData.loanAmount = amt;
+                updateData.budget = amt;
+                updateData.amount = amt;
+            }
+            if (updateData.loanType || updateData.product) {
+                const lt = updateData.loanType || updateData.product;
+                updateData.loanType = lt;
+                updateData.product = lt;
+            }
+            if (updateData.businessPartner || updateData.bankPartner || updateData.bank || updateData.bankNames) {
+                const b = updateData.businessPartner || updateData.bankPartner || updateData.bank || updateData.bankNames;
+                updateData.businessPartner = b;
+                updateData.bankPartner = b;
+                updateData.bank = b;
+                updateData.bankNames = b;
+            }
+            if (updateData.psm || updateData.psmName) {
+                const p = updateData.psm || updateData.psmName;
+                updateData.psm = p;
+                updateData.psmName = p;
+            }
         }
         // Validate inputs against the merged data
         const mergedData = {

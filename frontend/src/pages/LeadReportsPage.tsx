@@ -520,15 +520,19 @@ export default function LeadReportsPage() {
                     'Home Loan Super Saver Scheme',
                     'Ink CRM'
                   ];
+                  const assignedPerson = String(
+                    (data.assignedTo && typeof data.assignedTo === 'object' ? `${data.assignedTo.firstName || ''} ${data.assignedTo.lastName || ''}`.trim() : data.assignedTo) ||
+                    (data.assignedAgent && typeof data.assignedAgent === 'object' ? `${data.assignedAgent.firstName || ''} ${data.assignedAgent.lastName || ''}`.trim() : data.assignedAgent) ||
+                    data.dialedBy ||
+                    data.callerName ||
+                    data.telecaller ||
+                    ''
+                  ).trim();
+
                   let source = data.creatorName || (data.source && !campaignNames.includes(data.source) ? data.source : '');
-                  if (!source && data.assignedAgent) {
-                    source = typeof data.assignedAgent === 'object'
-                      ? `${data.assignedAgent.firstName || ''} ${data.assignedAgent.lastName || ''}`.trim()
-                      : String(data.assignedAgent);
-                  } else if (!source && data.telecaller) {
-                    source = String(data.telecaller);
+                  if (!source || (source.toLowerCase() === 'super admin' && assignedPerson && assignedPerson.toLowerCase() !== 'super admin') || source === 'Ink CRM') {
+                    source = assignedPerson || source || 'Telecaller';
                   }
-                  if (!source || source === 'Ink CRM') source = 'Super Admin';
 
                   // PSM
                   let psm = data.psm || data.psmName || 'Vikram Patel';
