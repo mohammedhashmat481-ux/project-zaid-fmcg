@@ -665,6 +665,8 @@ export default function RecordForm() {
           data.source = creatorOrAssignee;
           data.creatorName = creatorOrAssignee;
           data.createdByName = creatorOrAssignee;
+          data.isLeadCreated = true;
+          data.leadCreated = true;
         } else {
           // Existing lead being edited: NEVER overwrite original creator! It remains fixed forever!
           const existingCreator = originalCreatorSource || formData.source || formData.creatorName;

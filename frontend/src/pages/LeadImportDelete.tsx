@@ -277,14 +277,45 @@ export default function LeadImportDelete() {
 
   const fetchFilterMeta = async () => {
     try {
-      const res = await api.get('/records/leads/filters-meta');
-      setCampaignOptions(res.data.campaigns || []);
-      setStatusOptions(res.data.statuses || []);
-      const srcList: string[] = res.data.sources || [];
+      const [metaRes, statusRes] = await Promise.all([
+        api.get('/records/leads/filters-meta'),
+        api.get('/statuses').catch(() => ({ data: [] }))
+      ]);
+
+      setCampaignOptions(metaRes.data?.campaigns || []);
+
+      // Pull actual lead statuses directly from Dashboard configured statuses
+      const dbStatuses: any[] = Array.isArray(statusRes.data) ? statusRes.data : [];
+      let cleanStatuses = dbStatuses
+        .filter((s: any) => s.dashboardVisibility !== false)
+        .map((s: any) => (s.name || '').trim().toUpperCase())
+        .filter(Boolean);
+
+      if (cleanStatuses.length === 0 && metaRes.data?.statuses) {
+        cleanStatuses = (metaRes.data.statuses as string[]).filter((st: string) => {
+          const upper = st.trim().toUpperCase();
+          return ![
+            'CALL BACK', 'CALL REJECT', 'NO ANSWER', 'NO INCOMING CALLS',
+            'NOT CONNECTED', 'NOT EXISTS', 'NOT INTERESTED', 'NOT REACHABLE',
+            'NUMBER BUSY', 'REPEATED NUMBER', 'NEW', 'YET TO CALL', 'NOT CALLED'
+          ].includes(upper);
+        });
+      }
+
+      if (cleanStatuses.length === 0) {
+        cleanStatuses = [
+          'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+          'STATUS PENDING', 'APPROVED', 'DISBUSED', 'REJECTED', 'FOLLOWUP', 'DROPPED',
+          'PENDING', 'GIVEN LOGIN'
+        ];
+      }
+
+      setStatusOptions(Array.from(new Set(cleanStatuses)));
+      const srcList: string[] = metaRes.data?.sources || [];
       if (!srcList.includes('Super Admin')) srcList.unshift('Super Admin');
       if (!srcList.includes('Main Admin')) srcList.unshift('Main Admin');
       setSourceOptions(Array.from(new Set(srcList)).filter(Boolean));
-      setTotalLeadsCount(res.data.totalLeads || 0);
+      setTotalLeadsCount(metaRes.data?.totalLeads || 0);
     } catch (err) {
       console.error('Failed to fetch filter metadata:', err);
     }

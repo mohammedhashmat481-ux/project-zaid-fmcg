@@ -590,12 +590,46 @@ router.get('/leads/delete-preview', async (req: Request, res: Response): Promise
       limit = '500'
     } = req.query;
 
+    // Fetch configured dashboard statuses from database
+    const dbStatuses = await Status.find({ organizationId: orgId, dashboardVisibility: { $ne: false } }).sort({ order: 1 }).lean();
+    let dashboardStatusNames: string[] = dbStatuses.map((s: any) => (s.name || '').trim().toUpperCase()).filter(Boolean);
+    if (dashboardStatusNames.length === 0) {
+      dashboardStatusNames = [
+        'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+        'STATUS PENDING', 'APPROVED', 'DISBUSED', 'REJECTED', 'FOLLOWUP', 'DROPPED',
+        'PENDING', 'GIVEN LOGIN'
+      ];
+    }
+
+    // In Lead Import & Delete, ONLY actual created leads must be shown and deleted (never uncreated raw campaign lists)
+    const actualLeadFilter: any = {
+      $and: [
+        { 'data.isLeadCreated': { $ne: false } },
+        {
+          $or: [
+            { 'data.isLeadCreated': true },
+            { 'data.leadCreated': true },
+            { 'data.pipelineLeadId': { $exists: true, $ne: null } },
+            { 'data.assignToTeam': { $exists: true, $ne: '' } },
+            { 'data.status': { $in: dashboardStatusNames } },
+            {
+              $and: [
+                { 'data.campaignName': { $in: [null, '', undefined] } },
+                { 'data.campaign': { $in: [null, '', undefined] } },
+                { 'data.campaign_name': { $in: [null, '', undefined] } }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
     const query: Record<string, any> = {
       organizationId: orgId,
       moduleId: leadModule._id
     };
 
-    const conditions: any[] = [];
+    const conditions: any[] = [actualLeadFilter];
     if (campaignName) {
       const campStr = String(campaignName).trim();
       const campRegex = new RegExp(`^\\s*${campStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
@@ -685,7 +719,7 @@ router.get('/leads/delete-preview', async (req: Request, res: Response): Promise
         .limit(limitNum)
         .lean(),
       CustomRecord.countDocuments(query),
-      CustomRecord.countDocuments({ organizationId: orgId, moduleId: leadModule._id })
+      CustomRecord.countDocuments({ organizationId: orgId, moduleId: leadModule._id, ...actualLeadFilter })
     ]);
 
     records.forEach((r: any) => {
@@ -740,7 +774,40 @@ router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<v
     if (Array.isArray(leadIds) && leadIds.length > 0) {
       query._id = { $in: leadIds };
     } else if (deleteAllMatching && filters) {
-      const conditions: any[] = [];
+      // In Lead Import & Delete, ONLY actual created leads must be deleted
+      const dbStatuses = await Status.find({ organizationId: orgId, dashboardVisibility: { $ne: false } }).sort({ order: 1 }).lean();
+      let dashboardStatusNames: string[] = dbStatuses.map((s: any) => (s.name || '').trim().toUpperCase()).filter(Boolean);
+      if (dashboardStatusNames.length === 0) {
+        dashboardStatusNames = [
+          'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+          'STATUS PENDING', 'APPROVED', 'DISBUSED', 'REJECTED', 'FOLLOWUP', 'DROPPED',
+          'PENDING', 'GIVEN LOGIN'
+        ];
+      }
+
+      const actualLeadFilter: any = {
+        $and: [
+          { 'data.isLeadCreated': { $ne: false } },
+          {
+            $or: [
+              { 'data.isLeadCreated': true },
+              { 'data.leadCreated': true },
+              { 'data.pipelineLeadId': { $exists: true, $ne: null } },
+              { 'data.assignToTeam': { $exists: true, $ne: '' } },
+              { 'data.status': { $in: dashboardStatusNames } },
+              {
+                $and: [
+                  { 'data.campaignName': { $in: [null, '', undefined] } },
+                  { 'data.campaign': { $in: [null, '', undefined] } },
+                  { 'data.campaign_name': { $in: [null, '', undefined] } }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+
+      const conditions: any[] = [actualLeadFilter];
       if (filters.campaignName) {
         const campStr = String(filters.campaignName).trim();
         const campRegex = new RegExp(`^\\s*${campStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
@@ -852,13 +919,50 @@ router.get('/leads/filters-meta', async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const records = await CustomRecord.find({ organizationId: orgId, moduleId: leadModule._id })
+    // Fetch dashboard configured statuses from database
+    const dbStatuses = await Status.find({ organizationId: orgId, dashboardVisibility: { $ne: false } }).sort({ order: 1 }).lean();
+    let statusNames: string[] = dbStatuses.map((s: any) => (s.name || '').trim().toUpperCase()).filter(Boolean);
+    if (statusNames.length === 0) {
+      statusNames = [
+        'HOT LEADS', 'WARM LEADS', 'COOL LEAD', 'CEBIL PENDING', 'DOCUMENT PENDING',
+        'STATUS PENDING', 'APPROVED', 'DISBUSED', 'REJECTED', 'FOLLOWUP', 'DROPPED',
+        'PENDING', 'GIVEN LOGIN'
+      ];
+    }
+
+    // In Lead Import & Delete, ONLY actual created leads are counted and filtered
+    const actualLeadFilter: any = {
+      $and: [
+        { 'data.isLeadCreated': { $ne: false } },
+        {
+          $or: [
+            { 'data.isLeadCreated': true },
+            { 'data.leadCreated': true },
+            { 'data.pipelineLeadId': { $exists: true, $ne: null } },
+            { 'data.assignToTeam': { $exists: true, $ne: '' } },
+            { 'data.status': { $in: statusNames } },
+            {
+              $and: [
+                { 'data.campaignName': { $in: [null, '', undefined] } },
+                { 'data.campaign': { $in: [null, '', undefined] } },
+                { 'data.campaign_name': { $in: [null, '', undefined] } }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const records = await CustomRecord.find({
+      organizationId: orgId,
+      moduleId: leadModule._id,
+      ...actualLeadFilter
+    })
       .populate('createdBy', 'firstName lastName name email')
       .select('data createdBy')
       .lean();
 
     const campaignsSet = new Set<string>();
-    const statusesSet = new Set<string>();
     const sourcesSet = new Set<string>();
     sourcesSet.add('Super Admin');
 
@@ -894,13 +998,11 @@ router.get('/leads/filters-meta', async (req: Request, res: Response): Promise<v
         const byName = `${r.createdBy.firstName || ''} ${r.createdBy.lastName || ''}`.trim() || r.createdBy.name;
         if (byName) sourcesSet.add(byName);
       }
-
-      if (d.status) statusesSet.add(d.status);
     });
 
     res.status(200).json({
       campaigns: Array.from(campaignsSet).filter(Boolean).sort(),
-      statuses: Array.from(statusesSet).filter(Boolean).sort(),
+      statuses: statusNames,
       sources: Array.from(sourcesSet).filter(Boolean).sort(),
       totalLeads: records.length
     });
@@ -2857,6 +2959,8 @@ router.post('/:apiPath', async (req: Request, res: Response): Promise<void> => {
       }
       recordData.creatorName = creatorName;
       recordData.createdByName = creatorName;
+      recordData.isLeadCreated = true;
+      recordData.leadCreated = true;
 
       // Brand new lead creation must start with 0 calls and Yet To Call unless explicitly dialed
       if (recordData.callAttempts === undefined || !recordData.dialedAt) {
