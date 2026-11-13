@@ -568,6 +568,151 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
   }
 });
 
+// ── Lead Delete Preview Endpoint ──────────────────────────────────────
+router.get('/leads/delete-preview', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.organizationId;
+    const leadModule = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'leads' });
+    if (!leadModule) {
+      res.status(200).json({ records: [], totalMatching: 0, totalLeads: 0 });
+      return;
+    }
+
+    const {
+      campaignName,
+      creator,
+      source,
+      status,
+      assignedTo,
+      startDate,
+      endDate,
+      searchQuery,
+      limit = '500'
+    } = req.query;
+
+    const query: Record<string, any> = {
+      organizationId: orgId,
+      moduleId: leadModule._id
+    };
+
+    const conditions: any[] = [];
+    if (campaignName) {
+      const campStr = String(campaignName).trim();
+      const campRegex = new RegExp(`^\\s*${campStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+      conditions.push({
+        $or: [
+          { 'data.campaignName': campRegex },
+          { 'data.campaign': campRegex },
+          { 'data.campaign_name': campRegex },
+          { 'data.source': campRegex }
+        ]
+      });
+    }
+
+    const srcVal = String(source || creator || '').trim();
+    if (srcVal && srcVal.toLowerCase() !== 'all') {
+      const srcRegex = new RegExp(`^\\s*${srcVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+      const matchedUsers = await User.find({
+        organizationId: orgId,
+        $or: [
+          { firstName: new RegExp(srcVal, 'i') },
+          { lastName: new RegExp(srcVal, 'i') },
+          { email: new RegExp(srcVal, 'i') }
+        ]
+      }).select('_id').lean();
+      const matchedIds = matchedUsers.map((u: any) => u._id);
+
+      const srcOrs: any[] = [
+        { 'data.source': srcRegex },
+        { 'data.creatorName': srcRegex },
+        { 'data.createdByName': srcRegex }
+      ];
+      if (matchedIds.length > 0) {
+        srcOrs.push({ createdBy: { $in: matchedIds } });
+      }
+      if (srcVal.toLowerCase().includes('super') || srcVal.toLowerCase().includes('admin')) {
+        srcOrs.push({ createdBy: null });
+        srcOrs.push({ 'data.source': 'Super Admin' });
+      }
+      conditions.push({ $or: srcOrs });
+    }
+
+    if (status && String(status).toLowerCase() !== 'all') {
+      query['data.status'] = status;
+    }
+    if (assignedTo && String(assignedTo).toLowerCase() !== 'all') {
+      const assStr = String(assignedTo).trim();
+      conditions.push({
+        $or: [
+          { 'data.assignedTo': new RegExp(assStr, 'i') },
+          { 'data.assignedToName': new RegExp(assStr, 'i') }
+        ]
+      });
+    }
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate as string);
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+    if (searchQuery) {
+      const rx = new RegExp(String(searchQuery).trim(), 'i');
+      conditions.push({
+        $or: [
+          { 'data.firstName': rx },
+          { 'data.lastName': rx },
+          { 'data.phone': rx },
+          { 'data.email': rx },
+          { 'data.company': rx },
+          { 'data.customerName': rx }
+        ]
+      });
+    }
+
+    if (conditions.length > 0) {
+      query.$and = conditions;
+    }
+
+    const limitNum = Math.min(Math.max(1, parseInt(limit as string, 10) || 500), 1000);
+
+    const [records, totalMatching, totalLeads] = await Promise.all([
+      CustomRecord.find(query)
+        .populate('createdBy', 'firstName lastName name email')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean(),
+      CustomRecord.countDocuments(query),
+      CustomRecord.countDocuments({ organizationId: orgId, moduleId: leadModule._id })
+    ]);
+
+    records.forEach((r: any) => {
+      const d = r.data || (r.data = {});
+      const creatorName =
+        (typeof r.createdBy === 'object' && r.createdBy && (`${r.createdBy.firstName || ''} ${r.createdBy.lastName || ''}`.trim() || r.createdBy.name || r.createdBy.email)) ||
+        d.creatorName ||
+        d.createdByName ||
+        d.source ||
+        'Super Admin';
+      d.creatorName = creatorName;
+      d.createdByName = creatorName;
+      r.creatorName = creatorName;
+      r.createdByName = creatorName;
+    });
+
+    res.status(200).json({
+      records,
+      totalMatching,
+      totalLeads
+    });
+  } catch (error: any) {
+    console.error('Delete preview error:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch leads delete preview.' });
+  }
+});
+
 // ── Lead Bulk Delete Endpoint ──────────────────────────────────────────
 router.post('/leads/bulk-delete', async (req: Request, res: Response): Promise<void> => {
   try {

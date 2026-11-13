@@ -18,6 +18,7 @@ interface LeadRecord {
   _id: string;
   createdAt: string;
   createdBy?: any;
+  creatorName?: string;
   createdByName?: string;
   data: {
     firstName?: string;
@@ -27,11 +28,12 @@ interface LeadRecord {
     company?: string;
     status?: string;
     source?: string;
-    campaignName?: string;
-    campaign?: string;
     creatorName?: string;
     createdByName?: string;
+    campaignName?: string;
+    campaign?: string;
     assignedTo?: string;
+    assignedToName?: string;
     budget?: string;
     loanType?: string;
     city?: string;
@@ -85,10 +87,11 @@ export default function LeadImportDelete() {
   const [statusOptions, setStatusOptions] = useState<string[]>([]);
   const [sourceOptions, setSourceOptions] = useState<string[]>([]);
   const [totalLeadsCount, setTotalLeadsCount] = useState(0);
+  const [totalMatchingCount, setTotalMatchingCount] = useState(0);
 
   // Delete Filters
   const [filterCampaign, setFilterCampaign] = useState('');
-  const [filterSource, setFilterSource] = useState('');
+  const [filterCreator, setFilterCreator] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAgent, setFilterAgent] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -277,7 +280,10 @@ export default function LeadImportDelete() {
       const res = await api.get('/records/leads/filters-meta');
       setCampaignOptions(res.data.campaigns || []);
       setStatusOptions(res.data.statuses || []);
-      setSourceOptions(res.data.sources || []);
+      const srcList: string[] = res.data.sources || [];
+      if (!srcList.includes('Super Admin')) srcList.unshift('Super Admin');
+      if (!srcList.includes('Main Admin')) srcList.unshift('Main Admin');
+      setSourceOptions(Array.from(new Set(srcList)).filter(Boolean));
       setTotalLeadsCount(res.data.totalLeads || 0);
     } catch (err) {
       console.error('Failed to fetch filter metadata:', err);
@@ -287,24 +293,49 @@ export default function LeadImportDelete() {
   const fetchLeadsForDelete = async () => {
     try {
       setLoadingLeads(true);
-      let url = '/records/leads?limit=1000';
-      const res = await api.get(url);
-      const fetched: LeadRecord[] = res.data.records || res.data || [];
+      const params = new URLSearchParams();
+      params.append('limit', '500');
+
+      if (filterCampaign) params.append('campaignName', filterCampaign);
+      if (filterCreator) {
+        params.append('creator', filterCreator);
+        params.append('source', filterCreator);
+      }
+      if (filterStatus) params.append('status', filterStatus);
+      if (filterAgent) params.append('assignedTo', filterAgent);
+      if (filterStartDate) params.append('startDate', filterStartDate);
+      if (filterEndDate) params.append('endDate', filterEndDate);
+      if (searchQuery) params.append('searchQuery', searchQuery);
+
+      const res = await api.get(`/records/leads/delete-preview?${params.toString()}`);
+      const fetched: LeadRecord[] = res.data.records || [];
       setLeads(fetched);
+      setTotalMatchingCount(res.data.totalMatching !== undefined ? res.data.totalMatching : fetched.length);
+      if (res.data.totalLeads !== undefined && res.data.totalLeads > 0) {
+        setTotalLeadsCount(res.data.totalLeads);
+      }
     } catch (err) {
-      console.error('Failed to fetch leads:', err);
-      showToast('Failed to load leads list.', 'error');
+      console.error('Failed to fetch leads preview:', err);
+      try {
+        const res = await api.get('/records/leads?limit=500');
+        const fetched: LeadRecord[] = res.data.records || res.data || [];
+        setLeads(fetched);
+        setTotalMatchingCount(fetched.length);
+      } catch (e) {
+        showToast('Failed to load leads list.', 'error');
+      }
     } finally {
       setLoadingLeads(false);
     }
   };
 
   useEffect(() => {
-    if (activeTab === 'delete') {
+    if (activeTab !== 'delete') return;
+    const timer = setTimeout(() => {
       fetchLeadsForDelete();
-      fetchFilterMeta();
-    }
-  }, [activeTab]);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [activeTab, filterCampaign, filterCreator, filterStatus, filterAgent, filterStartDate, filterEndDate, searchQuery]);
 
   // ── Import Handlers ────────────────────────────────────────────────
   const autoMapHeaders = (headers: string[]) => {
@@ -470,30 +501,21 @@ export default function LeadImportDelete() {
   // ── Delete Handlers ────────────────────────────────────────────────
   const filteredLeads = leads.filter((lead) => {
     const d = lead.data || {};
-    const camp = (d.campaignName || d.campaign || d.campaign_name || '').toString().toLowerCase();
-    const src = (d.source || '').toString().toLowerCase();
-    const cr = (d.creatorName || d.createdByName || lead.createdByName || '').toString().toLowerCase();
-    let createdByUser = '';
-    if (lead.createdBy && typeof lead.createdBy === 'object') {
-      createdByUser = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim().toLowerCase();
-      if (!createdByUser) createdByUser = (lead.createdBy.name || lead.createdBy.email || '').toString().toLowerCase();
-    }
-    const st = (d.status || '').toString().toLowerCase();
-    const ass = (d.assignedTo || '').toString().toLowerCase();
+    const src = (d.source || d.campaignName || d.campaign || '').toString().toLowerCase();
+    const st = (d.status || d.leadStatus || '').toString().toLowerCase();
+    const ass = (d.assignedTo || d.assignedToName || '').toString().toLowerCase();
+    const cr = (
+      lead.creatorName ||
+      lead.createdByName ||
+      d.creatorName ||
+      d.createdByName ||
+      (typeof lead.createdBy === 'object' && lead.createdBy ? `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() : '') ||
+      d.source ||
+      ''
+    ).toString().toLowerCase();
 
-    if (filterCampaign) {
-      const fc = filterCampaign.toLowerCase();
-      const matchCamp = camp.includes(fc) || src.includes(fc);
-      if (!matchCamp) return false;
-    }
-
-    if (filterSource) {
-      const fs = filterSource.toLowerCase().trim();
-      const isSuperMatch = (fs.includes('super') || fs.includes('admin')) && (!lead.createdBy || src === 'super admin' || cr === 'super admin' || createdByUser === 'super admin');
-      const isMatch = isSuperMatch || src.includes(fs) || cr.includes(fs) || createdByUser.includes(fs);
-      if (!isMatch) return false;
-    }
-
+    if (filterCampaign && !src.includes(filterCampaign.toLowerCase())) return false;
+    if (filterCreator && !cr.includes(filterCreator.toLowerCase()) && !src.includes(filterCreator.toLowerCase())) return false;
     if (filterStatus && st !== filterStatus.toLowerCase()) return false;
     if (filterAgent && !ass.includes(filterAgent.toLowerCase())) return false;
 
@@ -535,7 +557,7 @@ export default function LeadImportDelete() {
   };
 
   const openDeleteModal = (mode: 'selected' | 'all_filtered') => {
-    const count = mode === 'selected' ? selectedLeadIds.length : filteredLeads.length;
+    const count = mode === 'selected' ? selectedLeadIds.length : (totalMatchingCount > 0 ? totalMatchingCount : filteredLeads.length);
     if (count === 0) {
       showToast(mode === 'selected' ? 'No leads selected to delete.' : 'No matching leads found to purge.', 'warning');
       return;
@@ -562,7 +584,8 @@ export default function LeadImportDelete() {
           deleteAllMatching: true,
           filters: {
             campaignName: filterCampaign,
-            source: filterSource,
+            creator: filterCreator,
+            source: filterCreator,
             status: filterStatus,
             assignedTo: filterAgent,
             startDate: filterStartDate,
@@ -960,28 +983,48 @@ export default function LeadImportDelete() {
               </button>
               <button
                 onClick={() => openDeleteModal('all_filtered')}
-                disabled={filteredLeads.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white hover:bg-black rounded-xl text-xs font-bold shadow-md disabled:opacity-40 transition-all cursor-pointer"
+                disabled={(totalMatchingCount > 0 ? totalMatchingCount : filteredLeads.length) === 0}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-red-600/20 disabled:opacity-40 transition-all cursor-pointer"
               >
-                <Icons.Zap className="w-4 h-4 text-amber-400 dark:text-amber-600" />
-                <span>Purge All Filtered ({filteredLeads.length})</span>
+                <Icons.Zap className="w-4 h-4 text-amber-300" />
+                <span>Purge All Filtered ({totalMatchingCount > 0 ? totalMatchingCount : filteredLeads.length})</span>
               </button>
             </div>
           </div>
 
           {/* Filters Bar */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
                 <Icons.Filter className="w-4 h-4 text-red-600 dark:text-red-400" />
                 Lead Filters & Search
               </h3>
-              <div className="text-xs text-slate-500 font-medium">
-                Showing <span className="font-bold text-slate-900 dark:text-white">{filteredLeads.length}</span> of {totalLeadsCount} total leads
+              <div className="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap">
+                <span>
+                  Showing <span className="font-bold text-slate-900 dark:text-white">{filteredLeads.length}</span> of{' '}
+                  <span className="font-bold text-red-600 dark:text-red-400">{totalMatchingCount > 0 ? totalMatchingCount : filteredLeads.length}</span> matching leads
+                  {totalLeadsCount > 0 && ` (${totalLeadsCount.toLocaleString()} total in CRM)`}
+                </span>
+                {(filterCampaign || filterCreator || filterStatus || filterAgent || filterStartDate || filterEndDate || searchQuery) && (
+                  <button
+                    onClick={() => {
+                      setFilterCampaign('');
+                      setFilterCreator('');
+                      setFilterStatus('');
+                      setFilterAgent('');
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                      setSearchQuery('');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
               {/* Campaign Filter */}
               <div>
                 <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1 block">
@@ -1003,23 +1046,21 @@ export default function LeadImportDelete() {
 
               {/* Source (Created By) Filter */}
               <div>
-                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1 block">
+                <label className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1 flex items-center gap-1">
+                  <Icons.UserCheck className="w-3 h-3" />
                   Source (Created By)
                 </label>
                 <select
-                  value={filterSource}
-                  onChange={(e) => setFilterSource(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
+                  value={filterCreator}
+                  onChange={(e) => setFilterCreator(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200 font-medium focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">All Sources / Creators</option>
-                  <option value="Super Admin">Super Admin</option>
-                  {sourceOptions
-                    .filter((s) => s && s.toLowerCase() !== 'super admin')
-                    .map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
+                  <option value="">All Creators / Sources</option>
+                  {sourceOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1145,29 +1186,26 @@ export default function LeadImportDelete() {
                       <th className="p-3.5">Phone</th>
                       <th className="p-3.5">Email</th>
                       <th className="p-3.5">Company / Firm</th>
-                      <th className="p-3.5">Campaign</th>
                       <th className="p-3.5">Source (Created By)</th>
+                      <th className="p-3.5">Campaign</th>
                       <th className="p-3.5">Status</th>
-                      <th className="p-3.5">Assigned To</th>
+                      <th className="p-3.5">Assigned Agent</th>
                       <th className="p-3.5">Created Date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {filteredLeads.map((lead) => {
                       const d = lead.data || {};
-                      const fullName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unnamed Lead';
+                      const fullName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || d.customerName || 'Unnamed Lead';
+                      const creatorName =
+                        lead.creatorName ||
+                        lead.createdByName ||
+                        d.creatorName ||
+                        d.createdByName ||
+                        (typeof lead.createdBy === 'object' && lead.createdBy ? `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() : '') ||
+                        d.source ||
+                        'Super Admin';
                       const isSelected = selectedLeadIds.includes(lead._id);
-
-                      let resolvedCreator = 'Super Admin';
-                      if (lead.createdBy && typeof lead.createdBy === 'object') {
-                        resolvedCreator = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email?.split('@')[0] || '';
-                      }
-                      if (!resolvedCreator || resolvedCreator === 'Super Admin') {
-                        resolvedCreator = d.creatorName || d.createdByName || lead.createdByName || '';
-                      }
-                      const campName = d.campaignName || d.campaign || d.campaign_name || '';
-                      const isCamp = (d.source && campName && d.source.toLowerCase() === campName.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(d.source || '');
-                      const displaySource = (!isCamp && d.source) || resolvedCreator || 'Super Admin';
 
                       return (
                         <tr
@@ -1197,22 +1235,23 @@ export default function LeadImportDelete() {
                             {d.company || '-'}
                           </td>
                           <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
-                              {campName || 'Direct'}
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 w-fit">
+                              <Icons.UserCheck className="w-3 h-3 text-indigo-500" />
+                              {creatorName}
                             </span>
                           </td>
                           <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                              {displaySource}
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {d.campaignName || d.campaign || '-'}
                             </span>
                           </td>
                           <td className="p-3.5">
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                              {d.status || 'New'}
+                              {d.status || d.leadStatus || 'New'}
                             </span>
                           </td>
                           <td className="p-3.5 text-slate-700 dark:text-slate-300 font-medium">
-                            {d.assignedTo || 'Unassigned'}
+                            {d.assignedTo || d.assignedToName || 'Unassigned'}
                           </td>
                           <td className="p-3.5 text-[11px] text-slate-500">
                             {formatDate(lead.createdAt)}
@@ -1247,7 +1286,7 @@ export default function LeadImportDelete() {
             <p className="text-xs text-slate-600 dark:text-slate-300">
               You are about to delete{' '}
               <span className="font-bold text-red-600 dark:text-red-400">
-                {deleteMode === 'selected' ? selectedLeadIds.length : filteredLeads.length} lead record(s)
+                {deleteMode === 'selected' ? selectedLeadIds.length : (totalMatchingCount > 0 ? totalMatchingCount : filteredLeads.length)} lead record(s)
               </span>{' '}
               permanently from the database. This action cannot be undone.
             </p>
