@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 
 export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lead_Report') => {
-  // Exact 19 Columns matching user specification and screenshots (Images 1, 2)
+  // Exact 19 Columns matching user specification and screenshots
   const headers = [
     'Sl.No.',
     'Createddate',
@@ -13,14 +13,14 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     'Status',
     'CASE DEATAILS',
     'Remarks',
-    'lead_category',
+    'lead_Category',
     'Loan Amount',
     'Loan type',
     'Bank Names',
     'Source',
     'PSM',
     'Assigned To',
-    'FollowUp Date',
+    'Follow Up Date',
     'Modified Date'
   ];
 
@@ -66,23 +66,95 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     return s;
   };
 
-  const isLeadDialed = (lead: any, data: any) => {
-    if (data.dialedAt || data.lastCallDate) return true;
-    if (data.callAttempts && Number(data.callAttempts) > 0) return true;
-    const dialSt = (data.dialStatus || '').toString().trim().toUpperCase();
-    if (dialSt && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL', ''].includes(dialSt)) return true;
-    const st = (data.status || '').toString().trim().toUpperCase();
-    if (st && !['YET TO CALL', 'NOT CALLED', 'NEW', 'YET TO DIAL', ''].includes(st)) return true;
+  // Check if status is a genuine user-updated status
+  // "NEW", "YET TO CALL", "NOT CALLED", "YET TO DIAL" are default un-dialed states, never updated statuses.
+  const isRealUpdatedStatus = (val?: any): boolean => {
+    if (!val) return false;
+    const s = String(val).trim().toUpperCase();
+    if (['', 'NEW', 'YET TO CALL', 'NOT CALLED', 'YET TO DIAL', 'N/A', 'UNDEFINED', 'NULL'].includes(s)) {
+      return false;
+    }
+    return true;
+  };
+
+  const isLeadDialed = (lead: any, data: any): boolean => {
+    return isRealUpdatedStatus(data.status) || isRealUpdatedStatus(data.dialStatus);
+  };
+
+  // Checks whether a string value is just the campaign name, campaign code, or system noise
+  const isCampaignString = (val?: any, campName?: string): boolean => {
+    if (!val) return true;
+    const s = String(val).trim().toLowerCase();
+    if (['', 'n/a', 'undefined', 'null', '—', '-', 'system', 'excel import', 'csv import', 'bulk import'].includes(s)) return true;
+    if (campName) {
+      const cleanCamp = campName.trim().toLowerCase();
+      if (cleanCamp && (s === cleanCamp || s.includes(cleanCamp) || cleanCamp.includes(s))) return true;
+    }
+    if (s.includes('vc-') || s.startsWith('camp-') || s.includes('campaign')) return true;
+    if (/^[0-9a-fA-F]{24}$/.test(s) || /^[0-9a-fA-F-]{36}$/.test(s)) return true;
     return false;
   };
 
-  const dataRows = (leads || []).map((lead: any, idx: number) => {
+  // Resolves the creator/source name: always the person who created/imported the lead, NEVER the campaign name
+  const resolveSourceName = (lead: any, data: any, campName: string): string => {
+    if (lead.createdBy && typeof lead.createdBy === 'object') {
+      const fullName = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim();
+      if (fullName && !isCampaignString(fullName, campName)) return fullName;
+      if (lead.createdBy.name && !isCampaignString(lead.createdBy.name, campName)) return lead.createdBy.name;
+      if (lead.createdBy.email) return lead.createdBy.email.split('@')[0];
+    }
+
+    const candidates = [
+      lead.createdByName,
+      data.creatorName,
+      data.createdByName,
+      data.creator,
+      lead.createdBy,
+      data.createdBy,
+      data.assignedByName,
+      data.assignedBy,
+      data.sourceUser,
+      data.importedBy
+    ];
+
+    for (const cand of candidates) {
+      if (cand && typeof cand === 'string') {
+        const s = cand.trim();
+        if (s && !isCampaignString(s, campName)) {
+          return s;
+        }
+      }
+    }
+
+    const rawSource = data.source ? String(data.source).trim() : '';
+    if (rawSource && !isCampaignString(rawSource, campName)) {
+      return rawSource;
+    }
+
+    return 'Super Admin';
+  };
+
+  // Order leads: all DIALED leads come first in serial order, followed by all YET-TO-DIAL leads
+  const dialedLeads: any[] = [];
+  const yetToDialLeads: any[] = [];
+
+  (leads || []).forEach((lead: any) => {
+    const data = lead.data || lead;
+    if (isLeadDialed(lead, data)) {
+      dialedLeads.push(lead);
+    } else {
+      yetToDialLeads.push(lead);
+    }
+  });
+
+  const orderedLeads = [...dialedLeads, ...yetToDialLeads];
+
+  const dataRows = orderedLeads.map((lead: any, idx: number) => {
     const data = lead.data || lead;
     const slNo = idx + 1;
     const isDialed = isLeadDialed(lead, data);
 
-    // Data Code: strictly the authentic code from assigning Excel (e.g. DMIBL-01, DMIBL-36)
-    // Never fallback to fake artificial string like CAMPAIGN-DATA-1
+    // Data Code
     const rawDc = cleanVal(
       data['data code'] ||
       data['Data Code'] ||
@@ -97,7 +169,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
     );
     const dataCode = rawDc || '';
 
-    // Location: strictly what was provided in assigning Excel or during dialing
+    // Location
     const location = cleanVal(
       data['location'] ||
       data['Location'] ||
@@ -112,7 +184,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       data.state
     );
 
-    // Customer Name resolution
+    // Customer Name
     let rawCustomer = '';
     const nameCandidates = [
       data['Customer Name'],
@@ -193,6 +265,7 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       assignedTo = String(data.telecaller);
     }
     assignedTo = cleanVal(assignedTo);
+    if (assignedTo.toUpperCase() === 'N/A' || assignedTo.toUpperCase() === 'UNDEFINED') assignedTo = '';
 
     const rawCreatedDate = cleanVal(
       data['Createddate'] ||
@@ -200,15 +273,16 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       data['createddate'] ||
       data['created_date'] ||
       data.createdDate ||
-      data.Createddate
+      data.Createddate ||
+      lead.createdAt
     );
 
-    const campSource = cleanVal(data.campaignName || data.campaign || data.source || fileNamePrefix);
+    const source = resolveSourceName(lead, data, fileNamePrefix);
 
     if (!isDialed) {
       // YET TO DIAL:
-      // Preserves all original data from assigning Excel sheet as it was.
-      // Dial-time updates that haven't happened yet remain blank. Status is "Yet To Dial".
+      // Status is strictly "Yet To Dial" (never "NEW")
+      // Source is strictly the creator's name (never the campaign name)
       return {
         'Sl.No.': slNo,
         'Createddate': rawCreatedDate ? (formatDateShort(rawCreatedDate) || rawCreatedDate) : '',
@@ -218,54 +292,39 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
         'Company name': companyName,
         'Mobile No': mobileNo,
         'Status': 'Yet To Dial',
-        'CASE DEATAILS': cleanVal(data.caseDetails || data.case_details || ''),
-        'Remarks': cleanVal(data.remarks || data.notes || data.remark || '').replace(/<[^>]*>/g, ''),
-        'lead_category': cleanVal(data.leadCategory || data.lead_category || data.category || ''),
+        'CASE DEATAILS': cleanVal(data.caseDetails || data.case_details || data['CASE DEATAILS'] || data['CASE DETAILS'] || ''),
+        'Remarks': cleanVal(data.remarks || data.notes || data.remark || data['Remarks'] || '').replace(/<[^>]*>/g, ''),
+        'lead_Category': cleanVal(data.leadCategory || data.lead_category || data.category || data['lead_Category'] || data['lead_category'] || ''),
         'Loan Amount': data.loanAmount || data.amount || data.budget ? formatCurrency(data.loanAmount || data.amount || data.budget) : '',
-        'Loan type': cleanVal(data.loanType || data.product || data.serviceType || ''),
-        'Bank Names': cleanVal(data.bankPartner || data.bankNames || data.bank || data.businessPartner || ''),
-        'Source': campSource,
-        'PSM': cleanVal(data.psm || data.psmName || ''),
+        'Loan type': cleanVal(data.loanType || data.product || data.serviceType || data['Loan type'] || ''),
+        'Bank Names': cleanVal(data.bankPartner || data.bankNames || data.bank || data.businessPartner || data['Bank Names'] || ''),
+        'Source': source,
+        'PSM': cleanVal(data.psm || data.psmName || data['PSM'] || ''),
         'Assigned To': assignedTo,
-        'FollowUp Date': '',
+        'Follow Up Date': '',
         'Modified Date': ''
       };
     }
 
     // DIALED:
-    // Shows all information entered after dialing, plus original assigning data.
-    // If telecaller missed or left any field blank, it renders blank.
+    // Only updated statuses appear (uppercase), never "NEW"
+    // Source is strictly creator's name, never campaign name
     const dialedDateRaw = data.dialedAt || data.lastCallDate || rawCreatedDate || lead.createdAt || data.createdAt;
     const createdDate = formatDateShort(dialedDateRaw) || (rawCreatedDate ? formatDateShort(rawCreatedDate) : '');
     const dialedAgent = cleanVal(data.dialedBy || data.callerName || assignedTo);
-    const status = cleanVal(data.status || data.dialStatus) ? String(data.status || data.dialStatus).trim().toUpperCase() : 'HOT LEADS';
-    const caseDetails = cleanVal(data.caseDetails || data.case_details || data.caseStatus || data.case_status);
-    const remarks = cleanVal(data.remarks || data.notes || data.remark).replace(/<[^>]*>/g, '');
-    const leadCategory = cleanVal(data.leadCategory || data.lead_category || data.category);
+
+    const rawStatus = data.status || data.dialStatus;
+    const status = isRealUpdatedStatus(rawStatus) ? String(rawStatus).trim().toUpperCase() : 'Yet To Dial';
+
+    const caseDetails = cleanVal(data.caseDetails || data.case_details || data.caseStatus || data.case_status || data['CASE DEATAILS'] || data['CASE DETAILS']);
+    const remarks = cleanVal(data.remarks || data.notes || data.remark || data['Remarks']).replace(/<[^>]*>/g, '');
+    const leadCategory = cleanVal(data.leadCategory || data.lead_category || data.category || data['lead_Category'] || data['lead_category']);
 
     const loanAmountRaw = data.loanAmount || data.budget || data.amount || data.requiredLoan;
     const loanAmount = loanAmountRaw ? formatCurrency(loanAmountRaw) : '';
 
-    const loanType = cleanVal(data.loanType || data.loanProduct || data.product || data.serviceType);
-    const bankNames = cleanVal(data.bankNames || data.bank || data.bankPartner || data.bank_partner || data.businessPartner || data.preferredBank);
-
-    let source = '';
-    if (lead.createdBy && typeof lead.createdBy === 'object') {
-      source = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email || '';
-    } else if (lead.createdByName) {
-      source = lead.createdByName;
-    } else if (data.creatorName) {
-      source = data.creatorName;
-    } else if (data.createdBy) {
-      source = data.createdBy;
-    } else if (data.assignedByName) {
-      source = data.assignedByName;
-    } else if (data.source && !data.source.toLowerCase().includes('demo') && !data.source.toLowerCase().includes('campaign')) {
-      source = data.source;
-    } else {
-      source = campSource;
-    }
-    source = cleanVal(source);
+    const loanType = cleanVal(data.loanType || data.loanProduct || data.product || data.serviceType || data['Loan type']);
+    const bankNames = cleanVal(data.bankNames || data.bank || data.bankPartner || data.bank_partner || data.businessPartner || data.preferredBank || data['Bank Names']);
 
     let psm = '';
     if (data.psm) {
@@ -280,8 +339,9 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       psm = String(data.psm_name);
     }
     psm = cleanVal(psm);
+    if (psm.toUpperCase() === 'N/A' || psm.toLowerCase().includes('demo') || psm.includes('VC-')) psm = '';
 
-    const followUpDate = (data.followUpDate || data.followupDate) ? formatDateShort(data.followUpDate || data.followupDate) : '';
+    const followUpDate = (data.followUpDate || data.followupDate || data.follow_up_date) ? formatDateShort(data.followUpDate || data.followupDate || data.follow_up_date) : '';
     const modifiedDate = formatDateTimeFull(lead.updatedAt || data.dialedAt || data.updatedAt || lead.createdAt);
 
     return {
@@ -295,21 +355,21 @@ export const exportLeadReportXLSX = (leads: any[], fileNamePrefix: string = 'Lea
       'Status': status,
       'CASE DEATAILS': caseDetails,
       'Remarks': remarks,
-      'lead_category': leadCategory,
+      'lead_Category': leadCategory,
       'Loan Amount': loanAmount,
       'Loan type': loanType,
       'Bank Names': bankNames,
       'Source': source,
       'PSM': psm,
       'Assigned To': dialedAgent || assignedTo,
-      'FollowUp Date': followUpDate,
+      'Follow Up Date': followUpDate,
       'Modified Date': modifiedDate
     };
   });
 
   const worksheet = XLSX.utils.json_to_sheet(dataRows, { header: headers });
 
-  // Fast column width calculation
+  // Column width calculation
   const sampleRows = dataRows.slice(0, 300);
   const colWidths = headers.map(header => {
     let maxLen = header.length;

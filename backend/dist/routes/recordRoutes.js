@@ -1419,24 +1419,27 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
             // In My Campaign, EVERY user (telecaller, manager, or admin)
-            // ONLY sees leads allocated directly to them.
-            const userTerms = [
-                userId.toString(),
-                currentUser?.userCode,
-                currentUser?.email,
-                `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
-            ].filter(Boolean);
-            const userConds = [];
-            userTerms.forEach(term => {
-                baseParams.push(term);
-                const pIdx = baseParams.length;
-                userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
-            });
-            if (userConds.length > 0) {
-                baseConds.push(`(${userConds.join(' OR ')})`);
-            }
-            else {
-                baseConds.push('1=0');
+            // ONLY sees leads allocated directly to them during pagination/card view.
+            // When exporting the whole campaign (isAll = true), all campaign leads are retrieved.
+            if (!isAll) {
+                const userTerms = [
+                    userId.toString(),
+                    currentUser?.userCode,
+                    currentUser?.email,
+                    `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
+                ].filter(Boolean);
+                const userConds = [];
+                userTerms.forEach(term => {
+                    baseParams.push(term);
+                    const pIdx = baseParams.length;
+                    userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
+                });
+                if (userConds.length > 0) {
+                    baseConds.push(`(${userConds.join(' OR ')})`);
+                }
+                else {
+                    baseConds.push('1=0');
+                }
             }
             const baseWhere = baseConds.join(' AND ');
             // Query total overall stats for this campaign (<5ms)
@@ -1491,7 +1494,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             const filteredWhere = filterConds.join(' AND ');
             // Fetch page data with LIMIT, OFFSET and single-pass count(*) OVER() sorted ASCENDING (01 -> 3726)
             let fetchSql = `
-        SELECT id, data, created_at, updated_at ${limit > 0 ? ', count(*) OVER() as full_count' : ''}
+        SELECT id, data, created_at, updated_at, created_by ${limit > 0 ? ', count(*) OVER() as full_count' : ''}
         FROM custom_records
         WHERE ${filteredWhere}
         ORDER BY created_at ASC, id ASC
@@ -1509,6 +1512,22 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                 (0, postgres_1.queryPg)(statsSql, baseParams),
                 (0, postgres_1.queryPg)(fetchSql, fetchParams)
             ]);
+            const creatorIds = Array.from(new Set(rows.map((r) => r.created_by).filter(Boolean)));
+            const userMap = {};
+            if (creatorIds.length > 0) {
+                try {
+                    const matchedUsers = await User_1.default.find({ _id: { $in: creatorIds } }).select('_id firstName lastName name email').lean();
+                    matchedUsers.forEach((u) => {
+                        const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || u.email?.split('@')[0] || '';
+                        if (fullName) {
+                            userMap[u._id.toString()] = fullName;
+                        }
+                    });
+                }
+                catch (uErr) {
+                    console.warn('Could not populate user creators:', uErr);
+                }
+            }
             const totalAllocated = statsRes[0]?.total_allocated || 0;
             const dialed = statsRes[0]?.dialed || 0;
             const yetToDial = Math.max(0, totalAllocated - dialed);
@@ -1530,6 +1549,9 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             }
             const leads = rows.map((r) => {
                 const d = { ...(r.data || {}) };
+                const creatorName = (r.created_by && userMap[r.created_by.toString()]) || d.creatorName || d.createdByName || 'Super Admin';
+                d.creatorName = creatorName;
+                d.createdByName = creatorName;
                 // 1. Ensure customerName / leadName is populated from any available column
                 let rawCust = String(d.customerName || d.firstName || '').trim();
                 if (!rawCust || ['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(rawCust.toUpperCase())) {
@@ -1640,6 +1662,8 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                     _id: r.id,
                     id: r.id,
                     data: d,
+                    createdBy: r.created_by,
+                    createdByName: d.creatorName,
                     createdAt: r.created_at,
                     updatedAt: r.updated_at
                 };
@@ -1705,13 +1729,21 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         }
         const LEAD_PROJECTION = '_id data.firstName data.lastName data.customerName data.customer data.company data.firmName data.firm_name data.phone data.mobile data.mobileNo data.contactNumber data.name_contact_num data.contactNum data.contact_num data.phoneNumber data.phone_number data.contact data.city data.location data.dataCode data.data_code data.status data.dialStatus data.notes data.remarks data.caseDetails data.leadCategory data.lead_category data.loanType data.businessPartner data.bank data.bankName data.budget data.amount data.assignedTo data.callAttempts data.dialedAt data.source data.campaignName data.createdDate createdAt';
         const totalCount = await CustomRecord_1.default.countDocuments(query);
-        const queryChain = CustomRecord_1.default.find(query).select('_id data createdBy updatedBy createdAt updatedAt').sort({ createdAt: -1 });
+        const queryChain = CustomRecord_1.default.find(query)
+            .populate('createdBy', 'firstName lastName name email')
+            .select('_id data createdBy updatedBy createdAt updatedAt')
+            .sort({ createdAt: -1 });
         if (limit > 0) {
             queryChain.skip((page - 1) * limit).limit(limit);
         }
         const rawLeads = await queryChain.lean();
         const leads = rawLeads.map((l) => {
             const d = { ...(l.data || {}) };
+            const creatorName = l.createdBy && typeof l.createdBy === 'object'
+                ? (`${l.createdBy.firstName || ''} ${l.createdBy.lastName || ''}`.trim() || l.createdBy.name || l.createdBy.email?.split('@')[0] || 'Super Admin')
+                : (d.creatorName || d.createdByName || 'Super Admin');
+            d.creatorName = creatorName;
+            d.createdByName = creatorName;
             const rawCust = String(d.customerName || d.firstName || '').trim();
             if (!rawCust || rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
                 let altName = '';
@@ -1809,7 +1841,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                     delete d.lead_category;
                 }
             }
-            return { ...l, data: d };
+            return { ...l, data: d, createdByName: creatorName };
         });
         const payload = {
             leads,

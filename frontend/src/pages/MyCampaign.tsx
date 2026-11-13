@@ -864,9 +864,10 @@ export default function MyCampaign() {
       if (!lead) return;
 
       const state = leadStates[leadId];
-      const currentStatus = state?.status || lead.data?.status || lead.data?.dialStatus || 'Yet To Call';
-      const matchedStatus = statuses.find(s => s.trim().toUpperCase() === currentStatus.trim().toUpperCase());
-      const finalStatusToSave = matchedStatus || currentStatus;
+      const rawStatus = state?.status || lead.data?.status || lead.data?.dialStatus || 'Yet To Call';
+      const cleanRawStatus = (rawStatus && rawStatus.toString().trim().toUpperCase() !== 'NEW') ? rawStatus : 'Yet To Call';
+      const matchedStatus = statuses.find(s => s.trim().toUpperCase() === cleanRawStatus.trim().toUpperCase());
+      const finalStatusToSave = matchedStatus || cleanRawStatus;
 
       const currentRemarks = state?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
       const currentCaseDetails = state?.caseDetails ?? (lead.data?.caseDetails || '');
@@ -951,7 +952,7 @@ export default function MyCampaign() {
       queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
 
-      const isNowDialed = currentStatus && !['yet to call', 'not called', 'new', 'yet to dial'].includes(currentStatus.trim().toLowerCase());
+      const isNowDialed = finalStatusToSave && !['yet to call', 'not called', 'new', 'yet to dial'].includes(finalStatusToSave.trim().toLowerCase());
 
       // If dialing in 'yetToDial' tab, immediately remove dialed lead from the list so it moves to dialed tab
       if (filterTab === 'yetToDial' && isNowDialed) {
