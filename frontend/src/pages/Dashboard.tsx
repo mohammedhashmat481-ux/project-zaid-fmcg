@@ -362,9 +362,10 @@ export default function Dashboard() {
     { key: 'GIVEN LOGIN', label: 'GIVEN LOGIN', rawName: 'GIVEN LOGIN', icon: Icons.KeyRound, accentColor: '#8B5CF6', sub: 'Stage #14', category: 'pipeline' }
   ];
 
-  // Construct metric cards: guarantees standard 13 stages + custom stages + Today's Followups
+  // Construct metric cards: uses database configured statuses from Settings -> Status, or falls back to defaults
   const getDynamicMetricCards = () => {
     const todaysFollowupsCard = {
+      key: "TODAY'S FOLLOWUPS",
       label: "TODAY'S FOLLOWUPS",
       rawName: "TODAY'S FOLLOWUPS",
       category: 'followups',
@@ -373,49 +374,34 @@ export default function Dashboard() {
       accentColor: '#4F46E5'
     };
 
-    const cardMap = new Map<string, any>();
-
-    // 1. Initialize with standard 13 pipeline cards
-    STANDARD_PIPELINE_CARDS.forEach(card => {
-      cardMap.set(card.key, { ...card });
-    });
-
-    // 2. Overlay or add configured statuses from database
-    if (Array.isArray(configuredStatuses)) {
-      configuredStatuses
+    // 1. If statuses are configured in the database, render directly from configured statuses
+    if (Array.isArray(configuredStatuses) && configuredStatuses.length > 0) {
+      const cards = configuredStatuses
+        .slice()
+        .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
         .filter((s: any) => s.dashboardVisibility !== false)
-        .forEach((st: any) => {
+        .map((st: any) => {
           const upper = (st.name || '').toUpperCase().trim();
-          const canonical = getCanonicalKey(upper);
-          const IconComp = (Icons as any)[st.icon];
+          const IconComp = (Icons as any)[st.icon] || Icons.Circle;
           const themeTokens = getStatusTokens(st);
-
-          if (cardMap.has(canonical)) {
-            // Overlay customized styling/icon if user configured it
-            const existing = cardMap.get(canonical);
-            if (st.color) existing.accentColor = st.color;
-            if (IconComp) existing.icon = IconComp;
-            if (st.isFinal !== undefined) {
-              existing.sub = st.isFinal ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') : existing.sub;
-            }
-          } else {
-            // Truly new custom status (e.g. INK WORLDWIDE) - skip raw call dispositions
-            const isRawDisp = upper.startsWith('NEW') || upper.startsWith('NO ANSWER') || upper.startsWith('NOT CONNECTED') || upper.startsWith('NOT REACHABLE') || upper.startsWith('SWITCH');
-            if (!isRawDisp) {
-              cardMap.set(canonical, {
-                label: canonical,
-                rawName: st.name,
-                category: st.pipelinePosition > 0 ? 'pipeline' : 'overview',
-                accentColor: st.color || themeTokens.accentHex,
-                icon: IconComp || Icons.Circle,
-                sub: st.isFinal ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Configured Stage')
-              });
-            }
-          }
+          return {
+            key: upper,
+            label: upper,
+            rawName: st.name,
+            category: st.pipelinePosition > 0 ? 'pipeline' : 'overview',
+            accentColor: st.color || themeTokens.accentHex,
+            icon: IconComp,
+            sub: st.isFinal 
+              ? (st.isSuccess ? '✔ Closed Won' : '✕ Closed Final') 
+              : (st.pipelinePosition > 0 ? `Stage #${st.pipelinePosition}` : 'Pipeline Stage')
+          };
         });
+
+      return [...cards, todaysFollowupsCard];
     }
 
-    return [...Array.from(cardMap.values()), todaysFollowupsCard];
+    // 2. Fallback to default pipeline cards if database has no statuses yet
+    return [...STANDARD_PIPELINE_CARDS, todaysFollowupsCard];
   };
 
   // Convert pipeline stage data to array with dynamic percentage scaling

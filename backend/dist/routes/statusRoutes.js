@@ -63,6 +63,7 @@ async function syncOrganizationDashboardStatuses(organizationId) {
 // 1. Get all statuses
 router.get('/', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         const cacheKey = cache_1.CacheKeys.statuses(req.organizationId);
         const cached = cache_1.serverCache.get(cacheKey);
         if (cached) {
@@ -115,26 +116,36 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const { name, color, icon, pipelinePosition, dashboardVisibility, isFinal, isSuccess, order } = req.body;
-        if (!name) {
-            res.status(400).json({ error: 'Name is required.' });
+        if (!name || !name.trim()) {
+            res.status(400).json({ error: 'Status name is required.' });
             return;
         }
-        // Auto-calculate order if not provided
-        let calculatedOrder = order;
-        if (order === undefined || order === 0) {
-            const count = await Status_1.default.countDocuments({ organizationId: req.organizationId });
-            calculatedOrder = count + 1;
+        const trimmedName = name.trim();
+        // Check if status with same name already exists in this org
+        const existing = await Status_1.default.findOne({
+            organizationId: req.organizationId,
+            name: trimmedName
+        });
+        if (existing) {
+            res.status(400).json({ error: `A status named "${trimmedName}" already exists.` });
+            return;
         }
-        calculatedOrder = Math.max(1, calculatedOrder);
+        const count = await Status_1.default.countDocuments({ organizationId: req.organizationId });
+        let calculatedOrder = Number(order) || (count + 1);
+        if (calculatedOrder < 1)
+            calculatedOrder = count + 1;
+        let calculatedPos = Number(pipelinePosition) || calculatedOrder;
+        if (calculatedPos < 1)
+            calculatedPos = calculatedOrder;
         const newStatusFields = {
             organizationId: req.organizationId,
-            name,
+            name: trimmedName,
             color: color || '#4F46E5',
             icon: icon || 'Circle',
-            pipelinePosition: pipelinePosition || 0,
-            dashboardVisibility: dashboardVisibility !== undefined ? dashboardVisibility : true,
-            isFinal: isFinal !== undefined ? isFinal : false,
-            isSuccess: isSuccess !== undefined ? isSuccess : false,
+            pipelinePosition: calculatedPos,
+            dashboardVisibility: dashboardVisibility !== undefined ? Boolean(dashboardVisibility) : true,
+            isFinal: isFinal !== undefined ? Boolean(isFinal) : false,
+            isSuccess: isSuccess !== undefined ? Boolean(isSuccess) : false,
             order: calculatedOrder
         };
         // Shift other statuses to accommodate the new status
@@ -146,42 +157,46 @@ router.post('/', async (req, res) => {
         res.status(201).json(status);
     }
     catch (error) {
-        if (error.code === 11000) {
+        if (error.code === '23505' || error.code === 11000) {
             res.status(400).json({ error: 'Status name must be unique.' });
         }
         else {
-            res.status(500).json({ error: 'Failed to create status.' });
+            res.status(500).json({ error: error.message || 'Failed to create status.' });
         }
     }
 });
 // 3. Update status
 router.put('/:id', async (req, res) => {
     try {
+        const statusId = req.params.id;
         const { name, color, icon, pipelinePosition, dashboardVisibility, isFinal, isSuccess, order } = req.body;
-        const status = await Status_1.default.findOne({ _id: req.params.id, organizationId: req.organizationId });
+        let status = await Status_1.default.findOne({ _id: statusId, organizationId: req.organizationId });
+        if (!status) {
+            status = await Status_1.default.findById(statusId);
+        }
         if (!status) {
             res.status(404).json({ error: 'Status not found.' });
             return;
         }
         const oldName = status.name;
-        if (name)
+        if (name && name.trim())
             status.name = name.trim();
         if (color)
             status.color = color;
         if (icon)
             status.icon = icon;
         if (pipelinePosition !== undefined)
-            status.pipelinePosition = pipelinePosition;
+            status.pipelinePosition = Number(pipelinePosition);
         if (dashboardVisibility !== undefined)
-            status.dashboardVisibility = dashboardVisibility;
+            status.dashboardVisibility = Boolean(dashboardVisibility);
         if (isFinal !== undefined)
-            status.isFinal = isFinal;
+            status.isFinal = Boolean(isFinal);
         if (isSuccess !== undefined)
-            status.isSuccess = isSuccess;
-        if (order !== undefined) {
-            const targetOrder = Math.max(1, order);
+            status.isSuccess = Boolean(isSuccess);
+        if (order !== undefined && Number(order) > 0) {
+            const targetOrder = Math.max(1, Number(order));
             const tempWrapper = { order: targetOrder };
-            await adjustStatusOrders(req.organizationId, status._id.toString(), targetOrder, tempWrapper);
+            await adjustStatusOrders(req.organizationId, (status._id || status.id).toString(), targetOrder, tempWrapper);
             status.order = tempWrapper.order;
         }
         await status.save();
@@ -191,7 +206,7 @@ router.put('/:id', async (req, res) => {
                 await (0, postgres_1.queryPg)(`UPDATE custom_records 
            SET data = jsonb_set(data, '{status}', to_jsonb($1::text)),
                updated_at = CURRENT_TIMESTAMP
-           WHERE organization_id = $2 AND data->>'status' = $3`, [name.trim(), req.organizationId, oldName]);
+           WHERE organization_id = $2 AND UPPER(data->>'status') = UPPER($3)`, [name.trim(), req.organizationId, oldName.trim()]);
             }
             catch (updErr) {
                 console.warn('Could not cascade status rename to custom_records:', updErr);
@@ -203,30 +218,36 @@ router.put('/:id', async (req, res) => {
         res.status(200).json(status);
     }
     catch (error) {
-        if (error.code === 11000) {
+        if (error.code === '23505' || error.code === 11000) {
             res.status(400).json({ error: 'Status name must be unique.' });
         }
         else {
-            res.status(500).json({ error: 'Failed to update status.' });
+            res.status(500).json({ error: error.message || 'Failed to update status.' });
         }
     }
 });
 // 4. Delete status
 router.delete('/:id', async (req, res) => {
     try {
-        const status = await Status_1.default.findOneAndDelete({ _id: req.params.id, organizationId: req.organizationId });
+        const statusId = req.params.id;
+        let status = await Status_1.default.findOne({ _id: statusId, organizationId: req.organizationId });
+        if (!status) {
+            status = await Status_1.default.findById(statusId);
+        }
         if (!status) {
             res.status(404).json({ error: 'Status not found.' });
             return;
         }
-        await reorderAfterDelete(req.organizationId);
-        await syncOrganizationDashboardStatuses(req.organizationId);
-        cache_1.CacheInvalidators.invalidateStatuses(req.organizationId);
-        cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+        const orgId = status.organizationId || req.organizationId;
+        await Status_1.default.deleteOne({ _id: status._id || status.id });
+        await reorderAfterDelete(orgId);
+        await syncOrganizationDashboardStatuses(orgId);
+        cache_1.CacheInvalidators.invalidateStatuses(orgId);
+        cache_1.CacheInvalidators.invalidateDashboard(orgId);
         res.status(200).json({ message: 'Status deleted successfully.' });
     }
     catch (error) {
-        res.status(500).json({ error: 'Failed to delete status.' });
+        res.status(500).json({ error: error.message || 'Failed to delete status.' });
     }
 });
 exports.default = router;

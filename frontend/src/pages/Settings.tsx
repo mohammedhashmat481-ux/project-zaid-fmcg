@@ -607,16 +607,32 @@ export default function Settings() {
   // Status Handlers
   const handleSaveStatus = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!statusForm.name.trim()) {
+      showToast('Status name is required.', 'warning');
+      return;
+    }
+    setSaving(true);
     try {
-      if (statusEditing) {
-        await api.put(`/statuses/${statusForm.id}`, statusForm);
+      const payload = {
+        name: statusForm.name.trim(),
+        color: statusForm.color,
+        icon: statusForm.icon,
+        pipelinePosition: Number(statusForm.pipelinePosition) || 0,
+        dashboardVisibility: statusForm.dashboardVisibility !== false,
+        isFinal: statusForm.isFinal === true,
+        isSuccess: statusForm.isSuccess === true,
+        order: Number(statusForm.order) || 0
+      };
+
+      if (statusEditing && statusForm.id) {
+        await api.put(`/statuses/${statusForm.id}`, payload);
         showAlertModal({
           title: 'Saved Successfully',
           message: 'The status stage has been updated successfully.',
           type: 'success'
         });
       } else {
-        await api.post('/statuses', statusForm);
+        await api.post('/statuses', payload);
         showAlertModal({
           title: 'Created Successfully',
           message: 'The new status stage has been created successfully.',
@@ -628,7 +644,7 @@ export default function Settings() {
         dashboardVisibility: true, isFinal: false, isSuccess: false, order: 0
       });
       setStatusEditing(false);
-      loadSettingsData();
+      await loadSettingsData();
       queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
       queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
@@ -638,17 +654,20 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
     } catch (err: any) {
-      showToast(err.response?.data?.error || 'Failed to save status.', 'error');
+      showToast(err.response?.data?.error || err.message || 'Failed to save status.', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEditStatus = (status: any) => {
+    const id = status._id || status.id;
     setStatusForm({
-      id: status._id || status.id,
+      id: id,
       name: status.name || '',
       color: status.color || '#4F46E5',
       icon: status.icon || 'Circle',
-      pipelinePosition: status.pipelinePosition ?? 0,
+      pipelinePosition: status.pipelinePosition ?? status.order ?? 0,
       dashboardVisibility: status.dashboardVisibility ?? true,
       isFinal: status.isFinal ?? false,
       isSuccess: status.isSuccess ?? false,
@@ -663,9 +682,12 @@ export default function Settings() {
   };
 
   const handleDeleteStatus = (id: string) => {
+    if (!id) return;
     showConfirm({
       title: 'Delete Status',
-      message: 'Are you sure you want to delete this status? Leads using this status will lose their mapping.',
+      message: 'Are you sure you want to delete this status? Leads using this status will retain their status label, but it will be removed from your active pipeline.',
+      confirmText: 'Delete Status',
+      cancelText: 'Cancel',
       type: 'danger',
       onConfirm: async () => {
         try {
@@ -689,7 +711,7 @@ export default function Settings() {
           queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
         } catch (err: any) {
-          showToast(err.response?.data?.error || 'Failed to delete status.', 'error');
+          showToast(err.response?.data?.error || err.message || 'Failed to delete status.', 'error');
         }
       }
     });
@@ -1628,20 +1650,21 @@ export default function Settings() {
                     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                     .map(st => {
                       const Icon = (Icons as any)[st.icon] || Icons.Circle;
+                      const stId = st._id || st.id;
                       return (
-                        <tr key={st._id} className="hover:bg-slate-50/50 transition-colors h-11">
+                        <tr key={stId} className="hover:bg-slate-50/50 transition-colors h-11">
                           <td className="px-4 py-2 text-center font-bold text-indigo-650">{st.order ?? 0}</td>
                           <td className="px-4 py-2 font-semibold text-slate-700 flex items-center gap-2">
                             <span style={{ backgroundColor: st.color }} className="w-3 h-3 rounded-full inline-block border border-black/10"></span>
                             <Icon className="w-4 h-4 text-slate-500" />
                             {st.name}
                           </td>
-                          <td className="px-4 py-2 text-slate-700 font-semibold">{st.pipelinePosition || 'None'}</td>
+                          <td className="px-4 py-2 text-slate-700 font-semibold">{st.pipelinePosition || st.order || 'None'}</td>
                           <td className="px-4 py-2 text-slate-700 font-semibold">{st.dashboardVisibility ? 'Visible' : 'Hidden'}</td>
                           <td className="px-4 py-2 text-slate-700 font-semibold">{st.isFinal ? (st.isSuccess ? 'Won' : 'Lost') : 'Open'}</td>
                         <td className="px-4 py-2 text-center flex justify-center gap-3">
                           <button onClick={() => handleEditStatus(st)} className="btn-edit-premium" title="Edit Status"><Icons.SquarePen className="w-4 h-4" /></button>
-                          <button onClick={() => handleDeleteStatus(st._id)} className="btn-delete-premium" title="Delete Status"><Icons.Trash className="w-4 h-4" /></button>
+                          <button onClick={() => handleDeleteStatus(stId)} className="btn-delete-premium" title="Delete Status"><Icons.Trash className="w-4 h-4" /></button>
                         </td>
                       </tr>
                     );
