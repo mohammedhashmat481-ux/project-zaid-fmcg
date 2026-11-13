@@ -1,6 +1,7 @@
 // inkCRM Enterprise Production Server (Reloaded v7)
 import app from './app';
 import { connectDB, disconnectDB } from './config/db';
+import { queryPg } from './config/postgres';
 import Organization from './models/Organization';
 import ModuleDefinition from './models/ModuleDefinition';
 import { seedDatabase } from './utils/seeder';
@@ -118,6 +119,33 @@ const startServer = async () => {
       }
     } catch (leadMigErr: any) {
       logger.warn(`[Migration Warning] Could not clean Leads source schema: ${leadMigErr.message}`);
+    }
+
+    // 4. One-time status migration: Update legacy status names to user-defined names
+    try {
+      await queryPg(
+        `UPDATE statuses 
+         SET name = 'STATUS PENDING' 
+         WHERE UPPER(name) IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
+      );
+      await queryPg(
+        `UPDATE statuses 
+         SET name = 'APPROVED' 
+         WHERE UPPER(name) IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
+      );
+      await queryPg(
+        `UPDATE custom_records 
+         SET data = jsonb_set(data, '{status}', '"STATUS PENDING"')
+         WHERE UPPER(data->>'status') IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
+      );
+      await queryPg(
+        `UPDATE custom_records 
+         SET data = jsonb_set(data, '{status}', '"APPROVED"')
+         WHERE UPPER(data->>'status') IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
+      );
+      logger.info('[Migration] Status names verified (STATUS PENDING & APPROVED).');
+    } catch (stMigErr: any) {
+      logger.warn(`[Migration Warning] Could not migrate status names: ${stMigErr.message}`);
     }
 
     server = app.listen(PORT, () => {

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // inkCRM Enterprise Production Server (Reloaded v7)
 const app_1 = __importDefault(require("./app"));
 const db_1 = require("./config/db");
+const postgres_1 = require("./config/postgres");
 const Organization_1 = __importDefault(require("./models/Organization"));
 const ModuleDefinition_1 = __importDefault(require("./models/ModuleDefinition"));
 const seeder_1 = require("./utils/seeder");
@@ -115,6 +116,25 @@ const startServer = async () => {
         }
         catch (leadMigErr) {
             logger_1.logger.warn(`[Migration Warning] Could not clean Leads source schema: ${leadMigErr.message}`);
+        }
+        // 4. One-time status migration: Update legacy status names to user-defined names
+        try {
+            await (0, postgres_1.queryPg)(`UPDATE statuses 
+         SET name = 'STATUS PENDING' 
+         WHERE UPPER(name) IN ('APPROVAL PENDING', 'APPROVALS PENDING')`);
+            await (0, postgres_1.queryPg)(`UPDATE statuses 
+         SET name = 'APPROVED' 
+         WHERE UPPER(name) IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`);
+            await (0, postgres_1.queryPg)(`UPDATE custom_records 
+         SET data = jsonb_set(data, '{status}', '"STATUS PENDING"')
+         WHERE UPPER(data->>'status') IN ('APPROVAL PENDING', 'APPROVALS PENDING')`);
+            await (0, postgres_1.queryPg)(`UPDATE custom_records 
+         SET data = jsonb_set(data, '{status}', '"APPROVED"')
+         WHERE UPPER(data->>'status') IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`);
+            logger_1.logger.info('[Migration] Status names verified (STATUS PENDING & APPROVED).');
+        }
+        catch (stMigErr) {
+            logger_1.logger.warn(`[Migration Warning] Could not migrate status names: ${stMigErr.message}`);
         }
         server = app_1.default.listen(PORT, () => {
             logger_1.logger.info(`=================================`);

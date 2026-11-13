@@ -185,11 +185,11 @@ router.get('/metrics', async (req, res) => {
                     else if (upper === 'DOCUMENT PENDING' || upper === 'DOCUMENTS PENDING' || upper === 'DOCS PENDING') {
                         canonical = 'DOCUMENT PENDING';
                     }
-                    else if (upper === 'APPROVAL PENDING' || upper === 'APPROVALS PENDING') {
-                        canonical = 'APPROVAL PENDING';
+                    else if (upper === 'STATUS PENDING' || upper === 'APPROVAL PENDING' || upper === 'APPROVALS PENDING') {
+                        canonical = 'STATUS PENDING';
                     }
-                    else if (upper === 'APPROVED BUT NOT DISBUSE' || upper === 'APPROVED BUT NOT DISBUSED' || upper === 'APPROVED BUT NOT DISBURSE') {
-                        canonical = 'APPROVED BUT NOT DISBUSE';
+                    else if (upper === 'APPROVED' || upper === 'APPROVED BUT NOT DISBUSE' || upper === 'APPROVED BUT NOT DISBURSED' || upper === 'APPROVED BUT NOT DISBURSE') {
+                        canonical = 'APPROVED';
                     }
                     else if (upper === 'DISBUSED' || upper === 'DISBURSED' || upper === 'DISBURSED PENDING') {
                         canonical = 'DISBUSED';

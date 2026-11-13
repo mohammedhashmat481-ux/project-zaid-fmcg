@@ -69,11 +69,10 @@ done
 echo "Running Pre-deployment Validation Checks..."
 node predeploy.js
 
-# 6. Synchronize module definitions, campaigns, statuses, and permissions
+# 6. Synchronize module definitions, campaigns, and permissions
 echo "Populating complete database record set and syncing campaign modules..."
 cd backend
 node dist/utils/syncCampaignModules.js || true
-node dist/utils/syncExact11Statuses.js || true
 node dist/utils/approveExistingUsers.js || true
 node dist/utils/seeder.js || true
 cd ..

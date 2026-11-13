@@ -1905,27 +1905,23 @@ function getStatusSynonyms(statusVal) {
         synonyms.add('Documents Pending');
         synonyms.add('PROPOSAL');
     }
-    // APPROVAL
-    if (upper.includes('APPROVAL') || upper === 'NEGOTIATION') {
+    // STATUS PENDING / APPROVAL
+    if (upper.includes('STATUS PENDING') || upper.includes('APPROVAL') || upper === 'NEGOTIATION') {
+        synonyms.add('STATUS PENDING');
+        synonyms.add('Status Pending');
         synonyms.add('APPROVAL PENDING');
         synonyms.add('APPROVALS PENDING');
         synonyms.add('Approval Pending');
         synonyms.add('NEGOTIATION');
     }
-    // APPROVED BUT NOT DISBUSE / APPROVED
-    if (upper.includes('APPROVED') && !upper.includes('DISBU')) {
-        synonyms.add('APPROVED BUT NOT DISBUSE');
-        synonyms.add('APPROVED BUT NOT DISBURSED');
+    // APPROVED / APPROVED BUT NOT DISBUSE
+    if (upper === 'APPROVED' || upper.includes('APPROVED')) {
         synonyms.add('APPROVED');
         synonyms.add('Approved');
+        synonyms.add('APPROVED BUT NOT DISBUSE');
+        synonyms.add('APPROVED BUT NOT DISBURSED');
         synonyms.add('Approved But Not Disbuse');
         synonyms.add('Approved But Not Disbursed');
-    }
-    else if (upper.includes('APPROVED BUT NOT')) {
-        synonyms.add('APPROVED BUT NOT DISBUSE');
-        synonyms.add('APPROVED BUT NOT DISBURSED');
-        synonyms.add('APPROVED');
-        synonyms.add('Approved');
     }
     // DISBUSED / DISBURSED
     if ((upper.includes('DISBUSED') || upper.includes('DISBURSED')) && !upper.includes('NOT')) {
