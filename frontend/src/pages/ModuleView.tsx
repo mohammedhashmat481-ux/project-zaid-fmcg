@@ -3168,10 +3168,38 @@ export default function ModuleView() {
                   const StatusIcon = statusMeta.icon;
 
                   // Source & Created By
-                  const createdByName = rec.createdBy?.firstName 
-                    ? `${rec.createdBy.firstName} ${rec.createdBy.lastName || ''}`.trim()
-                    : (rec.createdBy?.name || rec.createdBy?.email?.split('@')[0] || (typeof rec.createdBy === 'string' && rec.createdBy.length < 25 && !rec.createdBy.match(/^[0-9a-fA-F]{24}$/) ? rec.createdBy : '') || rec.data?.source || rec.data?.createdBy || 'Super Admin');
-                  const sourceNameDisplay = rec.data?.source || createdByName || 'Super Admin';
+                  const rawCreatedBy = rec.createdBy;
+                  let resolvedCreator = '';
+                  if (rawCreatedBy && typeof rawCreatedBy === 'object') {
+                    const fullName = `${rawCreatedBy.firstName || ''} ${rawCreatedBy.lastName || ''}`.trim();
+                    resolvedCreator = fullName || rawCreatedBy.name || rawCreatedBy.email?.split('@')[0] || '';
+                  } else if (typeof rawCreatedBy === 'string' && rawCreatedBy.length < 25 && !rawCreatedBy.match(/^[0-9a-fA-F]{24}$/)) {
+                    resolvedCreator = rawCreatedBy;
+                  }
+                  if (!resolvedCreator && rec.data?.creatorName) {
+                    resolvedCreator = rec.data.creatorName;
+                  }
+                  if (!resolvedCreator && rec.data?.createdByName) {
+                    resolvedCreator = rec.data.createdByName;
+                  }
+
+                  const isCampString = (str: string) => {
+                    if (!str) return false;
+                    const s = str.trim();
+                    if (rec.data?.campaignName && s.toLowerCase() === String(rec.data.campaignName).trim().toLowerCase()) return true;
+                    if (rec.data?.campaign && s.toLowerCase() === String(rec.data.campaign).trim().toLowerCase()) return true;
+                    if (rec.data?.campaign_name && s.toLowerCase() === String(rec.data.campaign_name).trim().toLowerCase()) return true;
+                    if (/^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s)) return true;
+                    return false;
+                  };
+
+                  let validSource = rec.data?.source ? String(rec.data.source).trim() : '';
+                  if (isCampString(validSource)) {
+                    validSource = '';
+                  }
+
+                  const createdByName = resolvedCreator || validSource || 'Super Admin';
+                  const sourceNameDisplay = validSource || resolvedCreator || 'Super Admin';
 
                   const assignedByName = rec.data?.assignedByName 
                     ? resolveUserDisplayName(rec.data.assignedByName) 

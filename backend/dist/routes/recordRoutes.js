@@ -414,6 +414,16 @@ router.post('/leads/bulk-import', async (req, res) => {
             return;
         }
         const agentsList = Array.isArray(assignedTo) ? assignedTo : (assignedTo ? [assignedTo] : []);
+        let creatorName = 'Super Admin';
+        try {
+            if (userId) {
+                const u = await User_1.default.findById(userId);
+                if (u) {
+                    creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.email?.split('@')[0] || 'Super Admin';
+                }
+            }
+        }
+        catch (_) { }
         const recordsToCreate = [];
         leads.forEach((row, idx) => {
             const dataObj = {};
@@ -439,6 +449,7 @@ router.post('/leads/bulk-import', async (req, res) => {
             if (agentsList.length > 0) {
                 assignedAgent = agentsList[idx % agentsList.length];
             }
+            const camp = campaignName || dataObj.campaignName || dataObj.campaign || dataObj.campaign_name || '';
             recordsToCreate.push({
                 organizationId: orgId,
                 moduleId: leadModule._id,
@@ -453,10 +464,12 @@ router.post('/leads/bulk-import', async (req, res) => {
                     company: String(dataObj.company || dataObj.firm_name || dataObj.firmName || dataObj.firm || '').trim(),
                     status: dataObj.status || defaultStatus || 'New',
                     dialStatus: dataObj.dialStatus || dataObj.status || 'Yet To Call',
-                    source: campaignName || dataObj.source || dataObj.campaignName || 'Excel Import',
-                    campaignName: campaignName || dataObj.campaignName || dataObj.source || '',
-                    campaign: campaignName || dataObj.campaignName || dataObj.source || '',
-                    campaign_name: campaignName || dataObj.campaignName || dataObj.source || '',
+                    source: creatorName,
+                    creatorName: creatorName,
+                    createdByName: creatorName,
+                    campaignName: camp,
+                    campaign: camp,
+                    campaign_name: camp,
                     assignedTo: assignedAgent,
                     budget: dataObj.budget || dataObj.amount || '',
                     amount: dataObj.amount || dataObj.budget || '',
@@ -517,8 +530,16 @@ router.post('/leads/bulk-delete', async (req, res) => {
         else if (deleteAllMatching && filters) {
             const conditions = [];
             if (filters.campaignName) {
-                conditions.push({ 'data.source': filters.campaignName });
-                conditions.push({ 'data.campaignName': filters.campaignName });
+                const campStr = String(filters.campaignName).trim();
+                const campRegex = new RegExp(`^\\s*${campStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+                conditions.push({
+                    $or: [
+                        { 'data.campaignName': campRegex },
+                        { 'data.campaign': campRegex },
+                        { 'data.campaign_name': campRegex },
+                        { 'data.source': campRegex }
+                    ]
+                });
             }
             if (filters.status) {
                 query['data.status'] = filters.status;
@@ -527,7 +548,31 @@ router.post('/leads/bulk-delete', async (req, res) => {
                 query['data.assignedTo'] = filters.assignedTo;
             }
             if (filters.source) {
-                query['data.source'] = filters.source;
+                const srcVal = String(filters.source).trim();
+                const srcRegex = new RegExp(`^\\s*${srcVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+                // Find matching users if source corresponds to a user's name or email
+                const matchedUsers = await User_1.default.find({
+                    organizationId: orgId,
+                    $or: [
+                        { firstName: new RegExp(srcVal, 'i') },
+                        { lastName: new RegExp(srcVal, 'i') },
+                        { email: new RegExp(srcVal, 'i') }
+                    ]
+                }).select('_id').lean();
+                const matchedIds = matchedUsers.map((u) => u._id);
+                const srcOrs = [
+                    { 'data.source': srcRegex },
+                    { 'data.creatorName': srcRegex },
+                    { 'data.createdByName': srcRegex }
+                ];
+                if (matchedIds.length > 0) {
+                    srcOrs.push({ createdBy: { $in: matchedIds } });
+                }
+                if (srcVal.toLowerCase().includes('super') || srcVal.toLowerCase().includes('admin')) {
+                    srcOrs.push({ createdBy: null });
+                    srcOrs.push({ 'data.source': 'Super Admin' });
+                }
+                conditions.push({ $or: srcOrs });
             }
             if (filters.startDate || filters.endDate) {
                 query.createdAt = {};
@@ -541,22 +586,18 @@ router.post('/leads/bulk-delete', async (req, res) => {
             }
             if (filters.searchQuery) {
                 const rx = new RegExp(filters.searchQuery, 'i');
-                query.$or = [
-                    { 'data.firstName': rx },
-                    { 'data.lastName': rx },
-                    { 'data.phone': rx },
-                    { 'data.email': rx },
-                    { 'data.company': rx }
-                ];
+                conditions.push({
+                    $or: [
+                        { 'data.firstName': rx },
+                        { 'data.lastName': rx },
+                        { 'data.phone': rx },
+                        { 'data.email': rx },
+                        { 'data.company': rx }
+                    ]
+                });
             }
             if (conditions.length > 0) {
-                if (query.$or) {
-                    query.$and = [{ $or: query.$or }, { $or: conditions }];
-                    delete query.$or;
-                }
-                else {
-                    query.$or = conditions;
-                }
+                query.$and = conditions;
             }
         }
         else {
@@ -594,26 +635,54 @@ router.get('/leads/filters-meta', async (req, res) => {
             res.status(200).json({ campaigns: [], statuses: [], sources: [], totalLeads: 0 });
             return;
         }
-        const records = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: leadModule._id }).lean();
+        const records = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: leadModule._id })
+            .populate('createdBy', 'firstName lastName name email')
+            .select('data createdBy')
+            .lean();
         const campaignsSet = new Set();
         const statusesSet = new Set();
         const sourcesSet = new Set();
+        sourcesSet.add('Super Admin');
+        // Also include all organization users so the user can filter by any creator
+        try {
+            const orgUsers = await User_1.default.find({ organizationId: orgId }).select('firstName lastName name email').lean();
+            orgUsers.forEach((u) => {
+                const uName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name;
+                if (uName)
+                    sourcesSet.add(uName);
+            });
+        }
+        catch (_) { }
         records.forEach((r) => {
-            if (r.data?.source) {
-                campaignsSet.add(r.data.source);
-                sourcesSet.add(r.data.source);
+            const d = r.data || {};
+            const camp = String(d.campaignName || d.campaign || d.campaign_name || '').trim();
+            if (camp)
+                campaignsSet.add(camp);
+            const src = String(d.source || '').trim();
+            if (src) {
+                if ((camp && src.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(src)) {
+                    campaignsSet.add(src);
+                }
+                else {
+                    sourcesSet.add(src);
+                }
             }
-            if (r.data?.campaign)
-                campaignsSet.add(r.data.campaign);
-            if (r.data?.campaignName)
-                campaignsSet.add(r.data.campaignName);
-            if (r.data?.status)
-                statusesSet.add(r.data.status);
+            const crName = String(d.creatorName || d.createdByName || '').trim();
+            if (crName && !/^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(crName)) {
+                sourcesSet.add(crName);
+            }
+            if (r.createdBy && typeof r.createdBy === 'object') {
+                const byName = `${r.createdBy.firstName || ''} ${r.createdBy.lastName || ''}`.trim() || r.createdBy.name;
+                if (byName)
+                    sourcesSet.add(byName);
+            }
+            if (d.status)
+                statusesSet.add(d.status);
         });
         res.status(200).json({
-            campaigns: Array.from(campaignsSet).filter(Boolean),
-            statuses: Array.from(statusesSet).filter(Boolean),
-            sources: Array.from(sourcesSet).filter(Boolean),
+            campaigns: Array.from(campaignsSet).filter(Boolean).sort(),
+            statuses: Array.from(statusesSet).filter(Boolean).sort(),
+            sources: Array.from(sourcesSet).filter(Boolean).sort(),
             totalLeads: records.length
         });
     }
@@ -648,6 +717,16 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
         const numAgents = cleanAgents.length;
         const basePerAgent = Math.floor(totalLeads / numAgents);
         const remainder = totalLeads % numAgents;
+        let creatorName = 'Super Admin';
+        try {
+            if (userId) {
+                const u = await User_1.default.findById(userId);
+                if (u) {
+                    creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.email?.split('@')[0] || 'Super Admin';
+                }
+            }
+        }
+        catch (_) { }
         // Track assigned counts per agent
         const agentCounts = {};
         cleanAgents.forEach(a => { agentCounts[a] = 0; });
@@ -957,9 +1036,12 @@ router.post('/campaigns/bulk-assign', async (req, res) => {
                     remarks: lead.notes || lead.remarks || lead.remark || lead['Remarks'] || lead['remarks'] || '',
                     status: lead.status || 'New',
                     dialStatus: 'Yet To Call',
-                    source: campaignName,
+                    source: creatorName,
+                    creatorName: creatorName,
+                    createdByName: creatorName,
                     campaign: campaignName,
                     campaignName: campaignName,
+                    campaign_name: campaignName,
                     assignedTo: assignedAgent, // campaign telecaller
                     telecaller: assignedAgent,
                     pendingAt: '', // empty until user creates lead via Create Lead
@@ -1552,6 +1634,11 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                 const creatorName = (r.created_by && userMap[r.created_by.toString()]) || d.creatorName || d.createdByName || 'Super Admin';
                 d.creatorName = creatorName;
                 d.createdByName = creatorName;
+                const s = String(d.source || '').trim();
+                const camp = String(d.campaignName || d.campaign || d.campaign_name || decodedCampaignName || '').trim();
+                if (!s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s)) {
+                    d.source = creatorName;
+                }
                 // 1. Ensure customerName / leadName is populated from any available column
                 let rawCust = String(d.customerName || d.firstName || '').trim();
                 if (!rawCust || ['UNNAMED', 'N/A', 'UNDEFINED', 'NULL'].includes(rawCust.toUpperCase())) {
@@ -1744,6 +1831,11 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                 : (d.creatorName || d.createdByName || 'Super Admin');
             d.creatorName = creatorName;
             d.createdByName = creatorName;
+            const s = String(d.source || '').trim();
+            const camp = String(d.campaignName || d.campaign || d.campaign_name || '').trim();
+            if (!s || (camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s)) {
+                d.source = creatorName;
+            }
             const rawCust = String(d.customerName || d.firstName || '').trim();
             if (!rawCust || rawCust.toUpperCase() === 'UNNAMED' || rawCust.toUpperCase() === 'N/A') {
                 let altName = '';
@@ -2226,6 +2318,31 @@ router.get('/:apiPath', async (req, res) => {
                 }
             });
         }
+        // Lead Creator & Source normalization for list responses
+        if (apiPath.toLowerCase() === 'leads') {
+            records.forEach((r) => {
+                if (r.data) {
+                    let creator = '';
+                    if (r.createdBy && typeof r.createdBy === 'object') {
+                        creator = [r.createdBy.firstName, r.createdBy.lastName].filter(Boolean).join(' ') || r.createdBy.name || r.createdBy.email?.split('@')[0] || '';
+                    }
+                    if (!creator && r.data.creatorName)
+                        creator = r.data.creatorName;
+                    if (!creator && r.data.createdByName)
+                        creator = r.data.createdByName;
+                    if (!creator)
+                        creator = 'Super Admin';
+                    const s = String(r.data.source || '').trim();
+                    const camp = String(r.data.campaignName || r.data.campaign || r.data.campaign_name || '').trim();
+                    const isCamp = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
+                    if (!s || isCamp) {
+                        r.data.source = creator;
+                    }
+                    r.data.creatorName = creator;
+                    r.data.createdByName = creator;
+                }
+            });
+        }
         const responsePayload = {
             records,
             pagination: {
@@ -2272,15 +2389,19 @@ router.post('/:apiPath', async (req, res) => {
             try {
                 const u = await User_1.default.findById(req.user?.id);
                 if (u) {
-                    creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email?.split('@')[0] || 'Super Admin';
+                    creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.email?.split('@')[0] || 'Super Admin';
                 }
             }
             catch (_) { }
             // Source is permanently locked to who is creating the lead
-            if (!recordData.source || recordData.source === 'Ink CRM' || recordData.source === 'inkcrm') {
+            const s = String(recordData.source || '').trim();
+            const camp = String(recordData.campaignName || recordData.campaign || recordData.campaign_name || '').trim();
+            const isCamp = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
+            if (!s || isCamp || s.toLowerCase() === 'ink crm' || s.toLowerCase() === 'direct') {
                 recordData.source = creatorName;
             }
-            recordData.creatorName = recordData.source;
+            recordData.creatorName = creatorName;
+            recordData.createdByName = creatorName;
             // Brand new lead creation must start with 0 calls and Yet To Call unless explicitly dialed
             if (recordData.callAttempts === undefined || !recordData.dialedAt) {
                 recordData.callAttempts = 0;
@@ -2507,13 +2628,13 @@ router.put('/:apiPath/:id', async (req, res) => {
         }
         // Lead Source is permanently immutable: never overwrite original creator (unless old source was just raw campaign drive name)
         if (apiPath.toLowerCase() === 'leads') {
-            const isRawCampSource = oldValues.source && (oldValues.source === oldValues.campaignName || oldValues.source === oldValues.campaign);
-            if (oldValues.source && !isRawCampSource) {
-                updateData.source = oldValues.source;
-            }
-            if (oldValues.creatorName) {
-                updateData.creatorName = oldValues.creatorName;
-            }
+            const camp = String(oldValues.campaignName || oldValues.campaign || oldValues.campaign_name || '').trim();
+            const s = String(oldValues.source || '').trim();
+            const isRawCampSource = (s && camp && s.toLowerCase() === camp.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(s);
+            const originalCreator = oldValues.creatorName || oldValues.createdByName || (!isRawCampSource && s ? s : 'Super Admin');
+            updateData.source = originalCreator;
+            updateData.creatorName = originalCreator;
+            updateData.createdByName = originalCreator;
         }
         // Validate inputs against the merged data
         const mergedData = {

@@ -17,6 +17,8 @@ interface User {
 interface LeadRecord {
   _id: string;
   createdAt: string;
+  createdBy?: any;
+  createdByName?: string;
   data: {
     firstName?: string;
     lastName?: string;
@@ -26,6 +28,9 @@ interface LeadRecord {
     status?: string;
     source?: string;
     campaignName?: string;
+    campaign?: string;
+    creatorName?: string;
+    createdByName?: string;
     assignedTo?: string;
     budget?: string;
     loanType?: string;
@@ -83,6 +88,7 @@ export default function LeadImportDelete() {
 
   // Delete Filters
   const [filterCampaign, setFilterCampaign] = useState('');
+  const [filterSource, setFilterSource] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterAgent, setFilterAgent] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -464,11 +470,30 @@ export default function LeadImportDelete() {
   // ── Delete Handlers ────────────────────────────────────────────────
   const filteredLeads = leads.filter((lead) => {
     const d = lead.data || {};
-    const src = (d.source || d.campaignName || '').toString().toLowerCase();
+    const camp = (d.campaignName || d.campaign || d.campaign_name || '').toString().toLowerCase();
+    const src = (d.source || '').toString().toLowerCase();
+    const cr = (d.creatorName || d.createdByName || lead.createdByName || '').toString().toLowerCase();
+    let createdByUser = '';
+    if (lead.createdBy && typeof lead.createdBy === 'object') {
+      createdByUser = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim().toLowerCase();
+      if (!createdByUser) createdByUser = (lead.createdBy.name || lead.createdBy.email || '').toString().toLowerCase();
+    }
     const st = (d.status || '').toString().toLowerCase();
     const ass = (d.assignedTo || '').toString().toLowerCase();
 
-    if (filterCampaign && !src.includes(filterCampaign.toLowerCase())) return false;
+    if (filterCampaign) {
+      const fc = filterCampaign.toLowerCase();
+      const matchCamp = camp.includes(fc) || src.includes(fc);
+      if (!matchCamp) return false;
+    }
+
+    if (filterSource) {
+      const fs = filterSource.toLowerCase().trim();
+      const isSuperMatch = (fs.includes('super') || fs.includes('admin')) && (!lead.createdBy || src === 'super admin' || cr === 'super admin' || createdByUser === 'super admin');
+      const isMatch = isSuperMatch || src.includes(fs) || cr.includes(fs) || createdByUser.includes(fs);
+      if (!isMatch) return false;
+    }
+
     if (filterStatus && st !== filterStatus.toLowerCase()) return false;
     if (filterAgent && !ass.includes(filterAgent.toLowerCase())) return false;
 
@@ -537,6 +562,7 @@ export default function LeadImportDelete() {
           deleteAllMatching: true,
           filters: {
             campaignName: filterCampaign,
+            source: filterSource,
             status: filterStatus,
             assignedTo: filterAgent,
             startDate: filterStartDate,
@@ -955,11 +981,11 @@ export default function LeadImportDelete() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
               {/* Campaign Filter */}
               <div>
                 <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1 block">
-                  Campaign / Source
+                  Campaign
                 </label>
                 <select
                   value={filterCampaign}
@@ -972,6 +998,28 @@ export default function LeadImportDelete() {
                       {c}
                     </option>
                   ))}
+                </select>
+              </div>
+
+              {/* Source (Created By) Filter */}
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1 block">
+                  Source (Created By)
+                </label>
+                <select
+                  value={filterSource}
+                  onChange={(e) => setFilterSource(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
+                >
+                  <option value="">All Sources / Creators</option>
+                  <option value="Super Admin">Super Admin</option>
+                  {sourceOptions
+                    .filter((s) => s && s.toLowerCase() !== 'super admin')
+                    .map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -1097,7 +1145,8 @@ export default function LeadImportDelete() {
                       <th className="p-3.5">Phone</th>
                       <th className="p-3.5">Email</th>
                       <th className="p-3.5">Company / Firm</th>
-                      <th className="p-3.5">Campaign / Source</th>
+                      <th className="p-3.5">Campaign</th>
+                      <th className="p-3.5">Source (Created By)</th>
                       <th className="p-3.5">Status</th>
                       <th className="p-3.5">Assigned To</th>
                       <th className="p-3.5">Created Date</th>
@@ -1108,6 +1157,17 @@ export default function LeadImportDelete() {
                       const d = lead.data || {};
                       const fullName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unnamed Lead';
                       const isSelected = selectedLeadIds.includes(lead._id);
+
+                      let resolvedCreator = 'Super Admin';
+                      if (lead.createdBy && typeof lead.createdBy === 'object') {
+                        resolvedCreator = `${lead.createdBy.firstName || ''} ${lead.createdBy.lastName || ''}`.trim() || lead.createdBy.name || lead.createdBy.email?.split('@')[0] || '';
+                      }
+                      if (!resolvedCreator || resolvedCreator === 'Super Admin') {
+                        resolvedCreator = d.creatorName || d.createdByName || lead.createdByName || '';
+                      }
+                      const campName = d.campaignName || d.campaign || d.campaign_name || '';
+                      const isCamp = (d.source && campName && d.source.toLowerCase() === campName.toLowerCase()) || /^[A-Z0-9]+-[A-Z0-9]+-[\w-]+/i.test(d.source || '');
+                      const displaySource = (!isCamp && d.source) || resolvedCreator || 'Super Admin';
 
                       return (
                         <tr
@@ -1137,8 +1197,13 @@ export default function LeadImportDelete() {
                             {d.company || '-'}
                           </td>
                           <td className="p-3.5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                              {d.source || d.campaignName || 'Direct'}
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+                              {campName || 'Direct'}
+                            </span>
+                          </td>
+                          <td className="p-3.5">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {displaySource}
                             </span>
                           </td>
                           <td className="p-3.5">
