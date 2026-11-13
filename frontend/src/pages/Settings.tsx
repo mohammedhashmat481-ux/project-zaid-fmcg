@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useThemeStore, ThemeSettings } from '../store/themeStore';
 import { useModuleStore, FieldDefinition } from '../store/moduleStore';
@@ -31,7 +31,8 @@ export default function Settings() {
   const currentTab = queryParams.get('tab') || 'company';
 
   const { branding, fetchBranding, applyTheme } = useThemeStore();
-  const { modules } = useModuleStore();
+  const { modules, fetchModules } = useModuleStore();
+  const statusFormRef = useRef<HTMLDivElement>(null);
 
   const [companyName, setCompanyName] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
@@ -255,6 +256,50 @@ export default function Settings() {
     bankingpartner: 'bankingpartners'
   };
 
+  const DEFAULT_SETTINGS_MODULES: Record<string, any> = {
+    department: {
+      _id: 'default_department',
+      name: 'Department',
+      singularLabel: 'Department',
+      pluralLabel: 'Departments',
+      apiPath: 'departments',
+      icon: 'Network',
+      isSystem: true,
+      fields: [
+        { name: 'name', label: 'Department Name', type: 'text', required: true, unique: true }
+      ],
+      relationships: []
+    },
+    product: {
+      _id: 'default_product',
+      name: 'Product',
+      singularLabel: 'Product',
+      pluralLabel: 'Products',
+      apiPath: 'products',
+      icon: 'Package',
+      isSystem: true,
+      fields: [
+        { name: 'name', label: 'Product Name', type: 'text', required: true, unique: true },
+        { name: 'code', label: 'Product Code', type: 'text', required: false, unique: false }
+      ],
+      relationships: []
+    },
+    bankmaster: {
+      _id: 'default_bankmaster',
+      name: 'BankMaster',
+      singularLabel: 'Bank Master',
+      pluralLabel: 'Bank Masters',
+      apiPath: 'bankmasters',
+      icon: 'Landmark',
+      isSystem: true,
+      fields: [
+        { name: 'bankName', label: 'Bank Name', type: 'text', required: true, unique: true },
+        { name: 'code', label: 'Bank Code', type: 'text', required: false, unique: false }
+      ],
+      relationships: []
+    }
+  };
+
   useEffect(() => {
     setBpForm({ bank: '', loanType: '', psm: '' });
     setSelectedBanks([]);
@@ -312,6 +357,11 @@ export default function Settings() {
     }
 
     try {
+      // Ensure dynamic modules definition is loaded
+      if (!modules || modules.length === 0) {
+        await fetchModules().catch(() => {});
+      }
+
       // Load Roles from backend
       const resRoles = await api.get('/auth/roles');
       const fetchedRoles = resRoles.data || [];
@@ -343,7 +393,7 @@ export default function Settings() {
           // Fetch bank masters list
           try {
             const resBM = await api.get('/records/bankmasters?limit=1000');
-            const apiNames: string[] = (resBM.data?.records || []).map((r: any) => r.data?.bankName).filter(Boolean);
+            const apiNames: string[] = (resBM.data?.records || []).map((r: any) => r.data?.bankName || r.data?.name).filter(Boolean);
             setBankMastersList(apiNames);
           } catch {
             setBankMastersList([]);
@@ -351,7 +401,7 @@ export default function Settings() {
           // Fetch products for loan types
           try {
             const resProducts = await api.get('/records/products?limit=1000');
-            const productNames: string[] = (resProducts.data?.records || []).map((r: any) => r.data?.name).filter(Boolean);
+            const productNames: string[] = (resProducts.data?.records || []).map((r: any) => r.data?.name || r.data?.productName).filter(Boolean);
             setBpProductsList(productNames.map((n: string) => n.toUpperCase()));
           } catch {
             setBpProductsList(['HOME LOAN', 'LOAN AGAINST PROPERTY LOAN', 'BUSINESS LOAN', 'PERSONAL LOAN']);
@@ -594,23 +644,29 @@ export default function Settings() {
 
   const handleEditStatus = (status: any) => {
     setStatusForm({
-      id: status._id,
-      name: status.name,
-      color: status.color,
-      icon: status.icon,
-      pipelinePosition: status.pipelinePosition || 0,
-      dashboardVisibility: status.dashboardVisibility,
-      isFinal: status.isFinal,
-      isSuccess: status.isSuccess,
-      order: status.order
+      id: status._id || status.id,
+      name: status.name || '',
+      color: status.color || '#4F46E5',
+      icon: status.icon || 'Circle',
+      pipelinePosition: status.pipelinePosition ?? 0,
+      dashboardVisibility: status.dashboardVisibility ?? true,
+      isFinal: status.isFinal ?? false,
+      isSuccess: status.isSuccess ?? false,
+      order: status.order ?? 0
     });
     setStatusEditing(true);
+    setTimeout(() => {
+      statusFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const input = statusFormRef.current?.querySelector('input[type="text"]') as HTMLInputElement | null;
+      input?.focus();
+    }, 50);
   };
 
   const handleDeleteStatus = (id: string) => {
     showConfirm({
       title: 'Delete Status',
       message: 'Are you sure you want to delete this status? Leads using this status will lose their mapping.',
+      type: 'danger',
       onConfirm: async () => {
         try {
           await api.delete(`/statuses/${id}`);
@@ -619,7 +675,11 @@ export default function Settings() {
             message: 'The Lead Status stage has been permanently deleted.',
             type: 'success'
           });
-          loadSettingsData();
+          if (statusEditing && statusForm.id === id) {
+            setStatusEditing(false);
+            setStatusForm({ id: '', name: '', color: '#4F46E5', icon: 'Circle', pipelinePosition: 0, dashboardVisibility: true, isFinal: false, isSuccess: false, order: 0 });
+          }
+          await loadSettingsData();
           queryClient.invalidateQueries({ queryKey: ['statuses-list'] });
           queryClient.invalidateQueries({ queryKey: ['master-statuses-list'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
@@ -628,8 +688,8 @@ export default function Settings() {
           queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-statuses'] });
           queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
-        } catch (err) {
-          showToast('Failed to delete status.', 'error');
+        } catch (err: any) {
+          showToast(err.response?.data?.error || 'Failed to delete status.', 'error');
         }
       }
     });
@@ -712,22 +772,38 @@ export default function Settings() {
   };
 
   // Dynamic Module Record Handlers
-  const activeModuleDef = modules.find(m => m.apiPath === tabToApiPath[currentTab]);
+  const activeModuleDef = modules.find(m => m.apiPath === tabToApiPath[currentTab]) || DEFAULT_SETTINGS_MODULES[currentTab];
 
   const handleSaveModuleRecord = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeModuleDef) return;
     const apiPath = activeModuleDef.apiPath;
+    const payload = { ...moduleForm };
+    if (apiPath === 'products') {
+      if (payload.name && !payload.productName) payload.productName = payload.name;
+      if (payload.productName && !payload.name) payload.name = payload.productName;
+    }
+    if (apiPath === 'departments') {
+      if (payload.name && !payload.code) {
+        payload.code = payload.name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      }
+      if (payload.name && !payload.departmentName) payload.departmentName = payload.name;
+      if (payload.departmentName && !payload.name) payload.name = payload.departmentName;
+    }
+    if (apiPath === 'bankmasters') {
+      if (payload.name && !payload.bankName) payload.bankName = payload.name;
+      if (payload.bankName && !payload.name) payload.name = payload.bankName;
+    }
     try {
       if (moduleEditingId) {
-        await api.put(`/records/${apiPath}/${moduleEditingId}`, moduleForm);
+        await api.put(`/records/${apiPath}/${moduleEditingId}`, payload);
         showAlertModal({
           title: 'Saved Successfully',
           message: `The ${activeModuleDef.singularLabel} record has been updated successfully.`,
           type: 'success'
         });
       } else {
-        await api.post(`/records/${apiPath}`, moduleForm);
+        await api.post(`/records/${apiPath}`, payload);
         showAlertModal({
           title: 'Created Successfully',
           message: `The new ${activeModuleDef.singularLabel} record has been created successfully.`,
@@ -744,8 +820,16 @@ export default function Settings() {
   };
 
   const handleEditModuleRecord = (rec: any) => {
-    setModuleForm(rec.data || {});
-    setModuleEditingId(rec._id);
+    const rawData = rec.data || rec || {};
+    const dataObj = { ...rawData };
+    if (dataObj.productName && !dataObj.name) dataObj.name = dataObj.productName;
+    if (dataObj.name && !dataObj.productName) dataObj.productName = dataObj.name;
+    if (dataObj.bankName && !dataObj.name) dataObj.name = dataObj.bankName;
+    if (dataObj.name && !dataObj.bankName) dataObj.bankName = dataObj.name;
+    if (dataObj.departmentName && !dataObj.name) dataObj.name = dataObj.departmentName;
+    if (dataObj.name && !dataObj.departmentName) dataObj.departmentName = dataObj.name;
+    setModuleForm(dataObj);
+    setModuleEditingId(rec._id || rec.id);
     setModuleModalOpen(true);
   };
 
@@ -754,6 +838,7 @@ export default function Settings() {
     showConfirm({
       title: 'Delete Record',
       message: `Are you sure you want to delete this ${activeModuleDef.singularLabel} record?`,
+      type: 'danger',
       onConfirm: async () => {
         try {
           await api.delete(`/records/${activeModuleDef.apiPath}/${id}`);
@@ -763,8 +848,8 @@ export default function Settings() {
             type: 'success'
           });
           loadSettingsData();
-        } catch (err) {
-          showToast('Failed to delete record.', 'error');
+        } catch (err: any) {
+          showToast(err.response?.data?.error || 'Failed to delete record.', 'error');
         }
       }
     });
@@ -1361,39 +1446,42 @@ export default function Settings() {
                       );
                     }
 
-                    return paginatedRoles.map((role) => (
-                      <tr key={role._id} className="hover:bg-slate-50/30 transition-colors h-14">
-                        <td className="px-4 py-2 font-semibold text-slate-700">{role.name}</td>
-                        <td className="px-4 py-2">
-                          <span className={role.isActive !== false ? 'status-active-premium' : 'status-inactive-premium'}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${role.isActive !== false ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
-                            {role.isActive !== false ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-center flex justify-center gap-3">
-                          <button
-                            onClick={() => {
-                              setEditingRoleId(role._id);
-                              setRoleFormName(role.name);
-                              setRoleFormActive(role.isActive !== false);
-                            }}
-                            className="btn-edit-premium"
-                            title="Edit Role"
-                          >
-                            <Icons.SquarePen className="w-4 h-4" />
-                          </button>
-                          {!role.isSystem && (
+                    return paginatedRoles.map((role) => {
+                      const roleId = role._id || role.id;
+                      return (
+                        <tr key={roleId} className="hover:bg-slate-50/30 transition-colors h-14">
+                          <td className="px-4 py-2 font-semibold text-slate-700">{role.name}</td>
+                          <td className="px-4 py-2">
+                            <span className={role.isActive !== false ? 'status-active-premium' : 'status-inactive-premium'}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${role.isActive !== false ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                              {role.isActive !== false ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-center flex justify-center gap-3">
                             <button
-                              onClick={() => handleDeleteRole(role._id)}
-                              className="btn-delete-premium"
-                              title="Delete Role"
+                              onClick={() => {
+                                setEditingRoleId(roleId);
+                                setRoleFormName(role.name);
+                                setRoleFormActive(role.isActive !== false);
+                              }}
+                              className="btn-edit-premium"
+                              title="Edit Role"
                             >
-                              <Icons.Trash className="w-4 h-4" />
+                              <Icons.SquarePen className="w-4 h-4" />
                             </button>
-                          )}
-                        </td>
-                      </tr>
-                    ));
+                            {!role.isSystem && (
+                              <button
+                                onClick={() => handleDeleteRole(roleId)}
+                                className="btn-delete-premium"
+                                title="Delete Role"
+                              >
+                                <Icons.Trash className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
                   })()}
                 </tbody>
               </table>
@@ -1427,11 +1515,18 @@ export default function Settings() {
         {/* Status Settings tab */}
         <div className={`lg:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-5 ${currentTab === 'status' ? 'block' : 'hidden'}`}>
           {/* Form Card */}
-          <div className="md:col-span-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden">
+          <div ref={statusFormRef} className={`md:col-span-4 bg-white dark:bg-slate-900 border rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden transition-all duration-300 ${statusEditing ? 'border-rose-400 dark:border-rose-600 ring-2 ring-rose-500/20' : 'border-slate-200/90 dark:border-slate-800'}`}>
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-pink-500" />
-            <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight mb-4">
-              {statusEditing ? 'Edit Pipeline Status' : 'Add Pipeline Status'}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                {statusEditing ? 'Edit Pipeline Status' : 'Add Pipeline Status'}
+              </h3>
+              {statusEditing && (
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                  Editing Mode
+                </span>
+              )}
+            </div>
             <form onSubmit={handleSaveStatus} className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Status Name</label>
@@ -1495,10 +1590,25 @@ export default function Settings() {
           <div className="md:col-span-8 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden relative">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-pink-500" />
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">Configured Pipeline Statuses</h3>
-              <span className="px-2.5 py-0.5 text-[10px] font-black uppercase bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full border border-rose-200/80 dark:border-rose-800 font-mono">
-                {statuses.length} Statuses
-              </span>
+              <div className="flex items-center gap-3">
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">Configured Pipeline Statuses</h3>
+                <span className="px-2.5 py-0.5 text-[10px] font-black uppercase bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full border border-rose-200/80 dark:border-rose-800 font-mono">
+                  {statuses.length} Statuses
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusEditing(false);
+                  setStatusForm({ id: '', name: '', color: '#4F46E5', icon: 'Circle', pipelinePosition: 0, dashboardVisibility: true, isFinal: false, isSuccess: false, order: 0 });
+                  statusFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  const input = statusFormRef.current?.querySelector('input[type="text"]') as HTMLInputElement | null;
+                  input?.focus();
+                }}
+                className="h-8 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
+              >
+                <Icons.Plus className="w-3.5 h-3.5" /> Add Status
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
@@ -1548,11 +1658,23 @@ export default function Settings() {
           <div className="lg:col-span-12 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs relative overflow-hidden">
             <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${activeTabMeta.accentGradient}`} />
             {(() => {
+              const getRecordVal = (rec: any, fieldName: string) => {
+                const d = rec.data || rec || {};
+                if (d[fieldName] !== undefined && d[fieldName] !== null && d[fieldName] !== '') {
+                  return d[fieldName];
+                }
+                if (fieldName === 'name') return d.productName || d.bankName || d.departmentName || '';
+                if (fieldName === 'productName') return d.name || '';
+                if (fieldName === 'bankName') return d.name || d.bank || '';
+                if (fieldName === 'departmentName') return d.name || '';
+                return '';
+              };
+
               const filteredModuleRecords = moduleRecords.filter(rec => {
                 if (!moduleSearchQuery.trim()) return true;
                 const q = moduleSearchQuery.toLowerCase().trim();
-                return activeModuleDef.fields.some(f => {
-                  const val = String(rec.data?.[f.name] ?? '').toLowerCase();
+                return activeModuleDef.fields.some((f: any) => {
+                  const val = String(getRecordVal(rec, f.name)).toLowerCase();
                   return val.includes(q);
                 });
               });
@@ -1605,7 +1727,7 @@ export default function Settings() {
                     <table className="w-full text-sm text-left border-collapse">
                       <thead>
                         <tr className="table-header-premium">
-                          {activeModuleDef.fields.map(f => (
+                          {activeModuleDef.fields.map((f: any) => (
                             <th key={f.name} className="py-2.5 px-4">{f.label}</th>
                           ))}
                           <th className="py-2.5 px-4 text-center w-36">Actions</th>
@@ -1621,20 +1743,23 @@ export default function Settings() {
                             </td>
                           </tr>
                         ) : (
-                          filteredModuleRecords.map(rec => (
-                            <tr key={rec._id} className="hover:bg-slate-50/50 transition-colors h-11">
-                              {activeModuleDef.fields.map(f => (
-                                <td key={f.name} className="px-4 py-2 text-slate-900 font-semibold">
-                                  {f.type === 'currency' ? '$' : ''}
-                                  {String(rec.data?.[f.name] ?? '')}
+                          filteredModuleRecords.map(rec => {
+                            const recId = rec._id || rec.id;
+                            return (
+                              <tr key={recId} className="hover:bg-slate-50/50 transition-colors h-11">
+                                {activeModuleDef.fields.map((f: any) => (
+                                  <td key={f.name} className="px-4 py-2 text-slate-900 font-semibold">
+                                    {f.type === 'currency' ? '$' : ''}
+                                    {String(getRecordVal(rec, f.name))}
+                                  </td>
+                                ))}
+                                <td className="px-4 py-2 text-center flex justify-center gap-3">
+                                  <button onClick={() => handleEditModuleRecord(rec)} className="btn-edit-premium" title="Edit Record"><Icons.SquarePen className="w-4 h-4" /></button>
+                                  <button onClick={() => handleDeleteModuleRecord(recId)} className="btn-delete-premium" title="Delete Record"><Icons.Trash className="w-4 h-4" /></button>
                                 </td>
-                              ))}
-                              <td className="px-4 py-2 text-center flex justify-center gap-3">
-                                <button onClick={() => handleEditModuleRecord(rec)} className="btn-edit-premium" title="Edit Record"><Icons.SquarePen className="w-4 h-4" /></button>
-                                <button onClick={() => handleDeleteModuleRecord(rec._id)} className="btn-delete-premium" title="Delete Record"><Icons.Trash className="w-4 h-4" /></button>
-                              </td>
-                            </tr>
-                          ))
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1651,13 +1776,13 @@ export default function Settings() {
                     {moduleEditingId ? 'Edit Record' : `Add New ${activeModuleDef.singularLabel}`}
                   </h3>
                   <form onSubmit={handleSaveModuleRecord} className="space-y-4">
-                    {activeModuleDef.fields.map(f => (
+                    {activeModuleDef.fields.map((f: any) => (
                       <div key={f.name}>
                         <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block mb-1.5">{f.label}</label>
                         {f.type === 'dropdown' ? (
                           <select required={f.required} value={moduleForm[f.name] || ''} onChange={e => setModuleForm({ ...moduleForm, [f.name]: e.target.value })} className="w-full h-11 px-4 text-sm font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
                             <option value="">Select Option...</option>
-                            {f.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {f.options?.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
                           </select>
                         ) : f.type === 'number' || f.type === 'currency' ? (
                           <input required={f.required} type="number" step="any" value={moduleForm[f.name] || ''} onChange={e => setModuleForm({ ...moduleForm, [f.name]: Number(e.target.value) })} className="w-full h-11 px-4 text-sm font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
@@ -2386,57 +2511,60 @@ export default function Settings() {
                         );
                       }
 
-                      return filtered.map((rec) => (
-                        <tr key={rec._id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-2 font-semibold text-slate-850">
-                            <div className="flex flex-col gap-1.5 py-1.5">
-                              {(rec.data?.bank || '')
-                                .split(',')
-                                .map((b: string) => b.trim())
-                                .filter(Boolean)
-                                .filter((bankName: string) => {
-                                  if (!bpFilterBank) return true;
-                                  return bankName.toLowerCase() === bpFilterBank.toLowerCase();
-                                })
-                                .map((bankName: string) => (
-                                  <div key={bankName} className="flex items-center gap-2 text-[11px] text-slate-850 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 w-max font-bold shadow-sm shadow-slate-100/50">
-                                    <Icons.Landmark className="w-3.5 h-3.5 text-indigo-650" />
-                                    {bankName}
-                                  </div>
-                                ))}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 font-semibold text-slate-700">
-                            {rec.data?.loanType}
-                          </td>
-                          <td className="px-4 py-2 text-slate-900 font-semibold">
-                            {rec.data?.psm}
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleEditBankingPartner({
-                                  _id: rec._id,
-                                  bank: rec.data?.bank,
-                                  loanType: rec.data?.loanType,
-                                  psm: rec.data?.psm
-                                })}
-                                className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors"
-                                title="Edit Banking Partner"
-                              >
-                                <Icons.Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteBankingPartner(rec._id)}
-                                className="btn-delete-premium"
-                                title="Delete Banking Partner"
-                              >
-                                <Icons.Trash className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ));
+                      return filtered.map((rec) => {
+                        const recId = rec._id || rec.id;
+                        return (
+                          <tr key={recId} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-2 font-semibold text-slate-850">
+                              <div className="flex flex-col gap-1.5 py-1.5">
+                                {(rec.data?.bank || '')
+                                  .split(',')
+                                  .map((b: string) => b.trim())
+                                  .filter(Boolean)
+                                  .filter((bankName: string) => {
+                                    if (!bpFilterBank) return true;
+                                    return bankName.toLowerCase() === bpFilterBank.toLowerCase();
+                                  })
+                                  .map((bankName: string) => (
+                                    <div key={bankName} className="flex items-center gap-2 text-[11px] text-slate-850 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 w-max font-bold shadow-sm shadow-slate-100/50">
+                                      <Icons.Landmark className="w-3.5 h-3.5 text-indigo-650" />
+                                      {bankName}
+                                    </div>
+                                  ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 font-semibold text-slate-700">
+                              {rec.data?.loanType}
+                            </td>
+                            <td className="px-4 py-2 text-slate-900 font-semibold">
+                              {rec.data?.psm}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleEditBankingPartner({
+                                    _id: recId,
+                                    bank: rec.data?.bank,
+                                    loanType: rec.data?.loanType,
+                                    psm: rec.data?.psm
+                                  })}
+                                  className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors"
+                                  title="Edit Banking Partner"
+                                >
+                                  <Icons.Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBankingPartner(recId)}
+                                  className="btn-delete-premium"
+                                  title="Delete Banking Partner"
+                                >
+                                  <Icons.Trash className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
                     })()}
                   </tbody>
                 </table>

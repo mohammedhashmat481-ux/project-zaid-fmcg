@@ -33,7 +33,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const queryClient = useQueryClient();
 
-  const { modules } = useModuleStore();
+  const { modules, fetchModules } = useModuleStore();
   const { user, logout, canAccessMenu } = useAuthStore();
   const { branding, fetchBranding } = useThemeStore();
   const { showToast } = useToastStore();
@@ -199,6 +199,10 @@ export default function Layout({ children }: LayoutProps) {
       fetchBranding(cachedSub);
     }
   }, [branding, fetchBranding]);
+
+  useEffect(() => {
+    fetchModules().catch(() => {});
+  }, [fetchModules]);
 
   // Lead metrics for sidebar badge (Shares identical queryKey and cache with Dashboard page)
   const { data: metricsData } = useQuery({

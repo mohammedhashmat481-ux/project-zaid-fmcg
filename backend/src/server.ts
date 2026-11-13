@@ -69,6 +69,34 @@ const startServer = async () => {
       logger.warn(`[Migration Warning] Could not verify BankingPartner schema: ${migErr.message}`);
     }
 
+    // Ensure BankMaster module definition exists for all organizations
+    try {
+      const allOrgs = await Organization.find();
+      for (const org of allOrgs) {
+        const orgId = org._id || org.id;
+        const existingBm = await ModuleDefinition.findOne({ organizationId: orgId, apiPath: 'bankmasters' });
+        if (!existingBm) {
+          logger.info(`[Migration] Creating missing BankMaster module definition for org ${orgId}...`);
+          await ModuleDefinition.create({
+            organizationId: orgId,
+            name: 'BankMaster',
+            singularLabel: 'Bank Master',
+            pluralLabel: 'Bank Masters',
+            apiPath: 'bankmasters',
+            icon: 'Landmark',
+            isSystem: true,
+            fields: [
+              { name: 'bankName', label: 'Bank Name', type: 'text', required: true, unique: true },
+              { name: 'code', label: 'Bank Code', type: 'text', required: false, unique: false }
+            ]
+          });
+          logger.info(`[Migration] BankMaster module definition created for org ${orgId}.`);
+        }
+      }
+    } catch (bmErr: any) {
+      logger.warn(`[Migration Warning] Could not verify BankMaster schema: ${bmErr.message}`);
+    }
+
     // Ensure Lead module definition removes hardcoded Ink CRM defaultValue for source
     try {
       const leadModules = await ModuleDefinition.find({ apiPath: 'leads' });

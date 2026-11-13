@@ -49,10 +49,18 @@ const authorizeModuleAction = async (
       return { allowed: true, scope: 'all' };
     }
 
-    // Allow reading settings/metadata modules (Departments, Bank Masters, Products, etc.)
+    // Allow reading & managing settings/metadata modules (Departments, Bank Masters, Products, etc.)
     const settingsModules = ['departments', 'department', 'bankmasters', 'bankmaster', 'bankingpartners', 'bankingpartner', 'products', 'product'];
-    if (action === 'read' && settingsModules.includes(moduleName.toLowerCase())) {
-      return { allowed: true, scope: 'all' };
+    if (settingsModules.includes(moduleName.toLowerCase())) {
+      if (
+        action === 'read' ||
+        role.permissions?.menus?.includes('settings') ||
+        role.name === 'Main Admin' ||
+        role.name === 'Super Admin' ||
+        role.name?.toLowerCase().includes('admin')
+      ) {
+        return { allowed: true, scope: 'all' };
+      }
     }
 
     const permission = role.permissions.modules.find(
