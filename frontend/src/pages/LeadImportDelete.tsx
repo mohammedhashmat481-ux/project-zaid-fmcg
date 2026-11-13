@@ -97,6 +97,132 @@ export default function LeadImportDelete() {
   const [deleteMode, setDeleteMode] = useState<'selected' | 'all_filtered'>('selected');
   const [confirmInputText, setConfirmInputText] = useState('');
 
+  // Quick Restore Specific Leads state
+  interface QuickRestoreLeadRow {
+    name: string;
+    phone: string;
+    status: string;
+    loanType: string;
+    amount: string;
+    city: string;
+    notes: string;
+  }
+
+  const [showQuickRestoreModal, setShowQuickRestoreModal] = useState(false);
+  const [quickRestoreCampaign, setQuickRestoreCampaign] = useState('');
+  const [quickRestoreRows, setQuickRestoreRows] = useState<QuickRestoreLeadRow[]>([
+    { name: '', phone: '', status: 'HOT LEADS', loanType: '', amount: '', city: '', notes: '' },
+    { name: '', phone: '', status: 'WARM LEADS', loanType: '', amount: '', city: '', notes: '' }
+  ]);
+  const [quickPasteText, setQuickPasteText] = useState('');
+  const [showPasteBox, setShowPasteBox] = useState(false);
+  const [savingQuickLeads, setSavingQuickLeads] = useState(false);
+
+  const handleAddQuickRow = () => {
+    setQuickRestoreRows(prev => [
+      ...prev,
+      { name: '', phone: '', status: 'HOT LEADS', loanType: '', amount: '', city: '', notes: '' }
+    ]);
+  };
+
+  const handleRemoveQuickRow = (idx: number) => {
+    setQuickRestoreRows(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleQuickRowChange = (idx: number, field: keyof QuickRestoreLeadRow, val: string) => {
+    setQuickRestoreRows(prev => prev.map((row, i) => i === idx ? { ...row, [field]: val } : row));
+  };
+
+  const handleParsePasteText = () => {
+    if (!quickPasteText.trim()) return;
+    const lines = quickPasteText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const newRows: QuickRestoreLeadRow[] = [];
+
+    for (const line of lines) {
+      const parts = line.split(/[,\t|]+/).map(p => p.trim());
+      if (parts.length === 1) {
+        const val = parts[0];
+        if (/\d{7,15}/.test(val)) {
+          newRows.push({ name: '', phone: val, status: 'HOT LEADS', loanType: '', amount: '', city: '', notes: '' });
+        } else {
+          newRows.push({ name: val, phone: '', status: 'HOT LEADS', loanType: '', amount: '', city: '', notes: '' });
+        }
+      } else {
+        const p1 = parts[0] || '';
+        const p2 = parts[1] || '';
+        let name = '';
+        let phone = '';
+        if (/\d{7,15}/.test(p1) && !/\d{7,15}/.test(p2)) {
+          phone = p1;
+          name = p2;
+        } else {
+          name = p1;
+          phone = p2;
+        }
+        const status = parts[2] || 'HOT LEADS';
+        const amount = parts[3] || '';
+        const city = parts[4] || '';
+        const notes = parts.slice(5).join(' ') || '';
+        newRows.push({ name, phone, status, loanType: '', amount, city, notes });
+      }
+    }
+
+    if (newRows.length > 0) {
+      setQuickRestoreRows(newRows);
+      setShowPasteBox(false);
+      showToast(`Parsed ${newRows.length} lead(s) successfully!`, 'success');
+    }
+  };
+
+  const handleSaveQuickLeads = async () => {
+    const validRows = quickRestoreRows.filter(r => r.phone.trim() || r.name.trim());
+    if (validRows.length === 0) {
+      showToast('Please enter at least one lead with a phone number or customer name.', 'warning');
+      return;
+    }
+    const camp = quickRestoreCampaign.trim() || 'Restored Campaign Leads';
+
+    setSavingQuickLeads(true);
+    try {
+      const res = await api.post('/records/leads/bulk-import', {
+        campaignName: camp,
+        leads: validRows.map(r => ({
+          name: r.name.trim(),
+          firstName: r.name.trim().split(' ')[0] || r.name.trim(),
+          lastName: r.name.trim().split(' ').slice(1).join(' ') || '',
+          phone: r.phone.trim(),
+          mobile: r.phone.trim(),
+          status: r.status || 'HOT LEADS',
+          dialStatus: r.status || 'HOT LEADS',
+          loanType: r.loanType.trim(),
+          amount: r.amount.trim(),
+          city: r.city.trim(),
+          location: r.city.trim(),
+          notes: r.notes.trim(),
+          remarks: r.notes.trim()
+        }))
+      });
+
+      showAlertModal({
+        title: 'Leads Successfully Restored!',
+        message: `Successfully created and restored ${res.data?.count || validRows.length} lead(s) into campaign "${camp}"! You can now manage and dial them directly in My Campaign.`,
+        type: 'success'
+      });
+
+      setShowQuickRestoreModal(false);
+      setQuickRestoreRows([
+        { name: '', phone: '', status: 'HOT LEADS', loanType: '', amount: '', city: '', notes: '' },
+        { name: '', phone: '', status: 'WARM LEADS', loanType: '', amount: '', city: '', notes: '' }
+      ]);
+      setQuickPasteText('');
+      fetchFilterMeta();
+    } catch (err: any) {
+      showToast(err.response?.data?.error || err.message || 'Failed to restore leads.', 'error');
+    } finally {
+      setSavingQuickLeads(false);
+    }
+  };
+
   const handleRecoverDeletedLeads = async () => {
     setRecovering(true);
     try {
@@ -110,8 +236,8 @@ export default function LeadImportDelete() {
         fetchFilterMeta();
       } else {
         showAlertModal({
-          title: 'No Recoverable Deleted Leads Found in Audit Trail',
-          message: res.data.message || 'No deleted lead snapshots were found in the recent audit logs. If the leads were uploaded from an Excel or CSV file, please re-upload the file directly through the Lead Import form below.',
+          title: 'No Automated Snapshots in Audit Trail',
+          message: 'Bulk Excel uploads log summary counts rather than individual rows in audit logs. To restore specific leads now, you can click "Restore Specific Leads" to enter or paste them directly, or re-upload your source Excel sheet.',
           type: 'info'
         });
       }
@@ -490,6 +616,15 @@ export default function LeadImportDelete() {
           >
             <Icons.RotateCcw className={`w-4 h-4 ${recovering ? 'animate-spin' : ''}`} />
             <span>{recovering ? 'Recovering Leads...' : 'Recover Deleted Leads'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowQuickRestoreModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer"
+            title="Restore or add specific leads by typing or pasting"
+          >
+            <Icons.PlusCircle className="w-4 h-4" />
+            <span>Restore Specific Leads</span>
           </button>
         </div>
       </div>
@@ -1084,6 +1219,198 @@ export default function LeadImportDelete() {
                 )}
                 <span>Confirm Permanent Delete</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK RESTORE SPECIFIC LEADS MODAL */}
+      {showQuickRestoreModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-blue-500/30 space-y-4 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+                  <Icons.PlusCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Restore Specific Leads
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Quickly restore the few leads you need back into your CRM and campaign.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickRestoreModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Campaign Name selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                Assign to Campaign Name:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={quickRestoreCampaign}
+                  onChange={(e) => setQuickRestoreCampaign(e.target.value)}
+                  placeholder="e.g. HAVERI-VC-12-11-26 or Restored Leads"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasteBox(!showPasteBox)}
+                  className="px-3 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl whitespace-nowrap transition-colors"
+                >
+                  {showPasteBox ? 'Hide Paste Box' : '📋 Quick Paste List'}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Paste Area */}
+            {showPasteBox && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Paste Multiple Leads (comma or tab separated, one per line):
+                </label>
+                <textarea
+                  rows={4}
+                  value={quickPasteText}
+                  onChange={(e) => setQuickPasteText(e.target.value)}
+                  placeholder="Format: Name, Phone, Status, Amount, Location, Remarks&#10;e.g.: Kiran Viranna, 9164287654, HOT LEADS, 500000, Haveri, Followup next week&#10;Munna Kotipura, 9945898765, WARM LEADS, 300000, Haveri"
+                  className="w-full p-2.5 text-xs font-mono rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleParsePasteText}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                  >
+                    Parse into Table Below
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rows Table */}
+            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-500 uppercase px-1">
+                <div className="col-span-3">Customer Name</div>
+                <div className="col-span-2">Mobile Number</div>
+                <div className="col-span-2">Status</div>
+                <div className="col-span-2">Loan Amount</div>
+                <div className="col-span-2">City / Location</div>
+                <div className="col-span-1 text-center">Action</div>
+              </div>
+
+              {quickRestoreRows.map((row, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-50/70 dark:bg-slate-800/40 p-1.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                  <div className="col-span-3">
+                    <input
+                      type="text"
+                      placeholder="Customer Name"
+                      value={row.name}
+                      onChange={(e) => handleQuickRowChange(idx, 'name', e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="tel"
+                      placeholder="Mobile No."
+                      value={row.phone}
+                      onChange={(e) => handleQuickRowChange(idx, 'phone', e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-semibold rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <select
+                      value={row.status}
+                      onChange={(e) => handleQuickRowChange(idx, 'status', e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs font-bold uppercase rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="HOT LEADS">HOT LEADS</option>
+                      <option value="WARM LEADS">WARM LEADS</option>
+                      <option value="YET TO CALL">YET TO CALL</option>
+                      <option value="CEBIL PENDING">CEBIL PENDING</option>
+                      <option value="DOCUMENT PENDING">DOCUMENT PENDING</option>
+                      <option value="NOT CONNECTED">NOT CONNECTED</option>
+                      <option value="CALL REJECTED">CALL REJECTED</option>
+                      <option value="INTERESTED">INTERESTED</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="text"
+                      placeholder="Amount"
+                      value={row.amount}
+                      onChange={(e) => handleQuickRowChange(idx, 'amount', e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="text"
+                      placeholder="Location"
+                      value={row.city}
+                      onChange={(e) => handleQuickRowChange(idx, 'city', e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-1 text-center">
+                    {quickRestoreRows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveQuickRow(idx)}
+                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                        title="Remove row"
+                      >
+                        <Icons.Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleAddQuickRow}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors cursor-pointer"
+              >
+                <Icons.Plus className="w-4 h-4" />
+                <span>+ Add Another Lead</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickRestoreModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveQuickLeads}
+                  disabled={savingQuickLeads}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {savingQuickLeads ? (
+                    <Icons.Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Icons.Check className="w-4 h-4 stroke-[3]" />
+                  )}
+                  <span>Restore Leads into CRM</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

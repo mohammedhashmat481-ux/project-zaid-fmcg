@@ -511,14 +511,20 @@ router.post('/leads/bulk-import', async (req: Request, res: Response): Promise<v
           email: String(dataObj.email || dataObj.mail || '').trim(),
           company: String(dataObj.company || dataObj.firm_name || dataObj.firmName || dataObj.firm || '').trim(),
           status: dataObj.status || defaultStatus || 'New',
-          dialStatus: dataObj.dialStatus || 'Yet To Call',
+          dialStatus: dataObj.dialStatus || dataObj.status || 'Yet To Call',
           source: campaignName || dataObj.source || dataObj.campaignName || 'Excel Import',
+          campaignName: campaignName || dataObj.campaignName || dataObj.source || '',
+          campaign: campaignName || dataObj.campaignName || dataObj.source || '',
+          campaign_name: campaignName || dataObj.campaignName || dataObj.source || '',
           assignedTo: assignedAgent,
           budget: dataObj.budget || dataObj.amount || '',
+          amount: dataObj.amount || dataObj.budget || '',
           loanType: dataObj.loanType || dataObj.category || '',
           city: dataObj.city || dataObj.location || '',
+          location: dataObj.location || dataObj.city || '',
           state: dataObj.state || '',
-          notes: dataObj.notes || dataObj.remarks || ''
+          notes: dataObj.notes || dataObj.remarks || '',
+          remarks: dataObj.remarks || dataObj.notes || ''
         }
       });
     });
