@@ -1253,41 +1253,41 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                 { 'data.campaign_name': { $exists: true, $ne: '' } }
             ]
         };
-        // Strict assignment scoping: Telecallers only see leads allocated directly to them
-        const isSuper = await hierarchy_1.HierarchyService.isSuperAdmin(req.user?.roleId);
-        if (!isSuper) {
-            const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
-            const userFilters = [
-                { 'data.assignedTo': userId.toString() },
-                { 'data.telecaller': userId.toString() }
-            ];
-            if (currentUser) {
-                const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
-                if (fullName) {
-                    const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                    const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
-                    userFilters.push({ 'data.assignedTo': regex });
-                    userFilters.push({ 'data.telecaller': regex });
-                }
-                if (currentUser.email) {
-                    const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                    const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
-                    userFilters.push({ 'data.assignedTo': regex });
-                    userFilters.push({ 'data.telecaller': regex });
-                }
-                if (currentUser.userCode) {
-                    const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                    const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
-                    userFilters.push({ 'data.assignedTo': regex });
-                    userFilters.push({ 'data.telecaller': regex });
-                }
+        // Strict personal assignment scoping:
+        // In My Campaign, EVERY user (including reporting managers and admins)
+        // ONLY sees campaigns and leads directly assigned to THEM.
+        // Managers can see subordinate leads in the Leads module and Reports, but NOT in My Campaign.
+        const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
+        const userFilters = [
+            { 'data.assignedTo': userId.toString() },
+            { 'data.telecaller': userId.toString() }
+        ];
+        if (currentUser) {
+            const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
+            if (fullName) {
+                const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
+                userFilters.push({ 'data.assignedTo': regex });
+                userFilters.push({ 'data.telecaller': regex });
             }
-            leadQuery.$and = [
-                { $or: leadQuery.$or },
-                { $or: userFilters }
-            ];
-            delete leadQuery.$or;
+            if (currentUser.email) {
+                const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
+                userFilters.push({ 'data.assignedTo': regex });
+                userFilters.push({ 'data.telecaller': regex });
+            }
+            if (currentUser.userCode) {
+                const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
+                userFilters.push({ 'data.assignedTo': regex });
+                userFilters.push({ 'data.telecaller': regex });
+            }
         }
+        leadQuery.$and = [
+            { $or: leadQuery.$or },
+            { $or: userFilters }
+        ];
+        delete leadQuery.$or;
         const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
         const leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
         // Group leads strictly by registered campaign
@@ -1376,7 +1376,6 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             res.status(200).json(cachedDetails);
             return;
         }
-        const isSuper = await hierarchy_1.HierarchyService.isSuperAdmin(req.user?.roleId);
         const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
         // Get the leads module
         const leadModule = await ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' });
@@ -1419,27 +1418,25 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
         LOWER(data->>'source') = LOWER($${campParamIdx}) OR
         LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
-            // Telecallers only see leads allocated directly to them in their campaign view and export.
-            // Super admins see all records.
-            if (!isSuper) {
-                const userTerms = [
-                    userId.toString(),
-                    currentUser?.userCode,
-                    currentUser?.email,
-                    `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
-                ].filter(Boolean);
-                const userConds = [];
-                userTerms.forEach(term => {
-                    baseParams.push(term);
-                    const pIdx = baseParams.length;
-                    userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
-                });
-                if (userConds.length > 0) {
-                    baseConds.push(`(${userConds.join(' OR ')})`);
-                }
-                else {
-                    baseConds.push('1=0');
-                }
+            // In My Campaign, EVERY user (telecaller, manager, or admin)
+            // ONLY sees leads allocated directly to them.
+            const userTerms = [
+                userId.toString(),
+                currentUser?.userCode,
+                currentUser?.email,
+                `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
+            ].filter(Boolean);
+            const userConds = [];
+            userTerms.forEach(term => {
+                baseParams.push(term);
+                const pIdx = baseParams.length;
+                userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
+            });
+            if (userConds.length > 0) {
+                baseConds.push(`(${userConds.join(' OR ')})`);
+            }
+            else {
+                baseConds.push('1=0');
             }
             const baseWhere = baseConds.join(' AND ');
             // Query total overall stats for this campaign (<5ms)
@@ -1680,7 +1677,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
             ...(moduleId ? { moduleId } : {}),
             ...matchFilter
         };
-        if (!isSuper && !isAll) {
+        if (!isAll) {
             const userFilters = [
                 { createdBy: userId },
                 { 'data.assignedTo': userId.toString() }

@@ -1395,43 +1395,43 @@ router.get('/campaigns/my-campaigns', async (req: Request, res: Response): Promi
       ]
     };
 
-    // Strict assignment scoping: Telecallers only see leads allocated directly to them
-    const isSuper = await HierarchyService.isSuperAdmin(req.user?.roleId);
-    if (!isSuper) {
-      const currentUser = await User.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
-      const userFilters: any[] = [
-        { 'data.assignedTo': userId.toString() },
-        { 'data.telecaller': userId.toString() }
-      ];
+    // Strict personal assignment scoping:
+    // In My Campaign, EVERY user (including reporting managers and admins)
+    // ONLY sees campaigns and leads directly assigned to THEM.
+    // Managers can see subordinate leads in the Leads module and Reports, but NOT in My Campaign.
+    const currentUser = await User.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
+    const userFilters: any[] = [
+      { 'data.assignedTo': userId.toString() },
+      { 'data.telecaller': userId.toString() }
+    ];
 
-      if (currentUser) {
-        const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
-        if (fullName) {
-          const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
-          userFilters.push({ 'data.assignedTo': regex });
-          userFilters.push({ 'data.telecaller': regex });
-        }
-        if (currentUser.email) {
-          const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
-          userFilters.push({ 'data.assignedTo': regex });
-          userFilters.push({ 'data.telecaller': regex });
-        }
-        if (currentUser.userCode) {
-          const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
-          userFilters.push({ 'data.assignedTo': regex });
-          userFilters.push({ 'data.telecaller': regex });
-        }
+    if (currentUser) {
+      const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
+      if (fullName) {
+        const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
+        userFilters.push({ 'data.assignedTo': regex });
+        userFilters.push({ 'data.telecaller': regex });
       }
-
-      leadQuery.$and = [
-        { $or: leadQuery.$or },
-        { $or: userFilters }
-      ];
-      delete leadQuery.$or;
+      if (currentUser.email) {
+        const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
+        userFilters.push({ 'data.assignedTo': regex });
+        userFilters.push({ 'data.telecaller': regex });
+      }
+      if (currentUser.userCode) {
+        const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
+        userFilters.push({ 'data.assignedTo': regex });
+        userFilters.push({ 'data.telecaller': regex });
+      }
     }
+
+    leadQuery.$and = [
+      { $or: leadQuery.$or },
+      { $or: userFilters }
+    ];
+    delete leadQuery.$or;
 
     const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
     const leads = await CustomRecord.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
@@ -1537,7 +1537,6 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       return;
     }
 
-    const isSuper = await HierarchyService.isSuperAdmin(req.user?.roleId);
     const currentUser = await User.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
 
     // Get the leads module
@@ -1588,28 +1587,26 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
         LOWER(data->>'campaign_name') = LOWER($${campParamIdx})
       )`);
 
-      // Telecallers only see leads allocated directly to them in their campaign view and export.
-      // Super admins see all records.
-      if (!isSuper) {
-        const userTerms = [
-          userId.toString(),
-          currentUser?.userCode,
-          currentUser?.email,
-          `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
-        ].filter(Boolean) as string[];
+      // In My Campaign, EVERY user (telecaller, manager, or admin)
+      // ONLY sees leads allocated directly to them.
+      const userTerms = [
+        userId.toString(),
+        currentUser?.userCode,
+        currentUser?.email,
+        `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()
+      ].filter(Boolean) as string[];
 
-        const userConds: string[] = [];
-        userTerms.forEach(term => {
-          baseParams.push(term);
-          const pIdx = baseParams.length;
-          userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
-        });
+      const userConds: string[] = [];
+      userTerms.forEach(term => {
+        baseParams.push(term);
+        const pIdx = baseParams.length;
+        userConds.push(`(LOWER(data->>'assignedTo') = LOWER($${pIdx}) OR LOWER(data->>'telecaller') = LOWER($${pIdx}))`);
+      });
 
-        if (userConds.length > 0) {
-          baseConds.push(`(${userConds.join(' OR ')})`);
-        } else {
-          baseConds.push('1=0');
-        }
+      if (userConds.length > 0) {
+        baseConds.push(`(${userConds.join(' OR ')})`);
+      } else {
+        baseConds.push('1=0');
       }
 
       const baseWhere = baseConds.join(' AND ');
@@ -1871,7 +1868,7 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req: Request,
       ...matchFilter
     };
 
-    if (!isSuper && !isAll) {
+    if (!isAll) {
       const userFilters: any[] = [
         { createdBy: userId },
         { 'data.assignedTo': userId.toString() }
