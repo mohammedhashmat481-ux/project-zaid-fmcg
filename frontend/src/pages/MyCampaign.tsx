@@ -224,6 +224,24 @@ export default function MyCampaign() {
     return ['HOT LEADS', 'WARM LEADS', 'COOL LEAD'];
   }, [campaignStatusConfig]);
 
+  // Check if a status is configured to open Create Lead form
+  const isStatusTrigger = (statusToCheck: string) => {
+    if (!statusToCheck) return false;
+    const normSelected = statusToCheck.trim().toUpperCase().replace(/\s+/g, ' ');
+    const stripSelected = normSelected.replace(/\s+LEADS?$/i, '').trim();
+
+    return triggerStatuses.some(ts => {
+      const normTs = ts.trim().toUpperCase().replace(/\s+/g, ' ');
+      const stripTs = normTs.replace(/\s+LEADS?$/i, '').trim();
+      return (
+        normTs === normSelected ||
+        stripTs === stripSelected ||
+        stripTs === normSelected ||
+        normTs === stripSelected
+      );
+    });
+  };
+
   const dashboardStatuses: string[] = useMemo(() => {
     if (Array.isArray(campaignStatusConfig?.dashboardStatuses) && campaignStatusConfig.dashboardStatuses.length > 0) {
       return campaignStatusConfig.dashboardStatuses.map((s: string) => s.trim().toUpperCase());
@@ -740,10 +758,201 @@ export default function MyCampaign() {
     }));
   };
 
-  const handleStatusSelect = (lead: LeadRecord, newStatus: string) => {
+  const handleStatusSelect = async (lead: LeadRecord, newStatus: string) => {
     // 1. Update state locally so user sees the selected status immediately in dropdown & badge
     handleFieldChange(lead._id, 'status', newStatus);
-    showToast(`Status changed to "${newStatus}". Complete fields and click Save.`, 'info');
+
+    const isTrigger = isStatusTrigger(newStatus);
+    if (!isTrigger) {
+      showToast(`Status changed to "${newStatus}". Complete fields and click Save.`, 'info');
+      return;
+    }
+
+    // 2. Trigger Status selected (e.g. HOT LEADS, WARM LEADS, COOL LEAD, or custom trigger statuses):
+    // Auto-save status with current card details and immediately open Create Lead prefilled!
+    try {
+      const state = leadStates[lead._id];
+      const normalizedStatus = newStatus.toUpperCase().includes('HOT')
+        ? 'HOT LEADS'
+        : newStatus.toUpperCase().includes('WARM')
+          ? 'WARM LEADS'
+          : (newStatus.toUpperCase().includes('COOL') ? 'COOL LEAD' : (statuses.find(s => s.trim().toUpperCase() === newStatus.trim().toUpperCase()) || newStatus));
+
+      const currentRemarks = state?.remarks ?? (lead.data?.notes || lead.data?.remarks || '');
+      const currentCaseDetails = state?.caseDetails ?? (lead.data?.caseDetails || '');
+      const currentLeadCategory = state?.leadCategory ?? (lead.data?.leadCategory || lead.data?.lead_category || '');
+      const currentDataCode = state?.dataCode ?? (lead.data?.dataCode || lead.data?.data_code || lead.data?.code || '');
+
+      const currentIndex = leads.findIndex(l => l._id === lead._id);
+      const slNo = startIndex + (currentIndex >= 0 ? currentIndex + 1 : 1);
+      const campPrefix = (activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || 'CAMPAIGN')
+        .trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+      const displayedDataCode = currentDataCode || lead.data?.dataCode || lead.data?.data_code || lead.data?.code || `${campPrefix}-DATA-${slNo}`;
+
+      const loggedInSaverName = user 
+        ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+        : '';
+      const assignedCaller = (lead.data?.assignedTo && typeof lead.data.assignedTo === 'object')
+        ? `${lead.data.assignedTo.firstName || ''} ${lead.data.assignedTo.lastName || ''}`.trim()
+        : (lead.data?.assignedTo || lead.data?.dialedBy || lead.data?.telecaller || '');
+      const effectiveSource = (loggedInSaverName && loggedInSaverName.toLowerCase() !== 'super admin')
+        ? loggedInSaverName
+        : (assignedCaller || loggedInSaverName || 'Telecaller');
+
+      const currentAmount = state?.amount !== undefined ? state.amount : (lead.data?.loanAmount || lead.data?.amount || lead.data?.loan_amount || lead.data?.budget || '');
+      const currentProduct = state?.product !== undefined ? state.product : (lead.data?.loanType || lead.data?.product || lead.data?.loan_type || '');
+      const currentBankPartner = state?.bankPartner !== undefined ? state.bankPartner : (lead.data?.businessPartner || lead.data?.bankPartner || lead.data?.bank_partner || lead.data?.bank || '');
+      const currentPsm = state?.psm !== undefined ? state.psm : (lead.data?.psm || lead.data?.psmName || lead.data?.psm_name || '');
+      const currentFollowupDate = state?.followupDate !== undefined ? state.followupDate : (lead.data?.followUpDate || lead.data?.followupDate || '');
+      const currentFirmCompany = state?.firmName !== undefined ? state.firmName : (lead.data?.company || lead.data?.firmName || lead.data?.firm_name || lead.data?.companyName || '');
+      const currentLocation = state?.location !== undefined ? state.location : (lead.data?.city || lead.data?.location || lead.data?.presentAddress || 'BLORE');
+      const currentLeadName = state?.leadName !== undefined ? state.leadName : (lead.data?.customerName || lead.data?.customer || lead.data?.name || lead.data?.fullName || `${lead.data?.firstName || ''} ${lead.data?.lastName || ''}`.trim() || '');
+      const phoneVal = state?.mobile !== undefined ? state.mobile : (extractLeadPhone(lead.data) || extractLeadPhone(lead) || '');
+
+      const custParts = String(currentLeadName || '').trim().split(' ');
+      const firstNameVal = custParts[0] || '';
+      const lastNameVal = custParts.slice(1).join(' ') || '';
+
+      const payload: Record<string, any> = {
+        status: normalizedStatus,
+        dialStatus: newStatus,
+        dialedAt: new Date(),
+        dialedBy: effectiveSource,
+        callerName: effectiveSource,
+        source: effectiveSource,
+        creatorName: effectiveSource,
+        createdByName: effectiveSource,
+        callAttempts: Math.max(1, (state?.callAttempts as number) || ((lead.data?.callAttempts as number) || 0) + 1),
+        notes: currentRemarks,
+        remarks: currentRemarks,
+        caseDetails: currentCaseDetails,
+        leadCategory: currentLeadCategory,
+        lead_category: currentLeadCategory,
+        dataCode: displayedDataCode,
+        data_code: displayedDataCode
+      };
+
+      if (currentLeadName) {
+        payload.customerName = currentLeadName;
+        payload.customer = currentLeadName;
+        payload.name = currentLeadName;
+        payload.firstName = firstNameVal;
+        payload.lastName = lastNameVal;
+      }
+      if (phoneVal) {
+        payload.phone = phoneVal;
+        payload.mobile = phoneVal;
+        payload.contactNumber = phoneVal;
+      }
+      if (currentFirmCompany) {
+        payload.company = currentFirmCompany;
+        payload.firmName = currentFirmCompany;
+      }
+      if (currentLocation) {
+        payload.city = currentLocation;
+        payload.location = currentLocation;
+      }
+      if (currentAmount) {
+        payload.loanAmount = currentAmount;
+        payload.amount = currentAmount;
+        payload.budget = currentAmount;
+      }
+      if (currentProduct) {
+        payload.loanType = currentProduct;
+        payload.product = currentProduct;
+      }
+      if (currentBankPartner) {
+        payload.businessPartner = currentBankPartner;
+        payload.bankPartner = currentBankPartner;
+        payload.bank = currentBankPartner;
+        payload.bankNames = currentBankPartner;
+      }
+      if (currentPsm) {
+        payload.psm = currentPsm;
+        payload.psmName = currentPsm;
+      }
+      if (currentFollowupDate) {
+        payload.followUpDate = currentFollowupDate;
+      }
+
+      // Persist to database
+      await api.put(`/records/leads/${lead._id}`, payload);
+
+      // Update in-memory state so counters and cards reflect immediately
+      setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
+
+      if (newStatus !== 'Yet To Call' && !isLeadDialed(lead)) {
+        setCampaignStats(prev => ({
+          ...prev,
+          dialed: prev.dialed + 1,
+          yetToDial: Math.max(0, prev.yetToDial - 1)
+        }));
+      }
+
+      // Invalidate queries so Dashboard and Reports sync immediately
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
+
+      showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
+
+      // Clear page cache
+      pageCacheRef.current = {};
+
+      navigate('/modules/leads/new', {
+        state: {
+          ...lead.data,
+          dataCode: displayedDataCode,
+          data_code: displayedDataCode,
+          code: displayedDataCode,
+          company: currentFirmCompany,
+          firmName: currentFirmCompany,
+          firm_name: currentFirmCompany,
+          companyName: currentFirmCompany,
+          firstName: firstNameVal,
+          lastName: lastNameVal,
+          customerName: currentLeadName,
+          customer: currentLeadName,
+          fullName: currentLeadName,
+          name: currentLeadName,
+          phone: phoneVal,
+          mobile: phoneVal,
+          contactNumber: phoneVal,
+          name_contact_num: phoneVal,
+          mobileNo: phoneVal,
+          city: currentLocation,
+          location: currentLocation,
+          presentAddress: lead.data?.presentAddress || currentLocation,
+          assignedTo: lead.data?.assignedTo || (lead as any).assignedToName || '',
+          assignedToName: lead.data?.assignedTo || (lead as any).assignedToName || '',
+          status: normalizedStatus,
+          notes: currentRemarks,
+          remarks: currentRemarks,
+          caseDetails: currentCaseDetails,
+          leadCategory: '',
+          lead_category: '',
+          loanType: currentProduct || lead.data?.loanType || lead.data?.product || '',
+          product: currentProduct,
+          budget: currentAmount,
+          loanAmount: currentAmount,
+          amount: currentAmount,
+          businessPartner: currentBankPartner,
+          bankPartner: currentBankPartner,
+          bank: currentBankPartner,
+          psm: currentPsm,
+          psmName: currentPsm,
+          followUpDate: currentFollowupDate,
+          followupDate: currentFollowupDate,
+          source: effectiveSource,
+          campaignName: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
+          fromCampaignLeadId: lead._id
+        }
+      });
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.response?.data?.error || 'Failed to update status.', 'error');
+    }
   };
 
   const handleWhatsAppChat = (lead: LeadRecord) => {
@@ -1725,15 +1934,27 @@ export default function MyCampaign() {
                                 </td>
                                 <td className="py-3 px-3 border-r border-slate-100 dark:border-slate-800 font-semibold text-slate-800 dark:text-slate-300">{agentAssigned}</td>
                                 <td className="py-2 px-2 border-r border-slate-100 dark:border-slate-800">
-                                  <select
-                                    value={leadStates[lead._id]?.status || 'Yet To Call'}
-                                    onChange={(e) => handleStatusSelect(lead, e.target.value)}
-                                    className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 dark:text-white cursor-pointer"
-                                  >
-                                    {availableStatuses.map(statusOpt => (
-                                      <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
-                                    ))}
-                                  </select>
+                                  <div className="flex items-center gap-1">
+                                    <select
+                                      value={leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call'}
+                                      onChange={(e) => handleStatusSelect(lead, e.target.value)}
+                                      className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 dark:text-white cursor-pointer"
+                                    >
+                                      {availableStatuses.map(statusOpt => (
+                                        <option key={statusOpt} value={statusOpt}>{statusOpt}</option>
+                                      ))}
+                                    </select>
+                                    {isStatusTrigger(leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStatusSelect(lead, leadStates[lead._id]?.status || lead.data?.status || 'Yet To Call')}
+                                        className="p-1 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 border border-emerald-300 text-xs cursor-pointer flex-shrink-0"
+                                        title="Open Create Lead form"
+                                      >
+                                        <Icons.ExternalLink className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400 border-r border-slate-100 dark:border-slate-800">{dialedDatetime}</td>
                                 <td className="py-2 px-2 text-center">
@@ -2306,6 +2527,17 @@ export default function MyCampaign() {
                                     <option key={st} value={st}>{st.toUpperCase()}</option>
                                   ))}
                                 </select>
+                                {isStatusTrigger(currentStatus) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStatusSelect(lead, currentStatus)}
+                                    className="ml-1 px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer flex-shrink-0 transition-colors shadow-3xs"
+                                    title={`Click to open Create Lead for ${currentStatus}`}
+                                  >
+                                    <Icons.ExternalLink className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                    <span>Create Lead</span>
+                                  </button>
+                                )}
                               </div>
 
                               {/* Col 2: Source (Same as Created By: who is dialing / creating) */}
@@ -2343,10 +2575,11 @@ export default function MyCampaign() {
                                   type="button"
                                   onClick={() => handleStatusSelect(lead, currentStatus)}
                                   className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors shadow-3xs cursor-pointer ${statusMeta.color} ${statusMeta.bg} border ${statusMeta.border}`}
-                                  title="Current Lead Status (Click to trigger / update)"
+                                  title={isStatusTrigger(currentStatus) ? "Click to open Create Lead form" : "Current Lead Status (Click Save to persist)"}
                                 >
                                   <StatusIcon className="w-3 h-3" />
                                   <span>{currentStatus}</span>
+                                  {isStatusTrigger(currentStatus) && <Icons.ExternalLink className="w-2.5 h-2.5 opacity-80 ml-0.5" />}
                                 </button>
                               </div>
 

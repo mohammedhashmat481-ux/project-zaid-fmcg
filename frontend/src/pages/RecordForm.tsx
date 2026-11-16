@@ -824,7 +824,11 @@ export default function RecordForm() {
             : 'The record has been created successfully.',
         type: 'success',
         onClose: () => {
-          navigate(`/modules/${apiPath}`);
+          if (location.state?.fromCampaignLeadId) {
+            navigate('/my-campaign');
+          } else {
+            navigate(`/modules/${apiPath}`);
+          }
         }
       });
     } catch (err: any) {
@@ -1717,7 +1721,7 @@ export default function RecordForm() {
 
           <div className="flex items-center gap-2.5 ml-auto sm:ml-0">
             <Link
-              to="/modules/leads"
+              to={location.state?.fromCampaignLeadId ? "/my-campaign" : "/modules/leads"}
               className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -2346,7 +2350,7 @@ export default function RecordForm() {
 
             <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
               <Link
-                to="/modules/leads"
+                to={location.state?.fromCampaignLeadId ? "/my-campaign" : "/modules/leads"}
                 className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -2434,7 +2438,7 @@ export default function RecordForm() {
           {/* Centered actions footer */}
           <div className="p-4 sm:p-6 bg-[#F8F5F1]/60 dark:bg-slate-850 border-t border-[#EAE4DA] dark:border-slate-800 flex items-center justify-center gap-3 sm:gap-4">
             <Link
-              to={`/modules/${activeModule.apiPath}`}
+              to={location.state?.fromCampaignLeadId ? "/my-campaign" : `/modules/${activeModule.apiPath}`}
               className="btn-secondary-premium h-10 px-5 text-xs font-bold"
             >
               Cancel
