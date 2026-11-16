@@ -875,30 +875,9 @@ export default function MyCampaign() {
         payload.followUpDate = currentFollowupDate;
       }
 
-      // Persist to database
-      await api.put(`/records/leads/${lead._id}`, payload);
-
-      // Update in-memory state so counters and cards reflect immediately
-      setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, data: { ...l.data, ...payload } } : l));
-
-      if (newStatus !== 'Yet To Call' && !isLeadDialed(lead)) {
-        setCampaignStats(prev => ({
-          ...prev,
-          dialed: prev.dialed + 1,
-          yetToDial: Math.max(0, prev.yetToDial - 1)
-        }));
-      }
-
-      // Invalidate queries so Dashboard and Reports sync immediately
-      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
-
-      showToast(`${newStatus} selected! Opening Create Lead...`, 'success');
-
-      // Clear page cache
-      pageCacheRef.current = {};
+      // DO NOT persist to database or dashboard here!
+      // The lead is only saved to the database and dashboard when the user actually submits and saves in Create Lead!
+      showToast(`${newStatus} selected! Opening Create Lead (save there to record changes)...`, 'info');
 
       navigate('/modules/leads/new', {
         state: {

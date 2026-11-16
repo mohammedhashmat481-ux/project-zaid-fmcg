@@ -797,15 +797,40 @@ export default function RecordForm() {
         const fromCampaignLeadId = location.state?.fromCampaignLeadId;
         if (fromCampaignLeadId) {
           try {
+            const finalStatus = data.status || location.state?.status || 'HOT LEADS';
+            const loggedInName = user
+              ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+              : 'Telecaller';
+            const finalCaller = data.source || location.state?.source || loggedInName;
+
             await api.put(`/records/leads/${fromCampaignLeadId}`, {
-              data: {
-                isLeadCreated: true,
-                leadCreated: true,
-                pipelineAssignedTo: data.assignedTo,
-                assignedToName: data.assignedToName || data.assignedTo,
-                assignToTeam: data.assignToTeam,
-                pendingAt: data.assignToTeam
-              }
+              status: finalStatus,
+              dialStatus: finalStatus,
+              dialedAt: new Date(),
+              dialedBy: finalCaller,
+              callerName: finalCaller,
+              source: finalCaller,
+              creatorName: finalCaller,
+              createdByName: finalCaller,
+              callAttempts: Math.max(1, (location.state?.callAttempts as number) || 1),
+              isLeadCreated: true,
+              leadCreated: true,
+              pipelineAssignedTo: data.assignedTo,
+              assignedToName: data.assignedToName || data.assignedTo,
+              assignToTeam: data.assignToTeam,
+              pendingAt: data.assignToTeam,
+              notes: data.notes || location.state?.notes || location.state?.remarks || '',
+              remarks: data.notes || location.state?.notes || location.state?.remarks || '',
+              caseDetails: data.caseDetails || location.state?.caseDetails || '',
+              leadCategory: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
+              lead_category: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
+              loanAmount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
+              amount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
+              loanType: data.loanType || location.state?.loanType || location.state?.product || '',
+              product: data.loanType || location.state?.loanType || location.state?.product || '',
+              businessPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
+              bankPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
+              psm: data.psm || location.state?.psm || ''
             });
           } catch (linkErr) {
             console.warn('Failed to update linked campaign lead:', linkErr);
@@ -815,6 +840,11 @@ export default function RecordForm() {
       queryClient.invalidateQueries({ queryKey: ['records', apiPath] });
       queryClient.invalidateQueries({ queryKey: ['sidebar-leads'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['layout-configured-statuses'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns-stats'] });
       showAlertModal({
         title: id ? 'Saved Successfully' : 'Created Successfully',
         message: id 
