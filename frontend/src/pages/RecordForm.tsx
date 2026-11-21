@@ -661,6 +661,7 @@ export default function RecordForm() {
   }, [errors]);
 
   const onSubmitForm = async (formData: any) => {
+    if (saving) return; // Prevent double submit
     setSaving(true);
     try {
       const data = { ...formData };
@@ -752,89 +753,52 @@ export default function RecordForm() {
         data.currency = 'INR';
       }
 
-      let createdCount = 1;
       if (id) {
         await api.put(`/records/${apiPath}/${id}`, data);
       } else {
-        if (apiPath === 'leads' && data.businessPartner) {
-          const partners = data.businessPartner.split(',').map((s: string) => s.trim()).filter(Boolean);
-          if (partners.length > 1) {
-            createdCount = partners.length;
-            const promises = partners.map(async (partner: string) => {
-              let matchedPsm = '';
-              const targetLoan = normalizeLoanForSubmit(data.loanType || '');
-              const targetBank = normalizeBankForSubmit(partner);
-              
-              const match = bankPartnerMappings.find((bp: any) => {
-                const bpLoanType = bp.data?.loanType || bp.loanType;
-                const bpBanks = (bp.data?.bank || bp.bank || '')
-                  .split(',')
-                  .map((s: string) => normalizeBankForSubmit(s));
-                const bpNormLoan = normalizeLoanForSubmit(bpLoanType || '');
-                return bpNormLoan === targetLoan && bpBanks.includes(targetBank);
-              });
-              
-              if (match) {
-                matchedPsm = match.data?.psm || match.psm || '';
-              }
-              
-              const singleLeadData = {
-                ...data,
-                businessPartner: partner,
-                psm: matchedPsm
-              };
-              
-              return api.post(`/records/${apiPath}`, singleLeadData);
-            });
-            await Promise.all(promises);
-          } else {
-            await api.post(`/records/${apiPath}`, data);
-          }
-        } else {
-          await api.post(`/records/${apiPath}`, data);
-        }
-
         const fromCampaignLeadId = location.state?.fromCampaignLeadId;
         if (fromCampaignLeadId) {
-          try {
-            const finalStatus = data.status || location.state?.status || 'HOT LEADS';
-            const loggedInName = user
-              ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
-              : 'Telecaller';
-            const finalCaller = data.source || location.state?.source || loggedInName;
+          // If this lead was opened from a campaign, UPDATE the existing campaign lead!
+          // NEVER create new duplicate records!
+          const finalStatus = data.status || location.state?.status || 'HOT LEADS';
+          const loggedInName = user
+            ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
+            : 'Telecaller';
+          const finalCaller = data.source || location.state?.source || loggedInName;
 
-            await api.put(`/records/leads/${fromCampaignLeadId}`, {
-              status: finalStatus,
-              dialStatus: finalStatus,
-              dialedAt: new Date(),
-              dialedBy: finalCaller,
-              callerName: finalCaller,
-              source: finalCaller,
-              creatorName: finalCaller,
-              createdByName: finalCaller,
-              callAttempts: Math.max(1, (location.state?.callAttempts as number) || 1),
-              isLeadCreated: true,
-              leadCreated: true,
-              pipelineAssignedTo: data.assignedTo,
-              assignedToName: data.assignedToName || data.assignedTo,
-              assignToTeam: data.assignToTeam,
-              pendingAt: data.assignToTeam,
-              notes: data.notes || location.state?.notes || location.state?.remarks || '',
-              remarks: data.notes || location.state?.notes || location.state?.remarks || '',
-              caseDetails: data.caseDetails || location.state?.caseDetails || '',
-              leadCategory: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
-              lead_category: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
-              loanAmount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
-              amount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
-              loanType: data.loanType || location.state?.loanType || location.state?.product || '',
-              product: data.loanType || location.state?.loanType || location.state?.product || '',
-              businessPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
-              bankPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
-              psm: data.psm || location.state?.psm || ''
-            });
-          } catch (linkErr) {
-            console.warn('Failed to update linked campaign lead:', linkErr);
-          }
+          await api.put(`/records/leads/${fromCampaignLeadId}`, {
+            ...data,
+            status: finalStatus,
+            dialStatus: finalStatus,
+            dialedAt: new Date(),
+            dialedBy: finalCaller,
+            callerName: finalCaller,
+            source: finalCaller,
+            creatorName: finalCaller,
+            createdByName: finalCaller,
+            callAttempts: Math.max(1, (location.state?.callAttempts as number) || 1),
+            isLeadCreated: true,
+            leadCreated: true,
+            pipelineAssignedTo: data.assignedTo,
+            assignedToName: data.assignedToName || data.assignedTo,
+            assignToTeam: data.assignToTeam,
+            pendingAt: data.assignToTeam,
+            notes: data.notes || location.state?.notes || location.state?.remarks || '',
+            remarks: data.notes || location.state?.notes || location.state?.remarks || '',
+            caseDetails: data.caseDetails || location.state?.caseDetails || '',
+            leadCategory: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
+            lead_category: data.leadCategory || data.lead_category || location.state?.leadCategory || '',
+            loanAmount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
+            amount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
+            loanType: data.loanType || location.state?.loanType || location.state?.product || '',
+            product: data.loanType || location.state?.loanType || location.state?.product || '',
+            businessPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
+            bankPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
+            psm: data.psm || location.state?.psm || ''
+          });
+        } else {
+          // Fresh lead creation: creates EXACTLY ONE lead record (never duplicate across multiple business partners)
+          await api.post(`/records/${apiPath}`, data);
         }
       }
       queryClient.invalidateQueries({ queryKey: ['records', apiPath] });
@@ -846,12 +810,10 @@ export default function RecordForm() {
       queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns-stats'] });
       showAlertModal({
-        title: id ? 'Saved Successfully' : 'Created Successfully',
+        title: id ? 'Saved Successfully' : (location.state?.fromCampaignLeadId ? 'Lead Saved Successfully' : 'Created Successfully'),
         message: id 
           ? 'The record has been updated successfully.' 
-          : createdCount > 1
-            ? `${createdCount} leads have been created successfully (one for each business partner).`
-            : 'The record has been created successfully.',
+          : 'The lead has been recorded successfully.',
         type: 'success',
         onClose: () => {
           if (location.state?.fromCampaignLeadId) {
