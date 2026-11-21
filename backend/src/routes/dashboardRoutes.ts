@@ -170,6 +170,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
           .populate('createdBy', 'firstName lastName name email')
           .sort({ 'data.followUpDate': 1 })
           .limit(10)
+          .exec()
           .catch((err: any) => {
             console.warn('[Dashboard] Today followups list warning:', err.message);
             return [];
@@ -179,6 +180,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
           .populate('createdBy', 'firstName lastName name email')
           .sort({ 'data.followUpDate': 1 })
           .limit(10)
+          .exec()
           .catch((err: any) => {
             console.warn('[Dashboard] Upcoming followups list warning:', err.message);
             return [];
@@ -196,6 +198,7 @@ router.get('/metrics', async (req: Request, res: Response): Promise<void> => {
           .populate('userId', 'firstName lastName')
           .sort({ createdAt: -1 })
           .limit(10)
+          .exec()
           .catch((err: any) => {
             console.warn('[Dashboard] Activity list warning:', err.message);
             return [];
