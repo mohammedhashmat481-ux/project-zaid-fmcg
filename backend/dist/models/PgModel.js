@@ -235,6 +235,12 @@ class PgQueryChain {
     then(onfulfilled, onrejected) {
         return this.exec().then(onfulfilled, onrejected);
     }
+    catch(onrejected) {
+        return this.exec().catch(onrejected);
+    }
+    finally(onfinally) {
+        return this.exec().finally(onfinally);
+    }
     async executeFind() {
         const { whereClause, params } = buildWhereClause(this.tableName, this.mappings, this.queryObj);
         let sql = `SELECT * FROM ${this.tableName} ${whereClause}`;

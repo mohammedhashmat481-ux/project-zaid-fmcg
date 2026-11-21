@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import api, { FILE_BASE_URL } from '../services/api';
 import { useToastStore } from '../store/toastStore';
@@ -147,6 +147,8 @@ const getCardStatusMeta = (statusStr: string) => {
 
 export default function MyCampaign() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const { showToast } = useToastStore();
   const { user } = useAuthStore();
   // React Query for campaigns with 60s cache and instantaneous cache hydration
@@ -670,29 +672,79 @@ export default function MyCampaign() {
     }
   };
 
-  const handleViewDetails = (campaign: CampaignStats) => {
+  const handleViewDetails = (
+    campaign: CampaignStats,
+    initialPage: number = 1,
+    initialSize: number = 10,
+    initialTab: 'yetToDial' | 'dialed' | 'all' = 'yetToDial'
+  ) => {
     setActiveCampaign(campaign);
     setCampaignStats({
       totalAllocated: campaign.totalAssigned,
       dialed: campaign.dialed,
       yetToDial: campaign.yetToDial
     });
-    setServerTotalLeads(campaign.yetToDial);
-    setServerTotalPages(Math.max(1, Math.ceil(campaign.yetToDial / 10)));
-    setCurrentPage(1);
-    setPageSize(10);
-    setFilterTab('yetToDial');
+    const totalCount = initialTab === 'yetToDial' ? campaign.yetToDial : (initialTab === 'dialed' ? campaign.dialed : campaign.totalAssigned);
+    setServerTotalLeads(totalCount);
+    setServerTotalPages(Math.max(1, Math.ceil(totalCount / initialSize)));
+    setCurrentPage(initialPage);
+    setPageSize(initialSize);
+    setFilterTab(initialTab);
     setSearchQuery('');
     setLeadStates({});
-    fetchLeadDetails(campaign.campaignName, 1, 10, 'yetToDial', '');
+    fetchLeadDetails(campaign.campaignName, initialPage, initialSize, initialTab, '');
   };
 
+  const autoOpenedRef = useRef<string | null>(null);
+
+  // Auto-open campaign when returning from Create Lead (Save or Cancel)
+  useEffect(() => {
+    const targetCampaignName = searchParams.get('campaign') || location.state?.autoOpenCampaign || location.state?.campaignName || location.state?.returnToCampaign;
+    
+    if (!targetCampaignName || activeCampaign || autoOpenedRef.current === targetCampaignName) {
+      return;
+    }
+
+    if (!loading) {
+      const matched = campaigns.find(c => 
+        c.campaignName.trim().toLowerCase() === targetCampaignName.trim().toLowerCase()
+      );
+
+      autoOpenedRef.current = targetCampaignName;
+      const initialTab = (location.state?.returnTab as 'yetToDial' | 'dialed' | 'all') || 'yetToDial';
+      const initialPage = (location.state?.returnPage as number) || 1;
+      const initialPageSize = (location.state?.returnPageSize as number) || 10;
+
+      if (matched) {
+        handleViewDetails(matched, initialPage, initialPageSize, initialTab);
+      } else {
+        const synthetic: CampaignStats = {
+          campaignName: targetCampaignName,
+          totalAssigned: 0,
+          dialed: 0,
+          yetToDial: 0,
+          createdAt: new Date().toISOString(),
+          dailyTarget: 0
+        };
+        handleViewDetails(synthetic, initialPage, initialPageSize, initialTab);
+      }
+    }
+  }, [campaigns, loading, searchParams, location.state, activeCampaign]);
+
   const handleBack = () => {
+    autoOpenedRef.current = '__USER_BACK__';
     setActiveCampaign(null);
     setLeads([]);
     setLeadStates({});
     setCurrentPage(1);
     pageCacheRef.current = {};
+    if (searchParams.get('campaign')) {
+      searchParams.delete('campaign');
+      setSearchParams(searchParams, { replace: true });
+    }
+    if (location.state?.autoOpenCampaign || location.state?.campaignName || location.state?.returnToCampaign) {
+      navigate('/my-campaign', { replace: true, state: {} });
+    }
     refetchCampaigns();
   };
 
@@ -925,6 +977,10 @@ export default function MyCampaign() {
           followupDate: currentFollowupDate,
           source: effectiveSource,
           campaignName: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
+          returnToCampaign: activeCampaign?.campaignName || lead.data?.campaignName || lead.data?.source || '',
+          returnTab: filterTab,
+          returnPage: currentPage,
+          returnPageSize: pageSize,
           fromCampaignLeadId: lead._id
         }
       });

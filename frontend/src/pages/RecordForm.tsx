@@ -809,6 +809,7 @@ export default function RecordForm() {
       queryClient.invalidateQueries({ queryKey: ['campaign-matrix-report'] });
       queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['my-campaigns-list'] });
       showAlertModal({
         title: id ? 'Saved Successfully' : (location.state?.fromCampaignLeadId ? 'Lead Saved Successfully' : 'Created Successfully'),
         message: id 
@@ -816,7 +817,17 @@ export default function RecordForm() {
           : 'The lead has been recorded successfully.',
         type: 'success',
         onClose: () => {
-          if (location.state?.fromCampaignLeadId) {
+          const returnCampaign = location.state?.returnToCampaign || location.state?.campaignName || location.state?.campaign;
+          if (returnCampaign) {
+            navigate(`/my-campaign?campaign=${encodeURIComponent(returnCampaign)}`, {
+              state: {
+                autoOpenCampaign: returnCampaign,
+                returnTab: location.state?.returnTab,
+                returnPage: location.state?.returnPage,
+                returnPageSize: location.state?.returnPageSize
+              }
+            });
+          } else if (location.state?.fromCampaignLeadId) {
             navigate('/my-campaign');
           } else {
             navigate(`/modules/${apiPath}`);
@@ -832,6 +843,24 @@ export default function RecordForm() {
       showToast(msg, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCancelForm = () => {
+    const returnCampaign = location.state?.returnToCampaign || location.state?.campaignName || location.state?.campaign;
+    if (returnCampaign) {
+      navigate(`/my-campaign?campaign=${encodeURIComponent(returnCampaign)}`, {
+        state: {
+          autoOpenCampaign: returnCampaign,
+          returnTab: location.state?.returnTab,
+          returnPage: location.state?.returnPage,
+          returnPageSize: location.state?.returnPageSize
+        }
+      });
+    } else if (location.state?.fromCampaignLeadId) {
+      navigate('/my-campaign');
+    } else {
+      navigate(`/modules/${apiPath}`);
     }
   };
 
@@ -1712,13 +1741,14 @@ export default function RecordForm() {
           </div>
 
           <div className="flex items-center gap-2.5 ml-auto sm:ml-0">
-            <Link
-              to={location.state?.fromCampaignLeadId ? "/my-campaign" : "/modules/leads"}
+            <button
+              type="button"
+              onClick={handleCancelForm}
               className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
               Cancel
-            </Link>
+            </button>
             <button
               type="button"
               onClick={handleSubmit(onSubmitForm)}
@@ -2341,13 +2371,14 @@ export default function RecordForm() {
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-              <Link
-                to={location.state?.fromCampaignLeadId ? "/my-campaign" : "/modules/leads"}
+              <button
+                type="button"
+                onClick={handleCancelForm}
                 className="h-10 px-4 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#e11d48] border border-[#fecdd3] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Icons.X className="w-3.5 h-3.5 stroke-[2.5]" />
                 Cancel
-              </Link>
+              </button>
               <button
                 type="submit"
                 disabled={saving}
@@ -2429,12 +2460,13 @@ export default function RecordForm() {
 
           {/* Centered actions footer */}
           <div className="p-4 sm:p-6 bg-[#F8F5F1]/60 dark:bg-slate-850 border-t border-[#EAE4DA] dark:border-slate-800 flex items-center justify-center gap-3 sm:gap-4">
-            <Link
-              to={location.state?.fromCampaignLeadId ? "/my-campaign" : `/modules/${activeModule.apiPath}`}
-              className="btn-secondary-premium h-10 px-5 text-xs font-bold"
+            <button
+              type="button"
+              onClick={handleCancelForm}
+              className="btn-secondary-premium h-10 px-5 text-xs font-bold cursor-pointer"
             >
               Cancel
-            </Link>
+            </button>
             <button
               type="submit"
               disabled={saving}
