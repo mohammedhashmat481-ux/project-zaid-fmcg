@@ -232,16 +232,24 @@ async function main() {
       // Step A: Create backup table with exact duplicates
       console.log(`[Backup] Creating backup table: "${backupTableName}"...`);
       await executor.query(
-        `CREATE TABLE "${backupTableName}" AS 
-         SELECT * FROM custom_records WHERE id = ANY($1::varchar[])`,
-        [allRemovableIds]
+        `CREATE TABLE "${backupTableName}" (LIKE custom_records INCLUDING ALL)`
       );
-      console.log(`[Backup] Safely backed up ${allRemovableIds.length} duplicate records to "${backupTableName}".`);
+      const batchSize = 1000;
+      for (let i = 0; i < allRemovableIds.length; i += batchSize) {
+        const batch = allRemovableIds.slice(i, i + batchSize);
+        await executor.query(
+          `INSERT INTO "${backupTableName}" SELECT * FROM custom_records WHERE id = ANY($1::varchar[])`,
+          [batch]
+        );
+        console.log(`[Backup] Backed up ${Math.min(i + batchSize, allRemovableIds.length)} / ${allRemovableIds.length} records...`);
+      }
+      console.log(`[Backup] Safely backed up all ${allRemovableIds.length} duplicate records to "${backupTableName}".`);
 
       // Step B: Update primary records with merged business partners so zero partner data is lost
       console.log(`[Merge] Updating primary records with merged business partners...`);
       let updateCount = 0;
-      for (const update of updatesToPrimary) {
+      for (let i = 0; i < updatesToPrimary.length; i++) {
+        const update = updatesToPrimary[i];
         if (update.mergedPartners) {
           await executor.query(
             `UPDATE custom_records 
@@ -252,18 +260,21 @@ async function main() {
           );
           updateCount++;
         }
+        if ((i + 1) % 1000 === 0 || i === updatesToPrimary.length - 1) {
+          console.log(`[Merge] Processed ${i + 1} / ${updatesToPrimary.length} primary records...`);
+        }
       }
-      console.log(`[Merge] Updated ${updateCount} primary leads with merged partner lists.`);
+      console.log(`[Merge] Successfully updated ${updateCount} primary leads with merged partner lists.`);
 
-      // Step C: Delete redundant clone IDs in batches of 500
+      // Step C: Delete redundant clone IDs in safe batches of 1000
       console.log(`[Cleanup] Deleting ${allRemovableIds.length} redundant clone records...`);
-      const batchSize = 500;
       for (let i = 0; i < allRemovableIds.length; i += batchSize) {
         const batch = allRemovableIds.slice(i, i + batchSize);
         await executor.query(
           `DELETE FROM custom_records WHERE id = ANY($1::varchar[])`,
           [batch]
         );
+        console.log(`[Cleanup] Deleted ${Math.min(i + batchSize, allRemovableIds.length)} / ${allRemovableIds.length} records...`);
       }
       console.log(`[Cleanup] Successfully removed ${allRemovableIds.length} duplicate clone records.`);
     });
