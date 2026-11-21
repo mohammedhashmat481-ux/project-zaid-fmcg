@@ -10,148 +10,222 @@ dotenv.config({ path: path.resolve(process.cwd(), 'backend/.env') });
 /**
  * Script: cleanDuplicateLeads.ts
  *
- * Description:
- * Detects and safely resolves duplicate leads created by the multi-partner / double-submit bug.
+ * Safe Multi-Partner / Double-Submit Lead Deduplication Engine
  *
- * Modes:
- *   1. Preview mode (Default, read-only):
- *      npx ts-node src/utils/cleanDuplicateLeads.ts --preview
- *      Finds duplicates, calculates statistics, and prints sample duplicate groups.
- *      Modifies ZERO data.
- *
- *   2. Execute mode (Safe cleanup with automatic backup):
- *      npx ts-node src/utils/cleanDuplicateLeads.ts --execute
- *      - Backs up all duplicate records into a new table: backup_duplicate_leads_<timestamp>
- *      - Merges business partners from duplicates into the primary lead
- *      - Removes redundant clone records
+ * Options:
+ *   --preview       (Default) Read-only report. Modifies ZERO records.
+ *   --burst-only    (Recommended) Only cleans duplicate leads created at the same time
+ *                   (within 15 minutes of each other, e.g. yesterday's partner split bug).
+ *                   Safely leaves historical campaign leads untouched.
+ *   --all-time      Cleans all duplicate phone numbers across the entire database history.
+ *   --execute       Applies the cleanup with automatic database backup & partner merge.
  */
 
-interface DuplicateGroup {
+interface LeadRow {
+  id: string;
   organization_id: string;
   module_id: string;
-  phone: string;
+  phone_number: string;
+  partner: string;
   lead_name: string;
-  count: number;
-  record_ids: string[];
-  created_dates: string[];
-  partners: string[];
+  created_at: Date;
+}
+
+interface DuplicateCluster {
+  phoneNumber: string;
+  leadName: string;
+  primaryId: string;
+  primaryCreatedAt: Date;
+  cloneIds: string[];
+  cloneCreatedAts: Date[];
+  allPartners: string[];
+  isBurst: boolean; // Created within 15 minutes of each other
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const isExecute = args.includes('--execute');
+  const isAllTime = args.includes('--all-time');
+  const isBurstOnly = !isAllTime || args.includes('--burst-only');
   const isPreview = !isExecute || args.includes('--preview');
 
-  console.log('======================================================');
+  console.log('========================================================================');
   console.log(`[Lead Deduplication] Mode: ${isExecute ? 'EXECUTE (CLEANUP & MERGE)' : 'PREVIEW ONLY (READ-ONLY)'}`);
-  console.log('======================================================');
+  console.log(`[Lead Deduplication] Scope: ${isAllTime ? 'ALL TIME (All historical duplicates)' : 'BURST CLONES ONLY (Created within 15 mins / Yesterday)'}`);
+  console.log('========================================================================\n');
 
   await connectDB();
 
   try {
-    // 1. Identify module_id for 'leads'
     const moduleRes = await queryPg(
       `SELECT id, organization_id, name, api_path FROM module_definitions WHERE api_path = 'leads'`
     );
-    
+
     if (!moduleRes || moduleRes.length === 0) {
       console.log('[Lead Deduplication] No "leads" module found.');
       return;
     }
 
     const leadModuleIds = moduleRes.map((m: any) => m.id);
-    console.log(`[Lead Deduplication] Found ${leadModuleIds.length} lead module definition(s).`);
 
-    // 2. Query potential duplicates based on organization, module, and customer phone/mobile
-    // Group by organization_id, module_id, and phone number (where phone is not empty)
-    const findDuplicatesSql = `
-      WITH duplicate_groups AS (
-        SELECT 
-          organization_id,
-          module_id,
-          TRIM(LOWER(COALESCE(NULLIF(data->>'phone', ''), NULLIF(data->>'mobile', ''), NULLIF(data->>'phoneNumber', '')))) as phone_number,
-          COUNT(*) as cnt,
-          ARRAY_AGG(id ORDER BY created_at ASC, id ASC) as ids,
-          ARRAY_AGG(COALESCE(data->>'businessPartner', '') ORDER BY created_at ASC) as partner_list,
-          ARRAY_AGG(created_at ORDER BY created_at ASC) as created_times,
-          MIN(COALESCE(data->>'leadName', data->>'name', '')) as sample_name
-        FROM custom_records
-        WHERE module_id = ANY($1::varchar[])
-          AND (
-            (data->>'phone' IS NOT NULL AND TRIM(data->>'phone') != '')
-            OR (data->>'mobile' IS NOT NULL AND TRIM(data->>'mobile') != '')
-            OR (data->>'phoneNumber' IS NOT NULL AND TRIM(data->>'phoneNumber') != '')
-          )
-        GROUP BY 
-          organization_id, 
-          module_id, 
-          TRIM(LOWER(COALESCE(NULLIF(data->>'phone', ''), NULLIF(data->>'mobile', ''), NULLIF(data->>'phoneNumber', ''))))
-        HAVING COUNT(*) > 1
-      )
-      SELECT * FROM duplicate_groups
-      ORDER BY cnt DESC;
+    // 1. Fetch all leads with non-empty phone numbers ordered by phone and creation time
+    const fetchSql = `
+      SELECT 
+        id,
+        organization_id,
+        module_id,
+        TRIM(LOWER(COALESCE(NULLIF(data->>'phone', ''), NULLIF(data->>'mobile', ''), NULLIF(data->>'phoneNumber', '')))) as phone_number,
+        COALESCE(data->>'businessPartner', '') as partner,
+        COALESCE(data->>'leadName', data->>'name', '') as lead_name,
+        created_at
+      FROM custom_records
+      WHERE module_id = ANY($1::varchar[])
+        AND (
+          (data->>'phone' IS NOT NULL AND TRIM(data->>'phone') != '')
+          OR (data->>'mobile' IS NOT NULL AND TRIM(data->>'mobile') != '')
+          OR (data->>'phoneNumber' IS NOT NULL AND TRIM(data->>'phoneNumber') != '')
+        )
+      ORDER BY organization_id, module_id, phone_number, created_at ASC, id ASC;
     `;
 
-    const duplicateRows: any[] = await queryPg(findDuplicatesSql, [leadModuleIds]);
+    console.log('[Lead Deduplication] Scanning database records...');
+    const allRecords: any[] = await queryPg(fetchSql, [leadModuleIds]);
+    console.log(`[Lead Deduplication] Total leads analyzed: ${allRecords.length}`);
 
-    if (duplicateRows.length === 0) {
-      console.log('\n[Lead Deduplication] Excellent! Zero duplicate lead groups found.');
-      return;
-    }
-
-    let totalDuplicateSets = duplicateRows.length;
-    let totalExcessRecords = 0;
-    const allRemovableIds: string[] = [];
-    const updatesToPrimary: { id: string; mergedPartners: string }[] = [];
-
-    for (const group of duplicateRows) {
-      const ids: string[] = group.ids;
-      const partners: string[] = group.partner_list || [];
-      const primaryId = ids[0];
-      const cloneIds = ids.slice(1);
-
-      totalExcessRecords += cloneIds.length;
-      allRemovableIds.push(...cloneIds);
-
-      // Collect unique non-empty business partners
-      const partnerSet = new Set<string>();
-      for (const p of partners) {
-        if (!p) continue;
-        const split = p.split(',').map((s: string) => s.trim()).filter(Boolean);
-        split.forEach((s: string) => partnerSet.add(s));
+    // 2. Group by (organization_id + module_id + phone_number)
+    const phoneGroups = new Map<string, any[]>();
+    for (const r of allRecords) {
+      const key = `${r.organization_id}::${r.module_id}::${r.phone_number}`;
+      if (!phoneGroups.has(key)) {
+        phoneGroups.set(key, []);
       }
-      const merged = Array.from(partnerSet).join(', ');
-      updatesToPrimary.push({ id: primaryId, mergedPartners: merged });
+      phoneGroups.get(key)!.push(r);
     }
 
-    console.log(`\n--- Deduplication Summary ---`);
-    console.log(`Duplicate phone groups found : ${totalDuplicateSets}`);
-    console.log(`Total duplicate clone records : ${totalExcessRecords}`);
-    console.log(`Primary records to preserve   : ${totalDuplicateSets}`);
+    const burstClusters: DuplicateCluster[] = [];
+    const historicalClusters: DuplicateCluster[] = [];
 
-    console.log('\n--- Sample Duplicate Groups (First 5) ---');
-    for (let i = 0; i < Math.min(5, duplicateRows.length); i++) {
-      const g = duplicateRows[i];
+    const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+    for (const [key, records] of phoneGroups.entries()) {
+      if (records.length <= 1) continue;
+
+      // Check time differences between records
+      // If records were created within 15 minutes of the first record, they are burst duplicates (the partner split bug)
+      let currentCluster: any[] = [records[0]];
+
+      for (let i = 1; i < records.length; i++) {
+        const prev = records[i - 1];
+        const curr = records[i];
+        const diffMs = Math.abs(new Date(curr.created_at).getTime() - new Date(prev.created_at).getTime());
+
+        if (diffMs <= FIFTEEN_MINUTES_MS) {
+          // Burst clone! (Created simultaneously or within 15 mins)
+          currentCluster.push(curr);
+        } else {
+          // Time gap > 15 mins: this is a separate historical event
+          if (currentCluster.length > 1) {
+            burstClusters.push(createCluster(currentCluster, true));
+          }
+          currentCluster = [curr];
+        }
+      }
+
+      if (currentCluster.length > 1) {
+        burstClusters.push(createCluster(currentCluster, true));
+      }
+
+      // Also record all-time cluster
+      historicalClusters.push(createCluster(records, false));
+    }
+
+    function createCluster(recs: any[], isBurst: boolean): DuplicateCluster {
+      const primary = recs[0];
+      const clones = recs.slice(1);
+      const partners: string[] = [];
+      recs.forEach(r => {
+        if (r.partner) {
+          r.partner.split(',').forEach((p: string) => {
+            const trimmed = p.trim();
+            if (trimmed && !partners.includes(trimmed)) partners.push(trimmed);
+          });
+        }
+      });
+
+      return {
+        phoneNumber: primary.phone_number,
+        leadName: primary.lead_name,
+        primaryId: primary.id,
+        primaryCreatedAt: new Date(primary.created_at),
+        cloneIds: clones.map(c => c.id),
+        cloneCreatedAts: clones.map(c => new Date(c.created_at)),
+        allPartners: partners,
+        isBurst
+      };
+    }
+
+    const totalBurstClones = burstClusters.reduce((sum, c) => sum + c.cloneIds.length, 0);
+    const totalHistoricalClones = historicalClusters.reduce((sum, c) => sum + c.cloneIds.length, 0);
+
+    console.log('\n--- Analysis Breakdown ---');
+    console.log(`1. BURST DUPLICATES (Created within 15 mins of each other / Partner Split Bug):`);
+    console.log(`   - Duplicate Groups : ${burstClusters.length}`);
+    console.log(`   - Excess Clones    : ${totalBurstClones} duplicate leads`);
+    console.log(`\n2. ALL-TIME REPEATS (Includes historical campaigns dating back weeks):`);
+    console.log(`   - Duplicate Groups : ${historicalClusters.length}`);
+    console.log(`   - Excess Clones    : ${totalHistoricalClones} duplicate leads`);
+
+    // Choose target clusters based on selected mode
+    const targetClusters = isAllTime ? historicalClusters : burstClusters;
+    const targetExcessCount = isAllTime ? totalHistoricalClones : totalBurstClones;
+
+    console.log(`\n--- Target for Cleanup (${isAllTime ? 'ALL-TIME' : 'BURST ONLY - RECOMMENDED'}) ---`);
+    console.log(`Selected Groups: ${targetClusters.length}`);
+    console.log(`Clones to remove: ${targetExcessCount}`);
+
+    console.log('\n--- Sample Duplicate Groups to be Cleaned (First 5) ---');
+    for (let i = 0; i < Math.min(5, targetClusters.length); i++) {
+      const c = targetClusters[i];
       console.log(`Group #${i + 1}:`);
-      console.log(`  Customer Name   : ${g.sample_name || 'N/A'}`);
-      console.log(`  Phone           : ${g.phone_number}`);
-      console.log(`  Total Copies    : ${g.cnt}`);
-      console.log(`  Keep Primary ID : ${g.ids[0]} (Created: ${g.created_times[0]})`);
-      console.log(`  Clone IDs       : ${g.ids.slice(1).join(', ')}`);
-      console.log(`  Merged Partners : ${updatesToPrimary[i]?.mergedPartners || 'None'}`);
+      console.log(`  Customer Name   : ${c.leadName || 'N/A'}`);
+      console.log(`  Phone Number    : ${c.phoneNumber}`);
+      console.log(`  Keep Primary ID : ${c.primaryId} (Created: ${c.primaryCreatedAt.toISOString()})`);
+      console.log(`  Clone IDs (${c.cloneIds.length}): ${c.cloneIds.join(', ')}`);
+      console.log(`  Merged Partners : ${c.allPartners.join(', ') || 'None'}`);
     }
 
     if (isPreview) {
-      console.log('\n======================================================');
+      console.log('\n========================================================================');
       console.log('[PREVIEW MODE COMPLETE] ZERO records were modified or deleted.');
-      console.log('To safely back up, merge partners, and remove duplicate clones, run:');
-      console.log('  npx ts-node src/utils/cleanDuplicateLeads.ts --execute');
-      console.log('======================================================\n');
+      console.log('\nRECOMMENDED SAFE ACTION:');
+      console.log('To clean up ONLY the simultaneous burst duplicates (yesterday\'s bug) safely:');
+      console.log('  node dist/utils/cleanDuplicateLeads.js --burst-only --execute');
+      console.log('\nOr, if you want to clean ALL duplicates across all historical time:');
+      console.log('  node dist/utils/cleanDuplicateLeads.js --all-time --execute');
+      console.log('========================================================================\n');
       return;
     }
 
     // 3. EXECUTE MODE: Safe transaction with backup table creation
-    console.log('\n[Lead Deduplication] Starting Safe Cleanup in Execute Mode...');
+    console.log(`\n[Lead Deduplication] Starting Safe Cleanup in Execute Mode (${isAllTime ? 'ALL-TIME' : 'BURST-ONLY'})...`);
+    const allRemovableIds: string[] = [];
+    const updatesToPrimary: { id: string; mergedPartners: string }[] = [];
+
+    for (const c of targetClusters) {
+      allRemovableIds.push(...c.cloneIds);
+      if (c.allPartners.length > 0) {
+        updatesToPrimary.push({
+          id: c.primaryId,
+          mergedPartners: c.allPartners.join(', ')
+        });
+      }
+    }
+
+    if (allRemovableIds.length === 0) {
+      console.log('[Lead Deduplication] No records to remove.');
+      return;
+    }
+
     const backupTableName = `backup_duplicate_leads_${Date.now()}`;
 
     await withTransaction(async (executor) => {
@@ -200,12 +274,12 @@ async function main() {
       serverCache.clear();
     } catch (_) {}
 
-    console.log('\n======================================================');
+    console.log('\n========================================================================');
     console.log('✅ Deduplication completed successfully!');
     console.log(`- Redundant records removed : ${allRemovableIds.length}`);
     console.log(`- Backup preserved in table : ${backupTableName}`);
-    console.log(`- Zero customer data was lost.`);
-    console.log('======================================================\n');
+    console.log(`- Zero customer or bank partner data was lost.`);
+    console.log('========================================================================\n');
 
   } catch (error: any) {
     console.error('\n[Lead Deduplication] Error during deduplication:', error.message);
