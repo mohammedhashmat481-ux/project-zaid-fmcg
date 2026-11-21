@@ -1576,13 +1576,15 @@ export default function ModuleView() {
     }
   }, [apiPath, urlStatus, urlFollowup, urlSearch, modules.length]);
 
-  // Query records with 10 records per page for lightning fast performance
+  // Query records: campaigns use limit 100 so all drives are visible; leads use limit 10
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['records', apiPath, debouncedSearchVal, filterField, filterVal, page],
     queryFn: async () => {
+      const isCampaign = apiPath === 'campaigns' || apiPath === 'campaignassignments';
+      const limit = isCampaign ? 100 : 10;
       const params: Record<string, any> = {
         page,
-        limit: 10,
+        limit,
         search: debouncedSearchVal
       };
       if (filterField && filterVal) {
@@ -2489,6 +2491,39 @@ export default function ModuleView() {
               </tbody>
             </table>
           </div>
+
+          {/* Campaign Pagination Bar (if campaigns exceed limit) */}
+          {(() => {
+            const totalRecords = data?.pagination?.total ?? (data?.records?.length || 0);
+            const totalPages = Math.max(1, data?.pagination?.totalPages || Math.ceil(totalRecords / 100));
+            if (totalPages <= 1) return null;
+
+            return (
+              <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Page <span className="font-bold text-slate-900 dark:text-white font-mono">{page}</span> of <span className="font-bold text-slate-900 dark:text-white font-mono">{totalPages}</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p: number) => Math.max(1, p - 1))}
+                    className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-40 cursor-pointer hover:bg-slate-50 transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}
+                    className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-40 cursor-pointer hover:bg-slate-50 transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
         {/* CAMPAIGN STATUSES & TRIGGER CONFIGURATION MODAL (Super Admin / Admin) */}
         {showStatusModal && (
