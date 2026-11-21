@@ -194,6 +194,12 @@ async function main() {
       console.log(`[Cleanup] Successfully removed ${allRemovableIds.length} duplicate clone records.`);
     });
 
+    // Clear server cache so dashboard immediately reflects the cleaned counts
+    try {
+      const { serverCache } = require('./cache');
+      serverCache.clear();
+    } catch (_) {}
+
     console.log('\n======================================================');
     console.log('✅ Deduplication completed successfully!');
     console.log(`- Redundant records removed : ${allRemovableIds.length}`);
