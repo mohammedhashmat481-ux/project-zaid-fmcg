@@ -74,7 +74,6 @@ echo "Populating complete database record set and syncing campaign modules..."
 cd backend
 node dist/utils/syncCampaignModules.js || true
 node dist/utils/approveExistingUsers.js || true
-node dist/utils/seeder.js || true
 cd ..
 
 # 7. PM2 worker configurations & startup

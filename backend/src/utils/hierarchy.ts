@@ -77,26 +77,29 @@ export class HierarchyService {
 
     const allowedUsers = await User.find({ _id: { $in: allowedUserIds } }).select('_id firstName lastName email userCode');
 
-    const searchCriteria: any[] = [
-      { createdBy: { $in: allowedUserIds } },
-      { 'data.assignedTo': { $in: allowedUserIds.map(id => id.toString()) } }
-    ];
+    // Collect all valid identity tokens for all allowed users (normalized lowercase trimmed)
+    const allowedTokens = new Set<string>();
+    allowedUserIds.forEach(id => {
+      if (id) allowedTokens.add(String(id).toLowerCase().trim());
+    });
 
     allowedUsers.forEach((u: any) => {
-      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim();
-      if (fullName) {
-        const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escName + '\\s*$', 'i') });
-      }
-      if (u.email) {
-        const escEmail = u.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escEmail + '\\s*$', 'i') });
-      }
-      if (u.userCode) {
-        const escCode = u.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escCode + '\\s*$', 'i') });
-      }
+      if (u._id) allowedTokens.add(String(u._id).toLowerCase().trim());
+      if (u.id) allowedTokens.add(String(u.id).toLowerCase().trim());
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+      if (fullName) allowedTokens.add(fullName);
+      if (u.email) allowedTokens.add(u.email.trim().toLowerCase());
+      if (u.userCode) allowedTokens.add(u.userCode.trim().toLowerCase());
     });
+
+    const tokenArray = Array.from(allowedTokens);
+
+    // High-performance index-compatible search criteria using functional LOWER(TRIM(...))
+    const searchCriteria: any[] = [
+      { createdBy: { $in: allowedUserIds } },
+      { 'lower(trim(data.assignedTo))': { $in: tokenArray } },
+      { 'lower(trim(data.telecaller))': { $in: tokenArray } }
+    ];
 
     const hierarchyFilter = { $or: searchCriteria };
 

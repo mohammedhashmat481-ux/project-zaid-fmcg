@@ -25,43 +25,50 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const cleanQ = rawQ.replace(/^(lnd-|#)/i, '').trim();
 
     // Fetch all active modules for this organization
-    const modules = await ModuleDefinition.find({ organizationId: orgId });
+    const modules = await ModuleDefinition.find({ organizationId: orgId }).lean();
     const regex = new RegExp(cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
-    const searchResults: any[] = [];
+    const isNumericOnly = /^\d+$/.test(cleanQ);
+    const isEmailLike = cleanQ.includes('@');
 
-    for (const moduleDef of modules) {
-      const matchConditions: any[] = [
-        { 'data.firstName': regex },
-        { 'data.lastName': regex },
-        { 'data.fullName': regex },
-        { 'data.customerName': regex },
-        { 'data.leadName': regex },
-        { 'data.name': regex },
-        { 'data.phone': regex },
-        { 'data.mobile': regex },
-        { 'data.contactNumber': regex },
-        { 'data.contact_num': regex },
-        { 'data.contact': regex },
-        { 'data.dataCode': regex },
-        { 'data.data_code': regex },
-        { 'data.allocatedNo': regex },
-        { 'data.allocatedNumber': regex },
-        { 'data.leadNo': regex },
-        { 'data.leadNumber': regex },
-        { 'data.lead_no': regex },
-        { 'data.leadId': regex },
-        { 'data.company': regex },
-        { 'data.firmName': regex },
-        { 'data.firm': regex },
-        { 'data.email': regex },
-        { 'data.city': regex },
-        { 'data.location': regex },
-        { 'data.status': regex },
-        { 'data.loanType': regex },
-        { 'data.product': regex },
-        { 'data.caseDetails': regex }
-      ];
+    // Run module searches in parallel for instant multi-module search response
+    const searchPromises = modules.map(async (moduleDef: any) => {
+      let matchConditions: any[] = [];
+
+      if (isEmailLike) {
+        matchConditions = [
+          { 'data.email': regex },
+          { 'data.mail': regex }
+        ];
+      } else if (isNumericOnly) {
+        matchConditions = [
+          { 'data.phone': regex },
+          { 'data.mobile': regex },
+          { 'data.contactNumber': regex },
+          { 'data.contact_num': regex },
+          { 'data.leadNo': regex },
+          { 'data.allocatedNo': regex },
+          { 'data.dataCode': regex }
+        ];
+      } else {
+        matchConditions = [
+          { 'data.firstName': regex },
+          { 'data.lastName': regex },
+          { 'data.customerName': regex },
+          { 'data.leadName': regex },
+          { 'data.name': regex },
+          { 'data.phone': regex },
+          { 'data.mobile': regex },
+          { 'data.dataCode': regex },
+          { 'data.leadNo': regex },
+          { 'data.company': regex },
+          { 'data.firmName': regex },
+          { 'data.email': regex },
+          { 'data.city': regex },
+          { 'data.status': regex },
+          { 'data.loanType': regex }
+        ];
+      }
 
       // If cleanQ is valid ID, match exact _id
       if (PgObjectId.isValid(cleanQ)) {
@@ -75,25 +82,30 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
       const records = await CustomRecord.find({
         organizationId: orgId,
-        moduleId: moduleDef._id,
+        moduleId: moduleDef._id || moduleDef.id,
         $or: matchConditions
       })
         .sort({ updatedAt: -1 })
-        .limit(10);
+        .limit(10)
+        .lean();
 
-      if (records.length > 0) {
-        searchResults.push({
+      if (records && records.length > 0) {
+        return {
           module: {
-            _id: moduleDef._id,
+            _id: moduleDef._id || moduleDef.id,
             apiPath: moduleDef.apiPath,
             pluralLabel: moduleDef.pluralLabel,
             singularLabel: moduleDef.singularLabel,
             icon: moduleDef.icon || 'Layers'
           },
           records
-        });
+        };
       }
-    }
+      return null;
+    });
+
+    const settledResults = await Promise.all(searchPromises);
+    const searchResults = settledResults.filter(Boolean);
 
     res.status(200).json(searchResults);
   } catch (error) {

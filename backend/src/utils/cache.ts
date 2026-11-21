@@ -1,5 +1,5 @@
 // inkCRM In-Memory High-Performance TTL Cache Engine
-// Zero-dependency, lightweight, thread-safe for Node.js event loop
+// Zero-dependency, lightweight, LRU-bounded, thread-safe for Node.js event loop
 
 interface CacheEntry<T> {
   value: T;
@@ -9,12 +9,16 @@ interface CacheEntry<T> {
 class MemoryCache {
   private store = new Map<string, CacheEntry<any>>();
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private maxSize: number;
 
-  constructor() {
+  constructor(maxSize = 2500) {
+    this.maxSize = process.env.CACHE_MAX_ENTRIES ? Math.max(10, parseInt(process.env.CACHE_MAX_ENTRIES, 10)) : maxSize;
+
     // Run cleanup every 60 seconds
     this.cleanupInterval = setInterval(() => {
       this.purgeExpired();
     }, 60000);
+
     // Don't keep the process alive just for the cleanup timer
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
@@ -30,10 +34,24 @@ class MemoryCache {
       return null;
     }
 
+    // LRU promotion: re-insert so key becomes most-recently used
+    this.store.delete(key);
+    this.store.set(key, entry);
+
     return entry.value as T;
   }
 
   set<T>(key: string, value: T, ttlSeconds: number): void {
+    if (this.store.has(key)) {
+      this.store.delete(key);
+    } else if (this.store.size >= this.maxSize) {
+      // Evict least-recently used entry (first entry in Map)
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.store.delete(oldestKey);
+      }
+    }
+
     this.store.set(key, {
       value,
       expiresAt: Date.now() + ttlSeconds * 1000
@@ -89,6 +107,7 @@ class MemoryCache {
   stats() {
     return {
       size: this.store.size,
+      maxSize: this.maxSize,
       uptime: process.uptime()
     };
   }
@@ -105,17 +124,27 @@ export const CacheKeys = {
   userDropdown: (orgId: string) => `users:dropdown:${orgId}`,
   campaigns: (orgId: string, userKey: string) => `campaigns:my:${orgId}:${userKey}`,
   campaignDetails: (orgId: string, campaignName: string) => `campaigns:details:${orgId}:${campaignName.toLowerCase().trim()}`,
-  campaignMatrix: (orgId: string, queryStr: string) => `reports:matrix:${orgId}:${queryStr}`
+  campaignMatrix: (orgId: string, queryStr: string) => `reports:matrix:${orgId}:${queryStr}`,
+  tenantById: (id: string) => `tenant:id:${id}`,
+  tenantBySubdomain: (subdomain: string) => `tenant:subdomain:${subdomain.toLowerCase().trim()}`
 };
 
 export const CacheInvalidators = {
+  invalidateTenant: (orgId?: string, subdomain?: string) => {
+    if (orgId) serverCache.delete(`tenant:id:${orgId}`);
+    if (subdomain) serverCache.delete(`tenant:subdomain:${subdomain.toLowerCase().trim()}`);
+  },
   invalidateDashboard: (orgId: string) => {
     return serverCache.invalidatePattern(new RegExp(`^dash:metrics:${orgId}(:|$)`));
   },
-  invalidateCampaigns: (orgId: string) => {
-    serverCache.invalidatePattern(new RegExp(`^campaigns:.*:${orgId}(:|$)`));
-    serverCache.invalidatePattern(new RegExp(`^reports:matrix:${orgId}(:|$)`));
-    return serverCache.invalidatePattern(new RegExp(`^dash:metrics:${orgId}(:|$)`));
+  invalidateCampaigns: (orgId: string, campaignName?: string) => {
+    if (campaignName) {
+      serverCache.invalidatePattern(new RegExp(`^campaigns:details:${orgId}:${campaignName.toLowerCase().trim()}`));
+    }
+    return serverCache.invalidatePattern(new RegExp(`^campaigns:.*:${orgId}(:|$)`));
+  },
+  invalidateReports: (orgId: string) => {
+    return serverCache.invalidatePattern(new RegExp(`^reports:matrix:${orgId}(:|$)`));
   },
   invalidateMaster: (orgId: string, apiPath?: string) => {
     if (apiPath) {

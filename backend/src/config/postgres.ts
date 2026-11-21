@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { PGlite } from '@electric-sql/pglite';
 import path from 'path';
 import fs from 'fs';
@@ -12,12 +12,87 @@ dotenv.config({ path: path.resolve(process.cwd(), 'backend/.env') });
 let pool: Pool | null = null;
 let pgliteInstance: PGlite | null = null;
 
-const dbDataDir = path.resolve(__dirname, '../../../pg-data');
+const getConfiguredDataDir = (): string => {
+  const envDir = process.env.PG_DATA_DIR;
+  if (envDir) {
+    return path.isAbsolute(envDir) ? envDir : path.resolve(process.cwd(), envDir);
+  }
+  return path.resolve(__dirname, '../../../pg-data');
+};
+
+const dbDataDir = getConfiguredDataDir();
 
 export const getPgDriver = (): { type: 'pool' | 'pglite'; client: Pool | PGlite } => {
   if (pool) return { type: 'pool', client: pool };
   if (pgliteInstance) return { type: 'pglite', client: pgliteInstance };
   throw new Error('PostgreSQL connection has not been initialized.');
+};
+
+export interface PgExecutor {
+  query: (sql: string, params?: any[]) => Promise<any>;
+  exec?: (sql: string) => Promise<any>;
+}
+
+/**
+ * Execute a unit of work inside an isolated database transaction with guaranteed client checkout & release.
+ * In a pooled environment, this ensures all queries run strictly on the SAME client and releases the client in finally.
+ */
+export const withTransaction = async <T>(
+  callback: (executor: PgExecutor) => Promise<T>
+): Promise<T> => {
+  if (pool) {
+    const client: PoolClient = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const executor: PgExecutor = {
+        query: async (sql: string, params: any[] = []) => {
+          const res = await client.query(sql, params);
+          return res.rows;
+        },
+        exec: async (sql: string) => {
+          return client.query(sql);
+        }
+      };
+      const result = await callback(executor);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr: any) {
+        console.error('[PostgreSQL Transaction] Rollback error:', rollbackErr.message);
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else if (pgliteInstance) {
+    const pglite = pgliteInstance;
+    try {
+      await pglite.exec('BEGIN');
+      const executor: PgExecutor = {
+        query: async (sql: string, params: any[] = []) => {
+          const res = await pglite.query(sql, params);
+          return res.rows;
+        },
+        exec: async (sql: string) => {
+          return pglite.exec(sql);
+        }
+      };
+      const result = await callback(executor);
+      await pglite.exec('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await pglite.exec('ROLLBACK');
+      } catch (rollbackErr: any) {
+        console.error('[PGlite Transaction] Rollback error:', rollbackErr.message);
+      }
+      throw err;
+    }
+  } else {
+    throw new Error('PostgreSQL database not initialized.');
+  }
 };
 
 export const queryPg = async (sql: string, params: any[] = []): Promise<any> => {
@@ -62,6 +137,14 @@ export const execPg = async (sql: string): Promise<any> => {
 
 export const connectPostgres = async (): Promise<void> => {
   const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Strict production safety: In production mode, silent fallback to PGlite is STRICTLY FORBIDDEN
+  if (isProd && (!dbUrl || !dbUrl.startsWith('postgres'))) {
+    throw new Error(
+      'FATAL CONFIGURATION ERROR: In production mode (NODE_ENV=production), a valid PostgreSQL connection string (DATABASE_URL) is MANDATORY. Silent fallback to embedded PGlite is disabled in production to protect customer data integrity and prevent memory exhaustion.'
+    );
+  }
 
   if (dbUrl && dbUrl.startsWith('postgres')) {
     console.log('[PostgreSQL] Connecting via Pool to DATABASE_URL...');
@@ -80,16 +163,20 @@ export const connectPostgres = async (): Promise<void> => {
       client.release();
     } catch (err: any) {
       console.error('[PostgreSQL] Connection Pool error:', err.message);
-      console.log('[PostgreSQL] Falling back to local embedded PGlite storage engine...');
+      if (isProd) {
+        throw new Error(`FATAL DATABASE ERROR: Could not connect to PostgreSQL server: ${err.message}. Server startup aborted.`);
+      }
+      console.log('[PostgreSQL] Falling back to local embedded PGlite storage engine (non-production mode)...');
       pool = null;
     }
   }
 
   if (!pool) {
-    if (!fs.existsSync(dbDataDir)) {
-      fs.mkdirSync(dbDataDir, { recursive: true });
+    const dataDir = getConfiguredDataDir();
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
-    const stalePid = path.join(dbDataDir, 'postmaster.pid');
+    const stalePid = path.join(dataDir, 'postmaster.pid');
     if (fs.existsSync(stalePid)) {
       try {
         fs.unlinkSync(stalePid);
@@ -98,8 +185,8 @@ export const connectPostgres = async (): Promise<void> => {
         console.warn('[PostgreSQL] Could not remove postmaster.pid:', err.message);
       }
     }
-    console.log(`[PostgreSQL] Initializing local PostgreSQL storage engine at: ${dbDataDir}`);
-    pgliteInstance = new PGlite(dbDataDir);
+    console.log(`[PostgreSQL] Initializing local PostgreSQL storage engine at: ${dataDir}`);
+    pgliteInstance = new PGlite(dataDir);
     await pgliteInstance.waitReady;
     console.log('[PostgreSQL] Local PGlite engine ready.');
   }
@@ -251,6 +338,13 @@ export const initPostgresSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_cr_org_mod_datacode ON custom_records (organization_id, module_id, lower(data->>'dataCode'));
     CREATE INDEX IF NOT EXISTS idx_cr_org_mod_leadname ON custom_records (organization_id, module_id, lower(data->>'leadName'));
     CREATE INDEX IF NOT EXISTS idx_cr_created_asc ON custom_records (created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_created_asc ON custom_records (organization_id, module_id, created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_assigned_lower ON custom_records (organization_id, module_id, lower(trim(data->>'assignedTo')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_campname_lower ON custom_records (organization_id, module_id, lower(trim(data->>'campaignName')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_campaign_lower ON custom_records (organization_id, module_id, lower(trim(data->>'campaign')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_source_lower ON custom_records (organization_id, module_id, lower(trim(data->>'source')));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_campaign_name_alt ON custom_records (lower(data->>'campaign_name'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_telecaller ON custom_records (lower(data->>'telecaller'));
     CREATE INDEX IF NOT EXISTS idx_cr_data_gin ON custom_records USING gin (data);
 
     CREATE TABLE IF NOT EXISTS activities (

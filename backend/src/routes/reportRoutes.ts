@@ -98,12 +98,38 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       registeredCampaignNames = campRows.map((r: any) => (r.name || '').trim()).filter(Boolean);
     }
 
-    // Fetch Campaign Assignments
+    // Fetch Campaign Assignments with database-level campaign filtering
     let assignmentDocs: any[] = [];
     if (assignmentModule) {
-      assignmentDocs = await CustomRecord.find({ organizationId: orgId, moduleId: assignmentModule._id || assignmentModule.id })
-        .select('_id data.campaign data.campaignName data.assignedTo data.telecaller createdAt')
-        .lean();
+      const assignModId = assignmentModule._id || assignmentModule.id;
+      const assignSqlParams: any[] = [orgId, assignModId];
+      let assignWhereClause = `WHERE organization_id = $1 AND module_id = $2`;
+      if (campaignName && campaignName !== 'ALL') {
+        assignSqlParams.push(String(campaignName).toLowerCase().trim());
+        assignWhereClause += ` AND (lower(COALESCE(data->>'campaign', '')) = $3 OR lower(COALESCE(data->>'campaignName', '')) = $3)`;
+      }
+      const assignRows = await queryPg(
+        `SELECT id as _id, 
+                data->>'campaign' as campaign, 
+                data->>'campaignName' as "campaignName", 
+                data->>'assignedTo' as "assignedTo", 
+                data->>'telecaller' as telecaller, 
+                created_at as "createdAt"
+         FROM custom_records
+         ${assignWhereClause}`,
+        assignSqlParams
+      );
+      assignmentDocs = assignRows.map((r: any) => ({
+        _id: r._id,
+        id: r._id,
+        createdAt: r.createdAt,
+        data: {
+          campaign: r.campaign,
+          campaignName: r.campaignName,
+          assignedTo: r.assignedTo,
+          telecaller: r.telecaller
+        }
+      }));
     }
 
     // Fast SQL Query for Leads with direct field projection & database-level campaign filter

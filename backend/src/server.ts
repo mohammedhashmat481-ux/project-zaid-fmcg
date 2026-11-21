@@ -121,74 +121,44 @@ const startServer = async () => {
       logger.warn(`[Migration Warning] Could not clean Leads source schema: ${leadMigErr.message}`);
     }
 
-    // 4. One-time status migration: Update legacy status names to user-defined names
+    // 4. One-time status migration: Update legacy status names to user-defined names (guarded)
     try {
-      await queryPg(
-        `UPDATE statuses 
-         SET name = 'STATUS PENDING' 
-         WHERE UPPER(name) IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
+      const pendingStatuses = await queryPg(
+        `SELECT id FROM custom_records 
+         WHERE UPPER(data->>'status') IN ('APPROVAL PENDING', 'APPROVALS PENDING', 'APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE') 
+         LIMIT 1`
       );
-      await queryPg(
-        `UPDATE statuses 
-         SET name = 'APPROVED' 
-         WHERE UPPER(name) IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
-      );
-      await queryPg(
-        `UPDATE custom_records 
-         SET data = jsonb_set(data, '{status}', '"STATUS PENDING"')
-         WHERE UPPER(data->>'status') IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
-      );
-      await queryPg(
-        `UPDATE custom_records 
-         SET data = jsonb_set(data, '{status}', '"APPROVED"')
-         WHERE UPPER(data->>'status') IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
-      );
-      logger.info('[Migration] Status names verified (STATUS PENDING & APPROVED).');
+      if (pendingStatuses && pendingStatuses.length > 0) {
+        await queryPg(
+          `UPDATE statuses 
+           SET name = 'STATUS PENDING' 
+           WHERE UPPER(name) IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
+        );
+        await queryPg(
+          `UPDATE statuses 
+           SET name = 'APPROVED' 
+           WHERE UPPER(name) IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
+        );
+        await queryPg(
+          `UPDATE custom_records 
+           SET data = jsonb_set(data, '{status}', '"STATUS PENDING"')
+           WHERE UPPER(data->>'status') IN ('APPROVAL PENDING', 'APPROVALS PENDING')`
+        );
+        await queryPg(
+          `UPDATE custom_records 
+           SET data = jsonb_set(data, '{status}', '"APPROVED"')
+           WHERE UPPER(data->>'status') IN ('APPROVED BUT NOT DISBUSE', 'APPROVED BUT NOT DISBURSED', 'APPROVED BUT NOT DISBURSE', 'APPROVE BUT NOT DISBUSE')`
+        );
+        logger.info('[Migration] Status names verified (STATUS PENDING & APPROVED).');
+      }
     } catch (stMigErr: any) {
       logger.warn(`[Migration Warning] Could not migrate status names: ${stMigErr.message}`);
     }
 
-    // 5. One-time lead source cleanup: ensure source is permanently set to telecaller / assigned agent names, NEVER Super Admin
+    // 5. One-time lead source cleanup: ensure source is permanently set to telecaller / assigned agent names (guarded)
     try {
-      await queryPg(
-        `UPDATE custom_records
-         SET data = jsonb_set(
-           jsonb_set(
-             jsonb_set(
-               data,
-               '{source}',
-               to_jsonb(
-                 COALESCE(
-                   NULLIF(data->>'dialedBy', ''),
-                   NULLIF(data->>'callerName', ''),
-                   NULLIF(data->>'assignedTo', ''),
-                   NULLIF(data->>'telecaller', ''),
-                   'Telecaller'
-                 )
-               )
-             ),
-             '{creatorName}',
-             to_jsonb(
-               COALESCE(
-                 NULLIF(data->>'dialedBy', ''),
-                 NULLIF(data->>'callerName', ''),
-                 NULLIF(data->>'assignedTo', ''),
-                 NULLIF(data->>'telecaller', ''),
-                 'Telecaller'
-               )
-             )
-           ),
-           '{createdByName}',
-           to_jsonb(
-             COALESCE(
-               NULLIF(data->>'dialedBy', ''),
-               NULLIF(data->>'callerName', ''),
-               NULLIF(data->>'assignedTo', ''),
-               NULLIF(data->>'telecaller', ''),
-               'Telecaller'
-             )
-           )
-         )
+      const pendingSources = await queryPg(
+        `SELECT id FROM custom_records
          WHERE (
            data->>'source' = 'Super Admin'
            OR data->>'source' = data->>'campaignName'
@@ -203,9 +173,67 @@ const startServer = async () => {
            OR NULLIF(data->>'callerName', '') IS NOT NULL
            OR NULLIF(data->>'assignedTo', '') IS NOT NULL
            OR NULLIF(data->>'telecaller', '') IS NOT NULL
-         )`
+         )
+         LIMIT 1`
       );
-      logger.info('[Migration] Lead sources permanently updated to telecaller / assigned agent names.');
+      if (pendingSources && pendingSources.length > 0) {
+        await queryPg(
+          `UPDATE custom_records
+           SET data = jsonb_set(
+             jsonb_set(
+               jsonb_set(
+                 data,
+                 '{source}',
+                 to_jsonb(
+                   COALESCE(
+                     NULLIF(data->>'dialedBy', ''),
+                     NULLIF(data->>'callerName', ''),
+                     NULLIF(data->>'assignedTo', ''),
+                     NULLIF(data->>'telecaller', ''),
+                     'Telecaller'
+                   )
+                 )
+               ),
+               '{creatorName}',
+               to_jsonb(
+                 COALESCE(
+                   NULLIF(data->>'dialedBy', ''),
+                   NULLIF(data->>'callerName', ''),
+                   NULLIF(data->>'assignedTo', ''),
+                   NULLIF(data->>'telecaller', ''),
+                   'Telecaller'
+                 )
+               )
+             ),
+             '{createdByName}',
+             to_jsonb(
+               COALESCE(
+                 NULLIF(data->>'dialedBy', ''),
+                 NULLIF(data->>'callerName', ''),
+                 NULLIF(data->>'assignedTo', ''),
+                 NULLIF(data->>'telecaller', ''),
+                 'Telecaller'
+               )
+             )
+           )
+           WHERE (
+             data->>'source' = 'Super Admin'
+             OR data->>'source' = data->>'campaignName'
+             OR data->>'source' = data->>'campaign'
+             OR data->>'source' = data->>'campaign_name'
+             OR data->>'source' ILIKE 'B2B-%'
+             OR data->>'source' ILIKE '%-VC-%'
+             OR data->>'source' ILIKE '%-G5-%'
+             OR data->>'source' ILIKE 'HAVERI-%'
+           ) AND (
+             NULLIF(data->>'dialedBy', '') IS NOT NULL
+             OR NULLIF(data->>'callerName', '') IS NOT NULL
+             OR NULLIF(data->>'assignedTo', '') IS NOT NULL
+             OR NULLIF(data->>'telecaller', '') IS NOT NULL
+           )`
+        );
+        logger.info('[Migration] Lead sources permanently updated to telecaller / assigned agent names.');
+      }
     } catch (srcMigErr: any) {
       logger.warn(`[Migration Warning] Could not migrate lead source names: ${srcMigErr.message}`);
     }
