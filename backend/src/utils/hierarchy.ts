@@ -69,6 +69,7 @@ export class HierarchyService {
       }
     }
 
+    if (!reqUser || !reqUser.id) return;
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
@@ -124,6 +125,7 @@ export class HierarchyService {
     reqUser: { id: string; roleId: string },
     orgId: string
   ): Promise<void> {
+    if (!reqUser || !reqUser.id) return;
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
@@ -138,6 +140,7 @@ export class HierarchyService {
     reqUser: { id: string; roleId: string },
     orgId: string
   ): Promise<void> {
+    if (!reqUser || !reqUser.id) return;
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 
@@ -152,6 +155,7 @@ export class HierarchyService {
     reqUser: { id: string; roleId: string },
     orgId: string
   ): Promise<void> {
+    if (!reqUser || !reqUser.id) return;
     const isSuper = await this.isSuperAdmin(reqUser.roleId);
     if (isSuper) return;
 

@@ -135,28 +135,49 @@ router.get('/metrics', async (req, res) => {
                 CustomRecord_1.default.aggregate([
                     { $match: leadQuery },
                     { $group: { _id: '$data.status', count: { $sum: 1 } } }
-                ]),
-                CustomRecord_1.default.countDocuments(followUpQuery),
+                ]).catch((err) => {
+                    console.warn('[Dashboard] Lead status aggregation warning:', err.message);
+                    return [];
+                }),
+                CustomRecord_1.default.countDocuments(followUpQuery).catch((err) => {
+                    console.warn('[Dashboard] Followup count warning:', err.message);
+                    return 0;
+                }),
                 CustomRecord_1.default.find(followUpQuery)
                     .select('_id data.firstName data.lastName data.company data.phone data.budget data.followUpDate data.status data.caseDetails createdBy')
                     .populate('createdBy', 'firstName lastName name email')
                     .sort({ 'data.followUpDate': 1 })
-                    .limit(10),
+                    .limit(10)
+                    .catch((err) => {
+                    console.warn('[Dashboard] Today followups list warning:', err.message);
+                    return [];
+                }),
                 CustomRecord_1.default.find(upcomingQuery)
                     .select('_id data.firstName data.lastName data.company data.phone data.budget data.followUpDate data.status data.caseDetails createdBy')
                     .populate('createdBy', 'firstName lastName name email')
                     .sort({ 'data.followUpDate': 1 })
-                    .limit(10),
+                    .limit(10)
+                    .catch((err) => {
+                    console.warn('[Dashboard] Upcoming followups list warning:', err.message);
+                    return [];
+                }),
                 dealModule
                     ? CustomRecord_1.default.aggregate([
                         { $match: dealQuery },
                         { $group: { _id: '$data.stage', total: { $sum: { $toDouble: '$data.amount' } } } }
-                    ])
+                    ]).catch((err) => {
+                        console.warn('[Dashboard] Deal stage aggregation warning:', err.message);
+                        return [];
+                    })
                     : Promise.resolve([]),
                 Activity_1.default.find(activityQuery)
                     .populate('userId', 'firstName lastName')
                     .sort({ createdAt: -1 })
                     .limit(10)
+                    .catch((err) => {
+                    console.warn('[Dashboard] Activity list warning:', err.message);
+                    return [];
+                })
             ]);
             // Retrieve real lead statuses (configured statuses from DB + standard pipeline statuses, excluding raw call dispositions)
             const realLeadStatuses = await (0, leadStatusHelper_1.getRealLeadStatuses)(orgId);

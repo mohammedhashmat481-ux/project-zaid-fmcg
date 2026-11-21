@@ -64,6 +64,8 @@ class HierarchyService {
                 // ignore and continue
             }
         }
+        if (!reqUser || !reqUser.id)
+            return;
         const isSuper = await this.isSuperAdmin(reqUser.roleId);
         if (isSuper)
             return;
@@ -115,6 +117,8 @@ class HierarchyService {
         }
     }
     static async modifyUserQuery(query, reqUser, orgId) {
+        if (!reqUser || !reqUser.id)
+            return;
         const isSuper = await this.isSuperAdmin(reqUser.roleId);
         if (isSuper)
             return;
@@ -123,6 +127,8 @@ class HierarchyService {
         query._id = { $in: allowedUserIds };
     }
     static async modifyAuditLogQuery(query, reqUser, orgId) {
+        if (!reqUser || !reqUser.id)
+            return;
         const isSuper = await this.isSuperAdmin(reqUser.roleId);
         if (isSuper)
             return;
@@ -131,6 +137,8 @@ class HierarchyService {
         query.userId = { $in: allowedUserIds };
     }
     static async modifyDocumentQuery(query, reqUser, orgId) {
+        if (!reqUser || !reqUser.id)
+            return;
         const isSuper = await this.isSuperAdmin(reqUser.roleId);
         if (isSuper)
             return;
