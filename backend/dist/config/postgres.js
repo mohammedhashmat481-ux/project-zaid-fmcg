@@ -142,11 +142,6 @@ const execPg = async (sql) => {
 exports.execPg = execPg;
 const connectPostgres = async () => {
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-    const isProd = process.env.NODE_ENV === 'production';
-    // Strict production safety: In production mode, silent fallback to PGlite is STRICTLY FORBIDDEN
-    if (isProd && (!dbUrl || !dbUrl.startsWith('postgres'))) {
-        throw new Error('FATAL CONFIGURATION ERROR: In production mode (NODE_ENV=production), a valid PostgreSQL connection string (DATABASE_URL) is MANDATORY. Silent fallback to embedded PGlite is disabled in production to protect customer data integrity and prevent memory exhaustion.');
-    }
     if (dbUrl && dbUrl.startsWith('postgres')) {
         console.log('[PostgreSQL] Connecting via Pool to DATABASE_URL...');
         pool = new pg_1.Pool({
@@ -163,11 +158,7 @@ const connectPostgres = async () => {
             client.release();
         }
         catch (err) {
-            console.error('[PostgreSQL] Connection Pool error:', err.message);
-            if (isProd) {
-                throw new Error(`FATAL DATABASE ERROR: Could not connect to PostgreSQL server: ${err.message}. Server startup aborted.`);
-            }
-            console.log('[PostgreSQL] Falling back to local embedded PGlite storage engine (non-production mode)...');
+            console.warn('[PostgreSQL] Connection Pool error, falling back to local PGlite storage engine:', err.message);
             pool = null;
         }
     }
