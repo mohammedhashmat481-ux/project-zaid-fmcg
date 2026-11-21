@@ -9,7 +9,6 @@ const ModuleDefinition_1 = __importDefault(require("../models/ModuleDefinition")
 const reportBuilder_1 = require("../services/reportBuilder");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const tenantMiddleware_1 = require("../middleware/tenantMiddleware");
-const CustomRecord_1 = __importDefault(require("../models/CustomRecord"));
 const User_1 = __importDefault(require("../models/User"));
 const cache_1 = require("../utils/cache");
 const postgres_1 = require("../config/postgres");
@@ -68,12 +67,35 @@ router.get('/campaign-matrix', async (req, res) => {
          WHERE organization_id = $1 AND module_id = $2`, [orgId, campaignModule._id || campaignModule.id]);
             registeredCampaignNames = campRows.map((r) => (r.name || '').trim()).filter(Boolean);
         }
-        // Fetch Campaign Assignments
+        // Fetch Campaign Assignments with database-level campaign filtering
         let assignmentDocs = [];
         if (assignmentModule) {
-            assignmentDocs = await CustomRecord_1.default.find({ organizationId: orgId, moduleId: assignmentModule._id || assignmentModule.id })
-                .select('_id data.campaign data.campaignName data.assignedTo data.telecaller createdAt')
-                .lean();
+            const assignModId = assignmentModule._id || assignmentModule.id;
+            const assignSqlParams = [orgId, assignModId];
+            let assignWhereClause = `WHERE organization_id = $1 AND module_id = $2`;
+            if (campaignName && campaignName !== 'ALL') {
+                assignSqlParams.push(String(campaignName).toLowerCase().trim());
+                assignWhereClause += ` AND (lower(COALESCE(data->>'campaign', '')) = $3 OR lower(COALESCE(data->>'campaignName', '')) = $3)`;
+            }
+            const assignRows = await (0, postgres_1.queryPg)(`SELECT id as _id, 
+                data->>'campaign' as campaign, 
+                data->>'campaignName' as "campaignName", 
+                data->>'assignedTo' as "assignedTo", 
+                data->>'telecaller' as telecaller, 
+                created_at as "createdAt"
+         FROM custom_records
+         ${assignWhereClause}`, assignSqlParams);
+            assignmentDocs = assignRows.map((r) => ({
+                _id: r._id,
+                id: r._id,
+                createdAt: r.createdAt,
+                data: {
+                    campaign: r.campaign,
+                    campaignName: r.campaignName,
+                    assignedTo: r.assignedTo,
+                    telecaller: r.telecaller
+                }
+            }));
         }
         // Fast SQL Query for Leads with direct field projection & database-level campaign filter
         let leadDocs = [];

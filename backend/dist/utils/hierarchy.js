@@ -70,25 +70,32 @@ class HierarchyService {
         const descendants = await this.getSubordinateUserIds(reqUser.id, orgId);
         const allowedUserIds = [String(reqUser.id), ...descendants];
         const allowedUsers = await User_1.default.find({ _id: { $in: allowedUserIds } }).select('_id firstName lastName email userCode');
+        // Collect all valid identity tokens for all allowed users (normalized lowercase trimmed)
+        const allowedTokens = new Set();
+        allowedUserIds.forEach(id => {
+            if (id)
+                allowedTokens.add(String(id).toLowerCase().trim());
+        });
+        allowedUsers.forEach((u) => {
+            if (u._id)
+                allowedTokens.add(String(u._id).toLowerCase().trim());
+            if (u.id)
+                allowedTokens.add(String(u.id).toLowerCase().trim());
+            const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+            if (fullName)
+                allowedTokens.add(fullName);
+            if (u.email)
+                allowedTokens.add(u.email.trim().toLowerCase());
+            if (u.userCode)
+                allowedTokens.add(u.userCode.trim().toLowerCase());
+        });
+        const tokenArray = Array.from(allowedTokens);
+        // High-performance index-compatible search criteria using functional LOWER(TRIM(...))
         const searchCriteria = [
             { createdBy: { $in: allowedUserIds } },
-            { 'data.assignedTo': { $in: allowedUserIds.map(id => id.toString()) } }
+            { 'lower(trim(data.assignedTo))': { $in: tokenArray } },
+            { 'lower(trim(data.telecaller))': { $in: tokenArray } }
         ];
-        allowedUsers.forEach((u) => {
-            const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim();
-            if (fullName) {
-                const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escName + '\\s*$', 'i') });
-            }
-            if (u.email) {
-                const escEmail = u.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escEmail + '\\s*$', 'i') });
-            }
-            if (u.userCode) {
-                const escCode = u.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                searchCriteria.push({ 'data.assignedTo': new RegExp('^\\s*' + escCode + '\\s*$', 'i') });
-            }
-        });
         const hierarchyFilter = { $or: searchCriteria };
         if (query.$or) {
             const existingOr = query.$or;

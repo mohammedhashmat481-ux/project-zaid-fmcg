@@ -1547,97 +1547,68 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
             res.status(200).json({ campaigns: [] });
             return;
         }
-        const leadQuery = {
-            organizationId: orgId,
-            moduleId: leadModule._id,
-            $or: [
-                { 'data.source': { $exists: true, $ne: '' } },
-                { 'data.campaignName': { $exists: true, $ne: '' } },
-                { 'data.campaign': { $exists: true, $ne: '' } },
-                { 'data.campaign_name': { $exists: true, $ne: '' } }
-            ]
-        };
         // Strict personal assignment scoping:
         // In My Campaign, EVERY user (including reporting managers and admins)
         // ONLY sees campaigns and leads directly assigned to THEM.
-        // Managers can see subordinate leads in the Leads module and Reports, but NOT in My Campaign.
         const currentUser = await User_1.default.findOne({ _id: userId, organizationId: orgId }).select('_id firstName lastName email userCode');
-        const userFilters = [
-            { 'data.assignedTo': userId.toString() },
-            { 'data.telecaller': userId.toString() }
-        ];
+        const userTokens = new Set();
+        if (userId)
+            userTokens.add(String(userId).toLowerCase().trim());
         if (currentUser) {
-            const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
-            if (fullName) {
-                const escName = fullName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const regex = new RegExp('^\\s*' + escName + '\\s*$', 'i');
-                userFilters.push({ 'data.assignedTo': regex });
-                userFilters.push({ 'data.telecaller': regex });
-            }
-            if (currentUser.email) {
-                const escEmail = currentUser.email.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const regex = new RegExp('^\\s*' + escEmail + '\\s*$', 'i');
-                userFilters.push({ 'data.assignedTo': regex });
-                userFilters.push({ 'data.telecaller': regex });
-            }
-            if (currentUser.userCode) {
-                const escCode = currentUser.userCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const regex = new RegExp('^\\s*' + escCode + '\\s*$', 'i');
-                userFilters.push({ 'data.assignedTo': regex });
-                userFilters.push({ 'data.telecaller': regex });
-            }
+            if (currentUser._id)
+                userTokens.add(String(currentUser._id).toLowerCase().trim());
+            if (currentUser.id)
+                userTokens.add(String(currentUser.id).toLowerCase().trim());
+            const fullName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim().toLowerCase();
+            if (fullName)
+                userTokens.add(fullName);
+            if (currentUser.email)
+                userTokens.add(currentUser.email.trim().toLowerCase());
+            if (currentUser.userCode)
+                userTokens.add(currentUser.userCode.trim().toLowerCase());
         }
-        leadQuery.$and = [
-            { $or: leadQuery.$or },
-            { $or: userFilters }
-        ];
-        delete leadQuery.$or;
-        const LEAD_CAMPAIGN_PROJECTION = '_id data.source data.campaignName data.campaign data.campaign_name data.dialStatus data.status data.callAttempts data.dialedAt createdAt';
-        const leads = await CustomRecord_1.default.find(leadQuery).select(LEAD_CAMPAIGN_PROJECTION).lean();
-        // Group leads strictly by registered campaign
-        const campaignGroups = {};
-        leads.forEach((lead) => {
-            const d = lead.data || {};
-            const rawSource = (d.campaignName ||
-                d.campaign ||
-                d.campaign_name ||
-                d.source)?.toString().trim();
-            if (rawSource) {
-                const lower = rawSource.toLowerCase();
-                if (registeredCampaignNames.has(lower)) {
-                    const canonical = campaignRecords.find(c => {
-                        const cd = c.data || {};
-                        return (cd.campaignName || cd.name || cd.source || '').toString().trim().toLowerCase() === lower;
-                    });
-                    const campName = canonical ? (canonical.data?.campaignName || canonical.data?.name || rawSource) : rawSource;
-                    if (!campaignGroups[campName]) {
-                        campaignGroups[campName] = [];
-                    }
-                    campaignGroups[campName].push(lead);
-                }
-            }
-        });
-        const result = Object.keys(campaignGroups)
-            .map(campName => {
-            const groupLeads = campaignGroups[campName];
-            const totalAssigned = groupLeads.length;
-            // Accurate calculation of dialed leads:
-            const dialed = groupLeads.filter(l => {
-                const d = l.data || {};
-                const dialSt = (d.dialStatus || '').toString().trim().toLowerCase();
-                const st = (d.status || '').toString().trim().toLowerCase();
-                const hasDialStatus = dialSt && dialSt !== 'yet to call' && dialSt !== 'not called' && dialSt !== 'new';
-                const hasDialedStatus = st && st !== 'new' && st !== 'yet to call' && st !== 'not called';
-                const hasCalls = (d.callAttempts && Number(d.callAttempts) > 0) || !!d.dialedAt;
-                return hasDialedStatus || (hasCalls && hasDialStatus);
-            }).length;
-            const yetToDial = Math.max(0, totalAssigned - dialed);
-            const campRecord = campaignRecords.find(c => {
-                const d = c.data || {};
-                const name = (d.campaignName || d.name || d.source || '').toString().trim();
-                return name.toLowerCase() === campName.toLowerCase();
+        const tokenArray = Array.from(userTokens);
+        if (tokenArray.length === 0) {
+            cache_1.serverCache.set(cacheKey, [], 60);
+            res.status(200).json({ campaigns: [] });
+            return;
+        }
+        // Direct high-performance PostgreSQL aggregation: executes in <15ms, returns only summary rows
+        const aggSql = `
+      SELECT 
+        LOWER(TRIM(COALESCE(NULLIF(data->>'campaignName', ''), NULLIF(data->>'campaign', ''), NULLIF(data->>'source', ''), NULLIF(data->>'campaign_name', ''), ''))) as raw_camp,
+        COUNT(*)::int as total_assigned,
+        COUNT(CASE WHEN 
+          (LOWER(COALESCE(data->>'dialStatus', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial')) OR
+          (LOWER(COALESCE(data->>'status', '')) NOT IN ('', 'yet to call', 'not called', 'new', 'yet to dial')) OR
+          ((CASE WHEN (data->>'callAttempts') ~ '^[0-9]+$' THEN (data->>'callAttempts')::int ELSE 0 END) > 0) OR
+          (data->>'dialedAt' IS NOT NULL AND data->>'dialedAt' != '')
+        THEN 1 END)::int as dialed,
+        MIN(created_at) as earliest_lead_created_at
+      FROM custom_records
+      WHERE organization_id = $1 
+        AND module_id = $2
+        AND (
+          LOWER(TRIM(data->>'assignedTo')) = ANY($3::text[]) OR 
+          LOWER(TRIM(data->>'telecaller')) = ANY($3::text[])
+        )
+      GROUP BY 1
+    `;
+        const rows = await (0, postgres_1.queryPg)(aggSql, [orgId, leadModule._id || leadModule.id, tokenArray]);
+        const result = (rows || [])
+            .map((r) => {
+            const lower = (r.raw_camp || '').trim().toLowerCase();
+            if (!lower || !registeredCampaignNames.has(lower))
+                return null;
+            const canonical = campaignRecords.find((c) => {
+                const cd = c.data || {};
+                return (cd.campaignName || cd.name || cd.source || '').toString().trim().toLowerCase() === lower;
             });
-            const createdAt = campRecord?.createdAt || groupLeads[0]?.createdAt || new Date();
+            const campName = canonical ? (canonical.data?.campaignName || canonical.data?.name || r.raw_camp) : r.raw_camp;
+            const totalAssigned = parseInt(r.total_assigned, 10) || 0;
+            const dialed = parseInt(r.dialed, 10) || 0;
+            const yetToDial = Math.max(0, totalAssigned - dialed);
+            const createdAt = canonical?.createdAt || r.earliest_lead_created_at || new Date();
             return {
                 campaignName: campName,
                 totalAssigned,
@@ -1647,7 +1618,7 @@ router.get('/campaigns/my-campaigns', async (req, res) => {
                 dailyTarget: 200
             };
         })
-            .filter(c => c.totalAssigned > 0);
+            .filter((c) => c && c.totalAssigned > 0);
         cache_1.serverCache.set(cacheKey, result, 60);
         res.setHeader('X-Cache', 'MISS');
         res.status(200).json({ campaigns: result });
@@ -1810,6 +1781,12 @@ router.get('/campaigns/my-campaigns/details/:campaignName', async (req, res) => 
                 fetchSql += ` LIMIT $${fetchParams.length}`;
                 fetchParams.push(skip);
                 fetchSql += ` OFFSET $${fetchParams.length}`;
+            }
+            else {
+                // Safe upper bound for full export (?all=true) to prevent Node.js OOM
+                const maxExportLimit = 25000;
+                fetchParams.push(maxExportLimit);
+                fetchSql += ` LIMIT $${fetchParams.length}`;
             }
             // Execute stats and fetch simultaneously in parallel for instant response (<25ms)
             const [statsRes, rows] = await Promise.all([

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.disconnectPostgres = exports.initPostgresSchema = exports.connectPostgres = exports.execPg = exports.queryPg = exports.getPgDriver = void 0;
+exports.disconnectPostgres = exports.initPostgresSchema = exports.connectPostgres = exports.execPg = exports.queryPg = exports.withTransaction = exports.getPgDriver = void 0;
 const pg_1 = require("pg");
 const pglite_1 = require("@electric-sql/pglite");
 const path_1 = __importDefault(require("path"));
@@ -15,7 +15,14 @@ dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env') });
 dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), 'backend/.env') });
 let pool = null;
 let pgliteInstance = null;
-const dbDataDir = path_1.default.resolve(__dirname, '../../../pg-data');
+const getConfiguredDataDir = () => {
+    const envDir = process.env.PG_DATA_DIR;
+    if (envDir) {
+        return path_1.default.isAbsolute(envDir) ? envDir : path_1.default.resolve(process.cwd(), envDir);
+    }
+    return path_1.default.resolve(__dirname, '../../../pg-data');
+};
+const dbDataDir = getConfiguredDataDir();
 const getPgDriver = () => {
     if (pool)
         return { type: 'pool', client: pool };
@@ -24,6 +31,73 @@ const getPgDriver = () => {
     throw new Error('PostgreSQL connection has not been initialized.');
 };
 exports.getPgDriver = getPgDriver;
+/**
+ * Execute a unit of work inside an isolated database transaction with guaranteed client checkout & release.
+ * In a pooled environment, this ensures all queries run strictly on the SAME client and releases the client in finally.
+ */
+const withTransaction = async (callback) => {
+    if (pool) {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const executor = {
+                query: async (sql, params = []) => {
+                    const res = await client.query(sql, params);
+                    return res.rows;
+                },
+                exec: async (sql) => {
+                    return client.query(sql);
+                }
+            };
+            const result = await callback(executor);
+            await client.query('COMMIT');
+            return result;
+        }
+        catch (err) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch (rollbackErr) {
+                console.error('[PostgreSQL Transaction] Rollback error:', rollbackErr.message);
+            }
+            throw err;
+        }
+        finally {
+            client.release();
+        }
+    }
+    else if (pgliteInstance) {
+        const pglite = pgliteInstance;
+        try {
+            await pglite.exec('BEGIN');
+            const executor = {
+                query: async (sql, params = []) => {
+                    const res = await pglite.query(sql, params);
+                    return res.rows;
+                },
+                exec: async (sql) => {
+                    return pglite.exec(sql);
+                }
+            };
+            const result = await callback(executor);
+            await pglite.exec('COMMIT');
+            return result;
+        }
+        catch (err) {
+            try {
+                await pglite.exec('ROLLBACK');
+            }
+            catch (rollbackErr) {
+                console.error('[PGlite Transaction] Rollback error:', rollbackErr.message);
+            }
+            throw err;
+        }
+    }
+    else {
+        throw new Error('PostgreSQL database not initialized.');
+    }
+};
+exports.withTransaction = withTransaction;
 const queryPg = async (sql, params = []) => {
     const start = Date.now();
     let rows;
@@ -68,6 +142,11 @@ const execPg = async (sql) => {
 exports.execPg = execPg;
 const connectPostgres = async () => {
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    const isProd = process.env.NODE_ENV === 'production';
+    // Strict production safety: In production mode, silent fallback to PGlite is STRICTLY FORBIDDEN
+    if (isProd && (!dbUrl || !dbUrl.startsWith('postgres'))) {
+        throw new Error('FATAL CONFIGURATION ERROR: In production mode (NODE_ENV=production), a valid PostgreSQL connection string (DATABASE_URL) is MANDATORY. Silent fallback to embedded PGlite is disabled in production to protect customer data integrity and prevent memory exhaustion.');
+    }
     if (dbUrl && dbUrl.startsWith('postgres')) {
         console.log('[PostgreSQL] Connecting via Pool to DATABASE_URL...');
         pool = new pg_1.Pool({
@@ -85,15 +164,19 @@ const connectPostgres = async () => {
         }
         catch (err) {
             console.error('[PostgreSQL] Connection Pool error:', err.message);
-            console.log('[PostgreSQL] Falling back to local embedded PGlite storage engine...');
+            if (isProd) {
+                throw new Error(`FATAL DATABASE ERROR: Could not connect to PostgreSQL server: ${err.message}. Server startup aborted.`);
+            }
+            console.log('[PostgreSQL] Falling back to local embedded PGlite storage engine (non-production mode)...');
             pool = null;
         }
     }
     if (!pool) {
-        if (!fs_1.default.existsSync(dbDataDir)) {
-            fs_1.default.mkdirSync(dbDataDir, { recursive: true });
+        const dataDir = getConfiguredDataDir();
+        if (!fs_1.default.existsSync(dataDir)) {
+            fs_1.default.mkdirSync(dataDir, { recursive: true });
         }
-        const stalePid = path_1.default.join(dbDataDir, 'postmaster.pid');
+        const stalePid = path_1.default.join(dataDir, 'postmaster.pid');
         if (fs_1.default.existsSync(stalePid)) {
             try {
                 fs_1.default.unlinkSync(stalePid);
@@ -103,8 +186,8 @@ const connectPostgres = async () => {
                 console.warn('[PostgreSQL] Could not remove postmaster.pid:', err.message);
             }
         }
-        console.log(`[PostgreSQL] Initializing local PostgreSQL storage engine at: ${dbDataDir}`);
-        pgliteInstance = new pglite_1.PGlite(dbDataDir);
+        console.log(`[PostgreSQL] Initializing local PostgreSQL storage engine at: ${dataDir}`);
+        pgliteInstance = new pglite_1.PGlite(dataDir);
         await pgliteInstance.waitReady;
         console.log('[PostgreSQL] Local PGlite engine ready.');
     }
@@ -254,6 +337,13 @@ const initPostgresSchema = async () => {
     CREATE INDEX IF NOT EXISTS idx_cr_org_mod_datacode ON custom_records (organization_id, module_id, lower(data->>'dataCode'));
     CREATE INDEX IF NOT EXISTS idx_cr_org_mod_leadname ON custom_records (organization_id, module_id, lower(data->>'leadName'));
     CREATE INDEX IF NOT EXISTS idx_cr_created_asc ON custom_records (created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_created_asc ON custom_records (organization_id, module_id, created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_assigned_lower ON custom_records (organization_id, module_id, lower(trim(data->>'assignedTo')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_campname_lower ON custom_records (organization_id, module_id, lower(trim(data->>'campaignName')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_campaign_lower ON custom_records (organization_id, module_id, lower(trim(data->>'campaign')));
+    CREATE INDEX IF NOT EXISTS idx_cr_org_mod_source_lower ON custom_records (organization_id, module_id, lower(trim(data->>'source')));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_campaign_name_alt ON custom_records (lower(data->>'campaign_name'));
+    CREATE INDEX IF NOT EXISTS idx_cr_lower_telecaller ON custom_records (lower(data->>'telecaller'));
     CREATE INDEX IF NOT EXISTS idx_cr_data_gin ON custom_records USING gin (data);
 
     CREATE TABLE IF NOT EXISTS activities (

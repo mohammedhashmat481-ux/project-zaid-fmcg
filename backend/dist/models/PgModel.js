@@ -420,12 +420,9 @@ class PgModel {
         // Safe chunk size: 500 rows (e.g. 500 * 8 = 4,000 params)
         const CHUNK_SIZE = 500;
         const results = [];
-        // Use transaction for ultra-fast bulk execution if multiple chunks
+        // Dedicated client transaction for atomic multi-chunk execution without connection pool leaks
         const useTx = preparedDocs.length > CHUNK_SIZE;
-        if (useTx) {
-            await (0, postgres_1.execPg)('BEGIN');
-        }
-        try {
+        const executeInsertion = async (queryRunner) => {
             for (let i = 0; i < preparedDocs.length; i += CHUNK_SIZE) {
                 const chunk = preparedDocs.slice(i, i + CHUNK_SIZE);
                 const vals = [];
@@ -442,7 +439,7 @@ class PgModel {
                     valueRowClauses.push(`(${rowPlaceholders.join(', ')})`);
                 }
                 const sql = `INSERT INTO ${this.tableName} (${colNames}) VALUES ${valueRowClauses.join(', ')} RETURNING id`;
-                const rows = await (0, postgres_1.queryPg)(sql, vals);
+                const rows = await queryRunner(sql, vals);
                 if (rows && rows.length > 0) {
                     if (preparedDocs.length <= 5000) {
                         rows.forEach((r) => results.push({ _id: r.id, id: r.id }));
@@ -454,19 +451,19 @@ class PgModel {
                         }
                     }
                 }
-            }
-            if (useTx) {
-                await (0, postgres_1.execPg)('COMMIT');
-            }
-        }
-        catch (err) {
-            if (useTx) {
-                try {
-                    await (0, postgres_1.execPg)('ROLLBACK');
+                if (i + CHUNK_SIZE < preparedDocs.length) {
+                    // Yield to Node.js event loop between chunks so concurrent HTTP requests aren't blocked
+                    await new Promise((r) => setImmediate(r));
                 }
-                catch { }
             }
-            throw err;
+        };
+        if (useTx) {
+            await (0, postgres_1.withTransaction)(async (tx) => {
+                await executeInsertion((sql, params) => tx.query(sql, params));
+            });
+        }
+        else {
+            await executeInsertion((sql, params) => (0, postgres_1.queryPg)(sql, params));
         }
         return results;
     }
@@ -492,6 +489,56 @@ class PgModel {
         return { modifiedCount: 1 };
     }
     async updateMany(query, updateDoc) {
+        if (!updateDoc || Object.keys(updateDoc).length === 0)
+            return { modifiedCount: 0 };
+        // High-performance single-pass SQL UPDATE for $set updates
+        const docKeys = Object.keys(updateDoc);
+        const isPureSet = docKeys.length === 1 && docKeys[0] === '$set' && typeof updateDoc.$set === 'object';
+        if (isPureSet) {
+            try {
+                const setMap = updateDoc.$set;
+                const setClauses = [];
+                const { whereClause, params } = buildWhereClause(this.tableName, this.mappings, query);
+                if (this.tableName === 'custom_records') {
+                    const jsonbPatches = {};
+                    let canUseDirectSql = true;
+                    for (const rawField of Object.keys(setMap)) {
+                        const val = setMap[rawField];
+                        if (rawField.startsWith('data.')) {
+                            jsonbPatches[rawField.slice(5)] = val;
+                        }
+                        else if (rawField === 'data' && typeof val === 'object' && val !== null) {
+                            Object.assign(jsonbPatches, val);
+                        }
+                        else {
+                            const mapping = this.mappings.find((m) => m.jsField === rawField || m.dbColumn === rawField);
+                            if (mapping && mapping.dbColumn !== 'id') {
+                                params.push(val instanceof Date ? val.toISOString() : val);
+                                setClauses.push(`${mapping.dbColumn} = $${params.length}`);
+                            }
+                            else {
+                                canUseDirectSql = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (canUseDirectSql && (Object.keys(jsonbPatches).length > 0 || setClauses.length > 0)) {
+                        if (Object.keys(jsonbPatches).length > 0) {
+                            params.push(JSON.stringify(jsonbPatches));
+                            setClauses.push(`data = data || $${params.length}::jsonb`);
+                        }
+                        setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+                        const updateSql = `UPDATE ${this.tableName} SET ${setClauses.join(', ')} ${whereClause} RETURNING id`;
+                        const rows = await (0, postgres_1.queryPg)(updateSql, params);
+                        return { modifiedCount: rows ? rows.length : 0 };
+                    }
+                }
+            }
+            catch (directUpdateErr) {
+                console.warn('[PgModel.updateMany] Direct SQL update fallback to document loop:', directUpdateErr);
+            }
+        }
+        // Safe fallback for complex operations ($inc, $push, etc.)
         const targets = await this.find(query).exec();
         let modifiedCount = 0;
         for (const t of targets) {
@@ -599,6 +646,12 @@ function mapJsToDbCol(tableName, mappings, jsField) {
         return directMatch.dbColumn;
     // Custom records table handling
     if (tableName === 'custom_records') {
+        if (jsField.toLowerCase().includes('lower') || jsField.toLowerCase().includes('trim')) {
+            const fieldMatch = jsField.match(/data\.([a-zA-Z0-9_]+)/);
+            if (fieldMatch) {
+                return `LOWER(TRIM(data->>'${fieldMatch[1]}'))`;
+            }
+        }
         const cleanField = jsField.startsWith('data.') ? jsField.slice(5) : jsField;
         const topLevelFields = ['organizationId', 'moduleId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'];
         if (topLevelFields.includes(cleanField)) {
