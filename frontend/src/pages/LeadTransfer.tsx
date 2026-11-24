@@ -152,25 +152,25 @@ export default function LeadTransfer() {
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-4 md:px-8 py-4">
+    <div className="space-y-3.5 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-2 sm:px-4 py-1.5">
       {/* Page Header Banner */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-3.5 rounded-xl shadow-2xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500/80 via-blue-500/70 to-indigo-500/60" />
         
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20 flex-shrink-0">
-            <Icons.ArrowLeftRight className="w-6 h-6 stroke-[2.2]" />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-sm flex-shrink-0">
+            <Icons.ArrowLeftRight className="w-4 h-4 stroke-[2.2]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider font-mono px-2.5 py-0.5 rounded-full border bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 border-cyan-200/80 dark:border-cyan-800/60">
+              <span className="text-[9px] font-bold uppercase tracking-wider font-mono px-2 py-0.5 rounded-md border bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 border-cyan-200/80 dark:border-cyan-800/60">
                 Lead Distribution
               </span>
-              <span className="text-xs font-semibold text-slate-400">
+              <span className="text-[11px] font-medium text-slate-400">
                 Reallocation
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
               Lead Transfer & Reassignment
             </h1>
           </div>
@@ -180,7 +180,7 @@ export default function LeadTransfer() {
           type="button"
           onClick={fetchData}
           disabled={loading}
-          className="flex items-center gap-1.5 px-4 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-3xs transition-all cursor-pointer flex-shrink-0"
+          className="flex items-center gap-1.5 px-3 h-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-2xs transition-all cursor-pointer flex-shrink-0"
         >
           <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh

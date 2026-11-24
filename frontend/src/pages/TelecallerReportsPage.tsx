@@ -159,7 +159,7 @@ export default function TelecallerReportsPage() {
   }, [rolesList]);
 
   return (
-    <div className="space-y-4 max-w-[1400px] mx-auto text-left px-3 sm:px-6 py-3">
+    <div className="space-y-3.5 max-w-[1400px] mx-auto text-left px-2 sm:px-4 py-1.5">
       {/* 1. COMPACT 4-STAT HERO KPI TILES */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Active Telecallers */}

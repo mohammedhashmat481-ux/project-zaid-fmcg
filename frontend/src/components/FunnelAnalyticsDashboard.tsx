@@ -312,20 +312,20 @@ export default function FunnelAnalyticsDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F9FC] dark:bg-slate-950 text-[#1E293B] dark:text-slate-100 p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="min-h-screen bg-[#F7F9FC] dark:bg-slate-950 text-[#1E293B] dark:text-slate-100 p-1 sm:p-2 space-y-3.5">
       {/* 1. TOP HEADER & CONTROL SECTION */}
-      <div className="bg-white dark:bg-slate-900 border border-[#E2E8F0] dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E2E8F0] dark:border-slate-800 pb-5">
-          <div className="space-y-1">
+      <div className="bg-white dark:bg-slate-900 border border-[#E2E8F0] dark:border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-2xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-[#E2E8F0] dark:border-slate-800 pb-3">
+          <div className="space-y-0.5">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-[#2563EB]/10 dark:bg-blue-500/20 text-[#2563EB] dark:text-blue-400 flex items-center justify-center font-bold">
-                <Icons.Filter className="w-5 h-5" />
+              <div className="w-7 h-7 rounded-lg bg-[#2563EB]/10 dark:bg-blue-500/20 text-[#2563EB] dark:text-blue-400 flex items-center justify-center font-bold">
+                <Icons.Filter className="w-4 h-4" />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-black text-[#1E3A5F] dark:text-white tracking-tight">
+                <h1 className="text-sm sm:text-base font-bold text-[#1E3A5F] dark:text-white tracking-tight">
                   CRM Funnel & Conversion Analytics
                 </h1>
-                <p className="text-xs sm:text-sm text-[#64748B] dark:text-slate-400">
+                <p className="text-[11px] sm:text-xs text-[#64748B] dark:text-slate-400">
                   Real-time pipeline progression, stage-wise conversion rates, and volume velocity.
                 </p>
               </div>
@@ -333,12 +333,12 @@ export default function FunnelAnalyticsDashboard({
           </div>
 
           {/* Period Selection Tabs (Daily / Monthly / Annual) */}
-          <div className="flex items-center gap-1.5 bg-[#F1F5F9] dark:bg-slate-800 p-1.5 rounded-xl border border-[#E2E8F0] dark:border-slate-700">
+          <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-slate-800 p-1 rounded-lg border border-[#E2E8F0] dark:border-slate-700">
             <button
               onClick={() => handlePeriodChange('daily')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'daily'
-                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-sm'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-2xs'
                   : 'text-[#64748B] dark:text-slate-400 hover:text-[#1E293B] dark:hover:text-white'
               }`}
             >
@@ -347,9 +347,9 @@ export default function FunnelAnalyticsDashboard({
             </button>
             <button
               onClick={() => handlePeriodChange('monthly')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'monthly'
-                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-sm'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-2xs'
                   : 'text-[#64748B] dark:text-slate-400 hover:text-[#1E293B] dark:hover:text-white'
               }`}
             >
@@ -358,9 +358,9 @@ export default function FunnelAnalyticsDashboard({
             </button>
             <button
               onClick={() => handlePeriodChange('annual')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'annual'
-                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-sm'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-400 shadow-2xs'
                   : 'text-[#64748B] dark:text-slate-400 hover:text-[#1E293B] dark:hover:text-white'
               }`}
             >
@@ -371,7 +371,7 @@ export default function FunnelAnalyticsDashboard({
         </div>
 
         {/* Dynamic Date Filter Presets & Dropdowns */}
-        <div className="pt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="pt-2.5 flex flex-wrap items-center justify-between gap-2.5">
           {/* Presets pill buttons */}
           <div className="flex flex-wrap items-center gap-1.5">
             {[
@@ -387,9 +387,9 @@ export default function FunnelAnalyticsDashboard({
               <button
                 key={preset.id}
                 onClick={() => handlePresetChange(preset.id as DatePreset)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all border cursor-pointer ${
                   datePreset === preset.id
-                    ? 'bg-[#1E3A5F] text-white border-[#1E3A5F] shadow-xs'
+                    ? 'bg-[#1E3A5F] text-white border-[#1E3A5F] shadow-2xs'
                     : 'bg-white dark:bg-slate-800 text-[#64748B] dark:text-slate-300 border-[#E2E8F0] dark:border-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -403,7 +403,7 @@ export default function FunnelAnalyticsDashboard({
             <button
               onClick={fetchFunnelData}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-[#E2E8F0] dark:border-slate-700 text-[#1E293B] dark:text-white hover:bg-slate-50 transition-all shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-[#E2E8F0] dark:border-slate-700 text-[#1E293B] dark:text-white hover:bg-slate-50 transition-all shadow-2xs cursor-pointer"
               title="Refresh CRM Data"
             >
               <Icons.RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
@@ -412,7 +412,7 @@ export default function FunnelAnalyticsDashboard({
             <button
               onClick={handleExportXLSX}
               disabled={exporting || loading}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-[#16A34A] hover:bg-emerald-700 text-white transition-all shadow-xs"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#16A34A] hover:bg-emerald-700 text-white transition-all shadow-2xs cursor-pointer"
               title="Download Funnel Report XLSX"
             >
               <Icons.Download className="w-3.5 h-3.5" />
@@ -422,7 +422,7 @@ export default function FunnelAnalyticsDashboard({
         </div>
 
         {/* Custom Date Pickers & Campaign/Agent Filter Selectors */}
-        <div className="mt-4 pt-3 border-t border-[#E2E8F0] dark:border-slate-800/80 flex flex-wrap items-center gap-3">
+        <div className="mt-2.5 pt-2 border-t border-[#E2E8F0] dark:border-slate-800/80 flex flex-wrap items-center gap-2.5">
           {datePreset === 'custom' && (
             <div className="flex items-center gap-2 bg-[#F8FAFC] dark:bg-slate-800/60 p-1.5 rounded-xl border border-[#E2E8F0] dark:border-slate-700">
               <span className="text-xs font-bold text-[#64748B] pl-2">From:</span>

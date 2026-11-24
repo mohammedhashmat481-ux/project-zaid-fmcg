@@ -318,22 +318,22 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
   return (
     <div className="flex flex-col h-full bg-[#FBFBFA] dark:bg-[#0B0F19] text-slate-800 dark:text-slate-100 overflow-y-auto">
       {/* 1. Header Banner */}
-      <div className="flex-shrink-0 px-4 sm:px-6 md:px-8 pt-5 pb-4 border-b border-black/[0.06] dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-30">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex-shrink-0 px-3 sm:px-5 py-2.5 sm:py-3 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-30 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 tracking-wide uppercase">
-                <Icons.Sparkles className="w-3.5 h-3.5" /> Outbound Performance
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 tracking-wide uppercase border border-blue-200/60 dark:border-blue-800/50">
+                <Icons.Sparkles className="w-3 h-3" /> Outbound Performance
               </span>
-              <span className="text-xs text-slate-400">•</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <span className="text-xs text-slate-300 dark:text-slate-700">•</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                 Live Campaign Matrix
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight mt-0.5">
               {period === 'daily' ? 'Daily Report' : period === 'monthly' ? 'Monthly Report' : 'Annual Report'}
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {period === 'daily'
                 ? (fromDate === toDate 
                     ? `Hourly calling matrix, dial attempts, and outbound contact progress for ${fromDate}.`
@@ -344,20 +344,20 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleExportFullMatrix}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-sm shadow-emerald-600/20 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs cursor-pointer"
               title="Download exact spreadsheet matching Image 4"
             >
-              <Icons.FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+              <Icons.FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
               <span>Export Matrix to Excel (.xlsx)</span>
             </button>
 
             <button
               onClick={() => refetchMatrixReport()}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 border border-black/10 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition-colors shadow-sm cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition-colors shadow-2xs cursor-pointer"
               title="Refresh live data"
             >
               <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -367,17 +367,17 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
         </div>
 
         {/* 2. Period Switcher & Filter Row */}
-        <div className="mt-4 pt-3 border-t border-black/[0.05] dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2.5">
           {/* Period Tabs: Daily | Monthly | Annually */}
-          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-black/[0.06] dark:border-slate-700/80 shadow-inner">
+          <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200/80 dark:border-slate-700/80 shadow-inner">
             <button
               onClick={() => {
                 setPeriod('daily');
                 navigate('/reports/campaign-daily');
               }}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'daily'
-                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -388,9 +388,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                 setPeriod('monthly');
                 navigate('/reports/campaign-monthly');
               }}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'monthly'
-                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -401,9 +401,9 @@ export default function CampaignReportPage({ initialPeriod = 'daily' }: Campaign
                 setPeriod('annually');
                 navigate('/reports/campaign-annual');
               }}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 period === 'annually'
-                  ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                  ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-2xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >

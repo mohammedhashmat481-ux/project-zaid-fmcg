@@ -334,28 +334,28 @@ export default function UsersManagement() {
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-4 md:px-8 py-4">
+    <div className="space-y-3.5 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-2 sm:px-4 py-1.5">
       {/* Header Banner with Subtle Sky Blue Accent */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-3.5 rounded-xl shadow-2xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500/80 via-blue-500/70 to-indigo-500/60" />
         
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 flex-shrink-0">
-            <Icons.Users className="w-6 h-6 stroke-[2.2]" />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-sm flex-shrink-0">
+            <Icons.Users className="w-4 h-4 stroke-[2.2]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider font-mono px-2.5 py-0.5 rounded-full border bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/60">
+              <span className="text-[9px] font-bold uppercase tracking-wider font-mono px-2 py-0.5 rounded-md border bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/60">
                 Team & Personnel
               </span>
-              <span className="text-xs font-semibold text-slate-400">
+              <span className="text-[11px] font-medium text-slate-400">
                 Administration
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase flex items-center gap-3">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase flex items-center gap-2.5">
               Users Management
               {pendingUsersCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 animate-pulse">
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 animate-pulse">
                   {pendingUsersCount} Pending Approval
                 </span>
               )}
@@ -368,7 +368,7 @@ export default function UsersManagement() {
             type="button"
             onClick={loadData}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3.5 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-3xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 h-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
             title="Refresh Users"
           >
             <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -378,7 +378,7 @@ export default function UsersManagement() {
           <button
             type="button"
             onClick={exportUsersCSV}
-            className="inline-flex items-center gap-1.5 px-3.5 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-3xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 h-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
             title="Export CSV"
           >
             <Icons.Download className="w-3.5 h-3.5" />
@@ -403,9 +403,9 @@ export default function UsersManagement() {
               });
               setUserModalOpen(true);
             }}
-            className="flex items-center gap-2 px-5 h-10 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-xl text-xs font-black shadow-md shadow-sky-500/20 transition-all cursor-pointer flex-shrink-0"
+            className="flex items-center gap-1.5 px-3.5 h-8 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-lg text-xs font-bold shadow-sm shadow-sky-500/20 transition-all cursor-pointer flex-shrink-0"
           >
-            <Icons.Plus className="w-4 h-4" /> Add New User
+            <Icons.Plus className="w-3.5 h-3.5" /> Add New User
           </button>
         </div>
       </div>

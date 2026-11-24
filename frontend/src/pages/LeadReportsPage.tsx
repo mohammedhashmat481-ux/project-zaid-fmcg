@@ -239,42 +239,42 @@ export default function LeadReportsPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto text-left px-3 sm:px-6 md:px-8 py-4">
+    <div className="space-y-3.5 max-w-[1600px] mx-auto text-left px-2 sm:px-4 py-1.5">
       {/* 1. Header Bar matching Image 2 */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-md">
-            <Icons.BarChart2 className="w-6 h-6 stroke-[2.2]" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+            <Icons.BarChart2 className="w-4 h-4 stroke-[2.2]" />
           </div>
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
               <span>Reports</span>
-              <Icons.ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <Icons.ChevronRight className="w-3 h-3 text-slate-400" />
               <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">Lead Reports & Pipeline Analytics</span>
             </div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight uppercase">
                 Lead Reports & Pipeline Analytics
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-extrabold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 tracking-wider">
-                <Icons.Users className="w-3.5 h-3.5" />
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 tracking-wider">
+                <Icons.Users className="w-3 h-3" />
                 {totalLeadsCount} Total Leads
               </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
               Comprehensive chronological pipeline report, stage progression KPIs, and multi-filter analytics.
             </p>
           </div>
         </div>
 
         {/* Export Excel Button matching Image 2 */}
-        <div className="flex items-center gap-3 self-start md:self-center">
+        <div className="flex items-center gap-2 self-start md:self-center">
           <button
             onClick={exportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl text-white bg-[#0284c7] hover:bg-[#0369a1] active:scale-[0.98] transition-all shadow-sm shadow-sky-600/20 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-[#0284c7] hover:bg-[#0369a1] active:scale-[0.98] transition-all shadow-2xs cursor-pointer"
             title="Export official 19-column Lead Report spreadsheet"
           >
-            <Icons.Download className="w-4 h-4 text-sky-100" />
+            <Icons.Download className="w-3.5 h-3.5 text-sky-100" />
             <span>Export Excel</span>
           </button>
         </div>

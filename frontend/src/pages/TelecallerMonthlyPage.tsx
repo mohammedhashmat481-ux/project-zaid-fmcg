@@ -151,7 +151,7 @@ export default function TelecallerMonthlyPage() {
   const topPerformer = liveMonthlyAgents[0]?.name || 'N/A';
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto text-left px-4 md:px-8 py-4">
+    <div className="space-y-3.5 max-w-[1400px] mx-auto text-left px-2 sm:px-4 py-1.5">
       {/* 4 Vibrant Metric Hero Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Top Performer */}

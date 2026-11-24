@@ -438,35 +438,35 @@ export default function AccessPrivilege() {
   const totalCount = fullMenuItems.length;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-4 md:px-8 py-4">
+    <div className="space-y-3.5 max-w-7xl mx-auto text-left pb-16 font-['Plus_Jakarta_Sans',sans-serif] px-2 sm:px-4 py-1.5">
       {/* Page Header with Subtle Accent */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-3.5 rounded-xl shadow-2xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500/80 via-purple-500/70 to-blue-500/60" />
         
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 flex-shrink-0">
-            <Icons.ShieldCheck className="w-6 h-6 stroke-[2.2]" />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-sm flex-shrink-0">
+            <Icons.ShieldCheck className="w-4 h-4 stroke-[2.2]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider font-mono px-2.5 py-0.5 rounded-full border bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800/60">
+              <span className="text-[9px] font-bold uppercase tracking-wider font-mono px-2 py-0.5 rounded-md border bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800/60">
                 Security & RBAC
               </span>
-              <span className="text-xs font-semibold text-slate-400">
+              <span className="text-[11px] font-medium text-slate-400">
                 Role Permissions
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
               Access Privilege
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={fetchRoles}
             disabled={loading}
-            className="flex items-center gap-1.5 px-4 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-3xs transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 h-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-2xs transition-all cursor-pointer"
           >
             <Icons.RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -475,12 +475,12 @@ export default function AccessPrivilege() {
           <button
             onClick={handleSavePermissions}
             disabled={saving || loading}
-            className="flex items-center gap-2 px-6 h-10 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:opacity-95 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 h-8 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:opacity-95 text-white rounded-lg text-xs font-bold shadow-sm shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50"
           >
             {saving ? (
-              <Icons.Loader2 className="w-4 h-4 animate-spin" />
+              <Icons.Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Icons.Check className="w-4 h-4" />
+              <Icons.Check className="w-3.5 h-3.5" />
             )}
             Save Permissions
           </button>

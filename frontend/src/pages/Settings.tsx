@@ -1061,25 +1061,25 @@ export default function Settings() {
   const activeTabMeta = visibleTabs.find(t => t.id === currentTab) || visibleTabs[0];
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto text-left px-4 md:px-8 py-4">
+    <div className="space-y-3 max-w-6xl mx-auto text-left px-2 sm:px-4 py-1.5">
       {/* Header Banner with Subtle Accent */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 sm:p-3.5 rounded-xl shadow-2xs relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${activeTabMeta.accentGradient}`} />
         
-        <div className="flex items-center gap-4">
-          <div className={`w-12 h-12 rounded-2xl bg-gradient-to-tr ${activeTabMeta.accentGradient} flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 flex-shrink-0`}>
-            {React.createElement(activeTabMeta.icon, { className: "w-6 h-6 stroke-[2.2]" })}
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-lg bg-gradient-to-tr ${activeTabMeta.accentGradient} flex items-center justify-center text-white shadow-sm flex-shrink-0`}>
+            {React.createElement(activeTabMeta.icon, { className: "w-4 h-4 stroke-[2.2]" })}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-wider font-mono px-2.5 py-0.5 rounded-full border ${activeTabMeta.activeBadge}`}>
+              <span className={`text-[9px] font-bold uppercase tracking-wider font-mono px-2 py-0.5 rounded-md border ${activeTabMeta.activeBadge}`}>
                 System Settings
               </span>
-              <span className="text-xs font-semibold text-slate-400">
+              <span className="text-[11px] font-medium text-slate-400">
                 Workspace Configuration
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight mt-0.5 uppercase">
               {activeTabMeta.label}
             </h1>
           </div>
@@ -1087,8 +1087,8 @@ export default function Settings() {
       </div>
 
       {/* Settings Tabs Navigation with Subtle Colored Active Pills */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-2 rounded-2xl shadow-xs">
-        <div className="flex overflow-x-auto gap-1.5 hide-scrollbar py-0.5 px-0.5">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-1 rounded-xl shadow-2xs">
+        <div className="flex overflow-x-auto gap-1 hide-scrollbar py-0.5 px-0.5">
           {visibleTabs.map(tab => {
             const Icon = tab.icon;
             const isActive = currentTab === tab.id;
@@ -1096,9 +1096,9 @@ export default function Settings() {
               <button
                 key={tab.id}
                 onClick={() => navigate(`/settings?tab=${tab.id}`)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
                   isActive 
-                    ? `${tab.activeBadge} shadow-3xs font-extrabold` 
+                    ? `${tab.activeBadge} shadow-2xs font-extrabold` 
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
