@@ -36,7 +36,7 @@ export interface FunnelExportData {
     progressionRate: number;
     dropOffRate: number;
   }>;
-  leads: any[];
+  leads?: any[];
 }
 
 export const exportFunnelAnalyticsXLSX = (data: FunnelExportData) => {
@@ -107,51 +107,53 @@ export const exportFunnelAnalyticsXLSX = (data: FunnelExportData) => {
   ]);
   XLSX.utils.book_append_sheet(wb, wsStages, 'Stage Conversion Matrix');
 
-  // 3. Lead Details Sheet
-  const leadHeaders = [
-    'SI No.',
-    'Lead No.',
-    'Customer / Lead Name',
-    'Company / Firm',
-    'Mobile Number',
-    'Email Address',
-    'Loan Product',
-    'Loan Amount',
-    'Bank Partner',
-    'Assigned Agent',
-    'Lead Source',
-    'Current Stage / Status',
-    'Created Date',
-    'Follow-up Date'
-  ];
-
-  const leadRows = (data.leads || []).map((lead, idx) => {
-    return [
-      idx + 1,
-      lead.leadNo || `LEAD-${idx + 1}`,
-      lead.customerName || 'N/A',
-      lead.companyName || '—',
-      lead.mobile || '—',
-      lead.email || '—',
-      lead.loanType || '—',
-      lead.loanAmount || '—',
-      lead.bankPartner || '—',
-      lead.assignedTo || 'Unassigned',
-      lead.source || '—',
-      lead.status || lead.stage || '—',
-      lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-IN') : '—',
-      lead.followupDate || '—'
+  // 3. Lead Details Sheet (if present)
+  if (data.leads && data.leads.length > 0) {
+    const leadHeaders = [
+      'SI No.',
+      'Lead No.',
+      'Customer / Lead Name',
+      'Company / Firm',
+      'Mobile Number',
+      'Email Address',
+      'Loan Product',
+      'Loan Amount',
+      'Bank Partner',
+      'Assigned Agent',
+      'Lead Source',
+      'Current Stage / Status',
+      'Created Date',
+      'Follow-up Date'
     ];
-  });
 
-  const wsLeads = XLSX.utils.aoa_to_sheet([
-    ['DETAILED FUNNEL LEAD RECORDS'],
-    [`Period: ${data.period.toUpperCase()} (${data.dateRange.formatted}) | Total Records: ${data.leads?.length || 0}`],
-    [],
-    leadHeaders,
-    ...leadRows
-  ]);
-  XLSX.utils.book_append_sheet(wb, wsLeads, 'Lead Records');
+    const leadRows = data.leads.map((lead, idx) => {
+      return [
+        idx + 1,
+        lead.leadNo || `LEAD-${idx + 1}`,
+        lead.customerName || 'N/A',
+        lead.companyName || '—',
+        lead.mobile || '—',
+        lead.email || '—',
+        lead.loanType || '—',
+        lead.loanAmount || '—',
+        lead.bankPartner || '—',
+        lead.assignedTo || 'Unassigned',
+        lead.source || '—',
+        lead.status || lead.stage || '—',
+        lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-IN') : '—',
+        lead.followupDate || '—'
+      ];
+    });
+
+    const wsLeads = XLSX.utils.aoa_to_sheet([
+      ['DETAILED FUNNEL LEAD RECORDS'],
+      [`Period: ${data.period.toUpperCase()} (${data.dateRange.formatted}) | Total Records: ${data.leads.length}`],
+      [],
+      leadHeaders,
+      ...leadRows
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsLeads, 'Lead Records');
+  }
 
   const filename = `CRM_Funnel_Report_${data.period}_${data.datePreset}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, filename);

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as Icons from 'lucide-react';
 import api from '../services/api';
 import { useToastStore } from '../store/toastStore';
@@ -8,8 +8,6 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
@@ -70,7 +68,6 @@ export default function FunnelAnalyticsDashboard({
   defaultPeriod = 'daily',
   defaultPreset = 'today'
 }: FunnelAnalyticsDashboardProps) {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToastStore();
 
@@ -114,11 +111,6 @@ export default function FunnelAnalyticsDashboard({
   // Filters
   const [selectedCampaign, setSelectedCampaign] = useState<string>(() => searchParams.get('campaign') || 'ALL');
   const [selectedAgent, setSelectedAgent] = useState<string>(() => searchParams.get('agent') || 'ALL');
-  const [selectedStage, setSelectedStage] = useState<string>(() => searchParams.get('stage') || 'ALL');
-  const [drillSearch, setDrillSearch] = useState<string>('');
-  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
-  const [drillPage, setDrillPage] = useState<number>(1);
-  const [drillLimit, setDrillLimit] = useState<number>(25);
 
   // Data states
   const [loading, setLoading] = useState<boolean>(true);
@@ -147,20 +139,6 @@ export default function FunnelAnalyticsDashboard({
     formatted: ''
   });
 
-  // Drilldown leads
-  const [drilldownLeads, setDrilldownLeads] = useState<any[]>([]);
-  const [drilldownTotal, setDrilldownTotal] = useState<number>(0);
-  const [drilldownTotalPages, setDrilldownTotalPages] = useState<number>(1);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(drillSearch);
-      setDrillPage(1);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [drillSearch]);
-
   // Load registered agents once
   useEffect(() => {
     api
@@ -174,7 +152,7 @@ export default function FunnelAnalyticsDashboard({
 
   // Sync state to URL params cleanly
   const updateUrl = useCallback(
-    (newPeriod: FunnelPeriod, newPreset: DatePreset, newStage: string) => {
+    (newPeriod: FunnelPeriod, newPreset: DatePreset) => {
       const p = new URLSearchParams(searchParams);
       p.set('period', newPeriod);
       p.set('preset', newPreset);
@@ -182,8 +160,6 @@ export default function FunnelAnalyticsDashboard({
       else p.delete('campaign');
       if (selectedAgent && selectedAgent !== 'ALL') p.set('agent', selectedAgent);
       else p.delete('agent');
-      if (newStage && newStage !== 'ALL') p.set('stage', newStage);
-      else p.delete('stage');
       if (newPreset === 'custom') {
         p.set('startDate', customStartDate);
         p.set('endDate', customEndDate);
@@ -204,11 +180,7 @@ export default function FunnelAnalyticsDashboard({
         period,
         datePreset,
         campaign: selectedCampaign,
-        agent: selectedAgent,
-        stage: selectedStage,
-        search: debouncedSearch,
-        page: drillPage,
-        limit: drillLimit
+        agent: selectedAgent
       };
 
       if (datePreset === 'custom') {
@@ -228,12 +200,6 @@ export default function FunnelAnalyticsDashboard({
       }
       if (data.dateRange) setDateRangeInfo(data.dateRange);
       if (data.previousDateRange) setPreviousRangeInfo(data.previousDateRange);
-
-      if (data.drilldown) {
-        setDrilldownLeads(data.drilldown.leads || []);
-        setDrilldownTotal(data.drilldown.total || 0);
-        setDrilldownTotalPages(data.drilldown.totalPages || 1);
-      }
     } catch (err: any) {
       console.error('Error fetching funnel analytics:', err);
       showToast(err.response?.data?.error || 'Failed to load funnel analytics', 'error');
@@ -245,10 +211,6 @@ export default function FunnelAnalyticsDashboard({
     datePreset,
     selectedCampaign,
     selectedAgent,
-    selectedStage,
-    debouncedSearch,
-    drillPage,
-    drillLimit,
     customStartDate,
     customEndDate,
     showToast
@@ -265,26 +227,16 @@ export default function FunnelAnalyticsDashboard({
     if (newPeriod === 'monthly') newPreset = 'this_month';
     if (newPeriod === 'annual') newPreset = 'this_year';
     setDatePreset(newPreset);
-    setDrillPage(1);
-    updateUrl(newPeriod, newPreset, selectedStage);
+    updateUrl(newPeriod, newPreset);
   };
 
   // Handle preset change
   const handlePresetChange = (newPreset: DatePreset) => {
     setDatePreset(newPreset);
-    setDrillPage(1);
-    updateUrl(period, newPreset, selectedStage);
+    updateUrl(period, newPreset);
   };
 
-  // Stage card click
-  const handleStageSelect = (stageName: string) => {
-    const next = selectedStage === stageName ? 'ALL' : stageName;
-    setSelectedStage(next);
-    setDrillPage(1);
-    updateUrl(period, datePreset, next);
-  };
-
-  // Export complete data to Excel
+  // Export summary & pipeline matrix to Excel
   const handleExportXLSX = async () => {
     setExporting(true);
     try {
@@ -292,10 +244,7 @@ export default function FunnelAnalyticsDashboard({
         period,
         datePreset,
         campaign: selectedCampaign,
-        agent: selectedAgent,
-        stage: selectedStage,
-        search: debouncedSearch,
-        export: 'true'
+        agent: selectedAgent
       };
       if (datePreset === 'custom') {
         params.startDate = customStartDate;
@@ -310,8 +259,7 @@ export default function FunnelAnalyticsDashboard({
         dateRange: exportPayload.dateRange || dateRangeInfo,
         previousDateRange: exportPayload.previousDateRange || previousRangeInfo,
         summary: exportPayload.summary || summary,
-        funnelStages: exportPayload.funnelStages || funnelStages,
-        leads: exportPayload.drilldown?.leads || drilldownLeads
+        funnelStages: exportPayload.funnelStages || funnelStages
       });
 
       showToast('Funnel report exported successfully', 'success');
@@ -378,7 +326,7 @@ export default function FunnelAnalyticsDashboard({
                   CRM Funnel & Conversion Analytics
                 </h1>
                 <p className="text-xs sm:text-sm text-[#64748B] dark:text-slate-400">
-                  Real-time pipeline progression, stage-wise conversion rates, and lead drill-down intelligence.
+                  Real-time pipeline progression, stage-wise conversion rates, and volume velocity.
                 </p>
               </div>
             </div>
@@ -492,10 +440,7 @@ export default function FunnelAnalyticsDashboard({
                 className="bg-white dark:bg-slate-900 border border-[#CBD5E1] dark:border-slate-700 text-xs rounded-lg px-2.5 py-1 text-[#1E293B] dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-hidden"
               />
               <button
-                onClick={() => {
-                  setDrillPage(1);
-                  fetchFunnelData();
-                }}
+                onClick={fetchFunnelData}
                 className="px-3 py-1 bg-[#2563EB] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition"
               >
                 Apply
@@ -508,10 +453,7 @@ export default function FunnelAnalyticsDashboard({
             <span className="text-xs font-bold text-[#64748B] dark:text-slate-400">Campaign:</span>
             <select
               value={selectedCampaign}
-              onChange={(e) => {
-                setSelectedCampaign(e.target.value);
-                setDrillPage(1);
-              }}
+              onChange={(e) => setSelectedCampaign(e.target.value)}
               className="bg-white dark:bg-slate-800 border border-[#CBD5E1] dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-1.5 text-[#1E293B] dark:text-white focus:ring-2 focus:ring-blue-500 outline-hidden shadow-xs"
             >
               <option value="ALL">All Campaigns</option>
@@ -528,10 +470,7 @@ export default function FunnelAnalyticsDashboard({
             <span className="text-xs font-bold text-[#64748B] dark:text-slate-400">Agent:</span>
             <select
               value={selectedAgent}
-              onChange={(e) => {
-                setSelectedAgent(e.target.value);
-                setDrillPage(1);
-              }}
+              onChange={(e) => setSelectedAgent(e.target.value)}
               className="bg-white dark:bg-slate-800 border border-[#CBD5E1] dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-1.5 text-[#1E293B] dark:text-white focus:ring-2 focus:ring-blue-500 outline-hidden shadow-xs"
             >
               <option value="ALL">All Telecallers / Agents</option>
@@ -691,28 +630,13 @@ export default function FunnelAnalyticsDashboard({
 
       {/* 3. VISUAL SALES FUNNEL PIPELINE SECTION */}
       <div className="bg-white dark:bg-slate-900 border border-[#E2E8F0] dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E2E8F0] dark:border-slate-800 pb-4 mb-6">
-          <div>
-            <h2 className="text-base sm:text-lg font-black text-[#1E3A5F] dark:text-white uppercase tracking-tight flex items-center gap-2">
-              <span>Sales Pipeline Funnel Stages</span>
-              <span className="text-xs font-bold text-[#2563EB] bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-full lowercase">
-                click stage to drill down
-              </span>
-            </h2>
-            <p className="text-xs text-[#64748B] dark:text-slate-400">
-              Stage-to-stage conversion progression rates and drop-off percentages computed from real lead volume.
-            </p>
-          </div>
-
-          {selectedStage !== 'ALL' && (
-            <button
-              onClick={() => handleStageSelect('ALL')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#1E293B] dark:text-white transition"
-            >
-              <Icons.X className="w-3.5 h-3.5" />
-              <span>Clear Filter (Viewing: {selectedStage})</span>
-            </button>
-          )}
+        <div className="border-b border-[#E2E8F0] dark:border-slate-800 pb-4 mb-6">
+          <h2 className="text-base sm:text-lg font-black text-[#1E3A5F] dark:text-white uppercase tracking-tight">
+            Sales Pipeline Funnel Stages
+          </h2>
+          <p className="text-xs text-[#64748B] dark:text-slate-400">
+            Stage-to-stage progression rates and drop-off percentages computed from real lead volume.
+          </p>
         </div>
 
         {funnelStages.length === 0 ? (
@@ -722,18 +646,12 @@ export default function FunnelAnalyticsDashboard({
         ) : (
           <div className="space-y-3">
             {funnelStages.map((stage, idx) => {
-              const isSelected = selectedStage.toUpperCase() === stage.name.toUpperCase();
               const widthPct = Math.max(18, Math.min(100, stage.percentage));
 
               return (
                 <div
                   key={stage.id || idx}
-                  onClick={() => handleStageSelect(stage.name)}
-                  className={`group cursor-pointer rounded-xl p-3.5 border transition-all duration-200 ${
-                    isSelected
-                      ? 'border-[#2563EB] bg-blue-50/40 dark:bg-blue-950/30 shadow-md ring-2 ring-blue-500/30'
-                      : 'border-[#E2E8F0] dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-xs'
-                  }`}
+                  className="rounded-xl p-3.5 border border-[#E2E8F0] dark:border-slate-800 bg-white dark:bg-slate-900/80 shadow-xs"
                 >
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                     {/* Stage Name & Tag */}
@@ -746,7 +664,7 @@ export default function FunnelAnalyticsDashboard({
                         style={{ backgroundColor: stage.color || '#3B82F6' }}
                       />
                       <div className="truncate">
-                        <span className="text-sm font-bold text-[#1E293B] dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        <span className="text-sm font-bold text-[#1E293B] dark:text-white">
                           {stage.name}
                         </span>
                         {stage.isSuccess && (
@@ -804,12 +722,6 @@ export default function FunnelAnalyticsDashboard({
                           {stage.dropOffRate}% drop
                         </div>
                       )}
-
-                      <Icons.ChevronRight
-                        className={`w-4 h-4 text-slate-400 transition-transform ${
-                          isSelected ? 'rotate-90 text-blue-600' : 'group-hover:translate-x-1'
-                        }`}
-                      />
                     </div>
                   </div>
                 </div>
@@ -925,237 +837,6 @@ export default function FunnelAnalyticsDashboard({
                 </PieChart>
               </ResponsiveContainer>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* 5. DETAILED FUNNEL STAGE INFORMATION (DRILL-DOWN LEADS TABLE) */}
-      <div className="bg-white dark:bg-slate-900 border border-[#E2E8F0] dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        {/* Table Header & Search Controls */}
-        <div className="p-5 border-b border-[#E2E8F0] dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-base font-black text-[#1E3A5F] dark:text-white uppercase tracking-tight flex items-center gap-2">
-              <Icons.Users className="w-4 h-4 text-[#2563EB]" />
-              <span>
-                {selectedStage === 'ALL'
-                  ? `All Funnel Lead Records (${drilldownTotal})`
-                  : `Stage: ${selectedStage} (${drilldownTotal} Leads)`}
-              </span>
-            </h3>
-            <p className="text-xs text-[#64748B] dark:text-slate-400">
-              Detailed CRM records matching the active reporting interval and stage filter.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Live Search Input */}
-            <div className="relative min-w-[240px]">
-              <Icons.Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search name, lead no, phone, agent..."
-                value={drillSearch}
-                onChange={(e) => setDrillSearch(e.target.value)}
-                className="w-full bg-[#F8FAFC] dark:bg-slate-800 border border-[#CBD5E1] dark:border-slate-700 text-xs rounded-xl pl-9 pr-3 py-2 text-[#1E293B] dark:text-white focus:ring-2 focus:ring-blue-500 outline-hidden transition shadow-xs"
-              />
-              {drillSearch && (
-                <button
-                  onClick={() => setDrillSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <Icons.X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Quick Stage Filter Dropdown */}
-            <select
-              value={selectedStage}
-              onChange={(e) => handleStageSelect(e.target.value)}
-              className="bg-white dark:bg-slate-800 border border-[#CBD5E1] dark:border-slate-700 text-xs font-semibold rounded-xl px-3 py-2 text-[#1E293B] dark:text-white focus:ring-2 focus:ring-blue-500 outline-hidden shadow-xs"
-            >
-              <option value="ALL">All Funnel Stages</option>
-              {funnelStages.map((st) => (
-                <option key={st.id} value={st.name}>
-                  {st.name} ({st.count})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Table Content */}
-        {loading ? (
-          <div className="p-16 text-center text-slate-400 font-semibold text-sm">
-            <Icons.RotateCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-            Loading lead records...
-          </div>
-        ) : drilldownLeads.length === 0 ? (
-          <div className="p-16 text-center text-slate-400 font-semibold text-sm">
-            No lead records found matching current period and filter criteria.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[950px]">
-              <thead>
-                <tr className="border-b border-[#E2E8F0] dark:border-slate-700 text-[11px] font-black text-[#64748B] dark:text-slate-400 uppercase tracking-wider h-11 bg-[#F8FAFC] dark:bg-slate-800/80">
-                  <th className="py-3 px-4 w-12 text-center">#</th>
-                  <th className="py-3 px-4">Lead No</th>
-                  <th className="py-3 px-4">Customer Name</th>
-                  <th className="py-3 px-4">Company / Firm</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Loan Details</th>
-                  <th className="py-3 px-4">Bank Partner</th>
-                  <th className="py-3 px-4">Assigned Agent</th>
-                  <th className="py-3 px-4">Current Stage</th>
-                  <th className="py-3 px-4">Created Date</th>
-                  <th className="py-3 px-4 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F1F5F9] dark:divide-slate-800/60 font-semibold text-[#1E293B] dark:text-slate-200">
-                {drilldownLeads.map((lead: any, idx: number) => {
-                  const leadNo = lead.leadNo || `LEAD-${(drillPage - 1) * drillLimit + idx + 1}`;
-                  const custName = lead.customerName || 'N/A';
-                  const company = lead.companyName || '—';
-                  const mobile = lead.mobile || '—';
-                  const email = lead.email || '';
-                  const loanType = lead.loanType || 'Personal Loan';
-                  const loanAmount = lead.loanAmount ? `₹${Number(lead.loanAmount).toLocaleString()}` : '';
-                  const bank = lead.bankPartner || '—';
-                  const agent = lead.assignedTo || 'Unassigned';
-                  const stage = lead.status || lead.stage || 'HOT LEADS';
-
-                  // Stage Color lookup
-                  const stageColor =
-                    funnelStages.find((s) => s.name.toUpperCase() === stage.toUpperCase())?.color || '#3B82F6';
-
-                  const createdStr = lead.createdAt
-                    ? new Date(lead.createdAt).toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric'
-                      })
-                    : '—';
-
-                  return (
-                    <tr
-                      key={lead._id || idx}
-                      className="hover:bg-blue-50/40 dark:hover:bg-slate-800/50 transition-colors h-14"
-                    >
-                      <td className="py-3 px-4 text-center text-slate-400 font-mono">
-                        {(drillPage - 1) * drillLimit + idx + 1}
-                      </td>
-                      <td className="py-3 px-4">
-                        <Link
-                          to={`/modules/leads?search=${leadNo}`}
-                          className="font-mono font-bold text-[#2563EB] hover:underline"
-                          title="Open lead in Leads Process"
-                        >
-                          {leadNo}
-                        </Link>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-[#1E3A5F] text-white flex items-center justify-center font-bold text-xs uppercase shadow-3xs">
-                            {custName[0]}
-                          </div>
-                          <span className="font-bold text-[#1E293B] dark:text-white">{custName}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 truncate max-w-[150px]">{company}</td>
-                      <td className="py-3 px-4 font-mono text-[11px]">
-                        <div>{mobile}</div>
-                        {email && <div className="text-slate-400 text-[10px] truncate max-w-[140px]">{email}</div>}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="text-xs font-bold text-[#1E293B] dark:text-white">{loanType}</div>
-                        {loanAmount && <div className="text-[11px] text-[#16A34A] font-semibold">{loanAmount}</div>}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[#1E293B] dark:text-slate-300 text-[11px]">
-                          {bank}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">{agent}</td>
-                      <td className="py-3 px-4">
-                        <span
-                          className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase text-white shadow-3xs"
-                          style={{ backgroundColor: stageColor }}
-                        >
-                          {stage}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 font-medium">{createdStr}</td>
-                      <td className="py-3 px-4 text-center">
-                        <Link
-                          to={`/modules/leads?search=${leadNo}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2563EB]/10 text-[#2563EB] hover:bg-[#2563EB] hover:text-white transition"
-                        >
-                          <span>View</span>
-                          <Icons.ExternalLink className="w-3 h-3" />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination Bar */}
-        <div className="p-4 border-t border-[#E2E8F0] dark:border-slate-800 bg-[#F8FAFC] dark:bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="text-xs text-[#64748B] dark:text-slate-400 font-semibold">
-            Showing{' '}
-            <span className="font-bold text-[#1E293B] dark:text-white">
-              {drilldownTotal > 0 ? (drillPage - 1) * drillLimit + 1 : 0}
-            </span>{' '}
-            to{' '}
-            <span className="font-bold text-[#1E293B] dark:text-white">
-              {Math.min(drillPage * drillLimit, drilldownTotal)}
-            </span>{' '}
-            of <span className="font-bold text-[#1E293B] dark:text-white">{drilldownTotal}</span> leads
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
-              <span>Rows:</span>
-              <select
-                value={drillLimit}
-                onChange={(e) => {
-                  setDrillLimit(Number(e.target.value));
-                  setDrillPage(1);
-                }}
-                className="bg-white dark:bg-slate-800 border border-[#CBD5E1] dark:border-slate-700 text-xs font-semibold rounded-lg px-2 py-1 text-[#1E293B] dark:text-white outline-hidden"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-
-            {/* Prev / Next buttons */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setDrillPage((p) => Math.max(1, p - 1))}
-                disabled={drillPage <= 1}
-                className="px-2.5 py-1 rounded-lg border border-[#CBD5E1] dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-800 text-[#1E293B] dark:text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold px-2 text-[#1E3A5F] dark:text-white">
-                {drillPage} / {drilldownTotalPages}
-              </span>
-              <button
-                onClick={() => setDrillPage((p) => Math.min(drilldownTotalPages, p + 1))}
-                disabled={drillPage >= drilldownTotalPages}
-                className="px-2.5 py-1 rounded-lg border border-[#CBD5E1] dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-800 text-[#1E293B] dark:text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
-              >
-                Next
-              </button>
-            </div>
           </div>
         </div>
       </div>
