@@ -971,7 +971,7 @@ export default function Layout({ children }: LayoutProps) {
           {location.pathname !== '/' && (
             <div className={cn(
               "sticky top-0 z-20 bg-surface-page/95 backdrop-blur-xs border-b border-border-subtle flex items-center justify-between gap-4 transition-colors",
-              location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns')
+              location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns') || location.pathname.startsWith('/modules/leads')
                 ? "px-4 sm:px-6 py-2"
                 : "px-4 sm:px-6 md:px-8 py-3.5"
             )}>
@@ -981,7 +981,7 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
                 <h1 className={cn(
                   "font-bold text-content-primary tracking-tight leading-tight truncate",
-                  location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns')
+                  location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns') || location.pathname.startsWith('/modules/leads')
                     ? "text-base sm:text-lg"
                     : "text-lg sm:text-xl md:text-2xl"
                 )}>
@@ -996,8 +996,8 @@ export default function Layout({ children }: LayoutProps) {
             "flex-1 max-w-[1600px] w-full mx-auto",
             location.pathname === '/' 
               ? "px-3 sm:px-6 pt-2 pb-6" 
-              : location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns')
-                ? "px-3 sm:px-5 pt-1.5 pb-4"
+              : location.pathname.startsWith('/my-campaign') || location.pathname.startsWith('/modules/campaigns') || location.pathname.startsWith('/modules/leads')
+                ? "px-3 sm:px-5 pt-2 pb-5"
                 : "p-4 sm:p-6 md:p-8"
           )}>
             {children}

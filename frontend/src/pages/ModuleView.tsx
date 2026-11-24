@@ -15,6 +15,26 @@ import { formatDate } from '../utils/dateFormatter';
 import { exportCampaignCSV } from '../utils/exportCampaignCSV';
 import { exportLeadReportXLSX } from '../utils/exportLeadReportXLSX';
 import { getStatusTokens } from '../utils/statusTokenMapper';
+import { cn } from '../components/layout/SidebarComponents';
+
+const getLeadStatusIcon = (statusName: string, isFollowupToday: boolean) => {
+  if (isFollowupToday) return Icons.CalendarClock;
+  const s = statusName.toLowerCase();
+  if (s.includes('hot')) return Icons.Flame;
+  if (s.includes('warm')) return Icons.Sun;
+  if (s.includes('cool')) return Icons.Snowflake;
+  if (s.includes('follow')) return Icons.PhoneCall;
+  if (s.includes('disbus') || s.includes('disburs')) return Icons.BadgeCheck;
+  if (s.includes('approv')) return Icons.CheckCircle2;
+  if (s.includes('reject')) return Icons.XCircle;
+  if (s.includes('drop')) return Icons.Ban;
+  if (s.includes('login')) return Icons.KeyRound;
+  if (s.includes('doc')) return Icons.FileText;
+  if (s.includes('cibil') || s.includes('cebil')) return Icons.AlertCircle;
+  if (s.includes('call back') || s.includes('callback')) return Icons.PhoneForwarded;
+  if (s.includes('meet') || s.includes('executive')) return Icons.Users2;
+  return Icons.Layers;
+};
 
 const EXCLUDED_CAMPAIGN_STATUSES = new Set([
   'REJECTED',
@@ -2839,78 +2859,102 @@ export default function ModuleView() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={apiPath === 'leads' ? "space-y-2.5 sm:space-y-3" : "space-y-6"}>
       {apiPath === 'leads' ? (
-        <div className="space-y-5">
-          {/* Header Title Bar with Icon & Live Count */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-3xs flex-shrink-0">
-                <Icons.Users className="w-5 h-5" />
-              </div>
-              <div className="text-left">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
-                    {urlFollowup === 'today'
-                      ? "TODAY'S FOLLOWUPS"
-                      : urlStatus 
-                        ? (urlStatus.toUpperCase().endsWith('LEADS') ? urlStatus.toUpperCase() : `${urlStatus.toUpperCase()} LEADS`) 
-                        : urlSearch
-                          ? `SEARCH: ${urlSearch.toUpperCase()}`
-                          : 'ALL LEADS'}
-                  </h1>
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-3xs font-mono">
-                    {data?.pagination?.total ?? data?.pagination?.totalRecords ?? (data?.records?.length || 0)} Total
-                  </span>
-                </div>
-                <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">
+        <div className="space-y-2.5">
+          {/* Header Title Bar with Back Button, Status Icon, Live Count & Create Lead CTA */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-wrap">
+              {/* Back Button to return to Dashboard / Previous View */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.history.state && window.history.state.idx > 0) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
+                }}
+                className="h-8.5 px-3 rounded-lg bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-3xs transition-all cursor-pointer flex-shrink-0"
+                title="Back to Dashboard"
+              >
+                <Icons.ArrowLeft className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Back</span>
+              </button>
+
+              {/* Dynamic Status Icon */}
+              {(() => {
+                const isFollowupToday = urlFollowup === 'today';
+                const statusTokens = (urlStatus || isFollowupToday)
+                  ? getStatusTokens(urlStatus || "Today's Followups")
+                  : null;
+                const StatusIcon = getLeadStatusIcon(urlStatus || '', isFollowupToday);
+                return (
+                  <div className={cn(
+                    "w-8.5 h-8.5 rounded-lg flex items-center justify-center flex-shrink-0 border shadow-3xs",
+                    statusTokens 
+                      ? statusTokens.iconBgClass 
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700"
+                  )}>
+                    <StatusIcon className={cn("w-4 h-4", statusTokens ? statusTokens.iconTextClass : "text-slate-700 dark:text-slate-200")} />
+                  </div>
+                );
+              })()}
+
+              {/* Status Title & Count Badge */}
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
                   {urlFollowup === 'today'
-                    ? "Showing all leads scheduled for follow-up today."
+                    ? "TODAY'S FOLLOWUPS"
                     : urlStatus 
-                      ? `Filtering leads with status: ${urlStatus}` 
+                      ? (urlStatus.toUpperCase().endsWith('LEADS') ? urlStatus.toUpperCase() : `${urlStatus.toUpperCase()} LEADS`) 
                       : urlSearch
-                        ? `Showing results matching "${urlSearch}"`
-                        : 'Search, manage, and track leads across all campaigns.'}
-                </p>
+                        ? `SEARCH: ${urlSearch.toUpperCase()}`
+                        : 'ALL LEADS'}
+                </h1>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/90 dark:border-slate-700 shadow-3xs font-mono whitespace-nowrap">
+                  {(data?.pagination?.total ?? data?.pagination?.totalRecords ?? (data?.records?.length || 0)).toLocaleString('en-IN')} Total
+                </span>
               </div>
+
+              {/* Clear Filter button if filtered */}
+              {(urlStatus || urlFollowup || urlSearch) && (
+                <Link
+                  to="/modules/leads"
+                  onClick={() => setSearchVal('')}
+                  className="h-7 px-2.5 text-[11px] font-bold bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 border border-slate-200/90 hover:border-rose-200/90 dark:border-slate-700 dark:hover:border-rose-900/60 rounded-lg transition-colors flex items-center gap-1 shadow-3xs cursor-pointer flex-shrink-0"
+                  title="Reset filters and show all leads"
+                >
+                  <Icons.X className="w-3 h-3 stroke-[2.5]" />
+                  <span>Clear Filter</span>
+                </Link>
+              )}
             </div>
 
-            {(urlStatus || urlFollowup || urlSearch) && (
-              <Link
-                to="/modules/leads"
-                onClick={() => setSearchVal('')}
-                className="px-3.5 py-2 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5 shadow-3xs cursor-pointer"
-              >
-                <Icons.X className="w-3.5 h-3.5" />
-                <span>Clear Filter</span>
-              </Link>
-            )}
-          </div>
-
-          {/* Premium Control Bar with Generous Padding */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            {/* Create Lead Button */}
+            {/* Right Action: Create Lead */}
             <Link
               to="/modules/leads/new"
-              className="inline-flex items-center justify-center gap-2 h-10 px-5 bg-[#17223B] hover:bg-[#223050] active:bg-[#0F172A] text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-xs transition-all self-start lg:self-auto cursor-pointer"
+              className="h-8.5 px-3.5 bg-[#17223B] hover:bg-[#223050] active:bg-[#0F172A] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-3xs transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 ml-auto"
             >
-              <Icons.Plus className="w-4 h-4 stroke-[2.5]" />
+              <Icons.Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Create Lead</span>
             </Link>
+          </div>
 
-            {/* Search Input & Action Buttons Form */}
+          {/* Compact Executive Search Bar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl px-3 py-2 shadow-3xs">
             <form 
               onSubmit={handleSearchSubmit}
-              className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 w-full"
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full"
             >
-              <div className="relative flex-1 max-w-md">
-                <Icons.Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <div className="relative flex-1">
+                <Icons.Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchVal}
                   onChange={(e) => setSearchVal(e.target.value)}
                   placeholder="Search by name, lead number, created by, mobile..."
-                  className="w-full h-10 pl-10 pr-9 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                  className="w-full h-8.5 pl-8.5 pr-8 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-slate-400 dark:focus:border-slate-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
                 />
                 {searchVal && (
                   <button
@@ -2919,7 +2963,7 @@ export default function ModuleView() {
                       setSearchVal('');
                       setPage(1);
                     }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs p-1 rounded cursor-pointer"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
                     title="Clear search"
                   >
                     <Icons.X className="w-3.5 h-3.5" />
@@ -2927,10 +2971,10 @@ export default function ModuleView() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   type="submit"
-                  className="h-10 px-5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="h-8.5 px-4 bg-[#17223B] hover:bg-[#223050] active:bg-[#0F172A] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-3xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Icons.Search className="w-3.5 h-3.5 stroke-[2.2]" />
                   <span>Search</span>
@@ -2938,7 +2982,7 @@ export default function ModuleView() {
                 <button
                   type="button"
                   onClick={handleLoadAll}
-                  className="h-10 px-4.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl shadow-3xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className="h-8.5 px-3.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 text-xs font-bold uppercase tracking-wider rounded-lg shadow-3xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   title="Reset filters and load all leads"
                 >
                   <Icons.RotateCcw className="w-3.5 h-3.5 stroke-[2]" />
