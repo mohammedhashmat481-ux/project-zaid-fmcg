@@ -2638,6 +2638,32 @@ router.get('/:apiPath', async (req, res) => {
         res.status(500).json({ error: 'Failed to retrieve records.' });
     }
 });
+// Helper: generate guaranteed collision-free unique lead number (01, 02, 03... or max+1)
+const generateUniqueLeadNo = async (organizationId, moduleId) => {
+    let maxNum = 0;
+    try {
+        const maxRow = await (0, postgres_1.queryPg)(`SELECT COALESCE(MAX(NULLIF(regexp_replace(data->>'leadNo', '\\D', '', 'g'), '')::bigint), 0) as max_no 
+       FROM custom_records 
+       WHERE organization_id = $1 AND module_id = $2`, [organizationId, moduleId]);
+        if (maxRow && maxRow[0] && maxRow[0].max_no) {
+            maxNum = Number(maxRow[0].max_no) || 0;
+        }
+    }
+    catch (_) { }
+    const leadCount = await CustomRecord_1.default.countDocuments({
+        organizationId,
+        moduleId
+    });
+    let nextNum = Math.max(maxNum, Number(leadCount) || 0) + 1;
+    while (await CustomRecord_1.default.findOne({
+        organizationId,
+        moduleId,
+        'data.leadNo': String(nextNum).padStart(2, '0')
+    })) {
+        nextNum++;
+    }
+    return String(nextNum).padStart(2, '0');
+};
 // 2. CREATE A RECORD
 router.post('/:apiPath', async (req, res) => {
     try {
@@ -2701,12 +2727,7 @@ router.post('/:apiPath', async (req, res) => {
             }
             // Auto-generate serial unique Lead Number: 01, 02, 03... (distinct from Data Code)
             if (!recordData.leadNo && !recordData.leadNumber) {
-                const leadCount = await CustomRecord_1.default.countDocuments({
-                    organizationId: req.organizationId,
-                    moduleId: moduleDef._id
-                });
-                const serialNo = leadCount + 1;
-                const formattedLeadNo = String(serialNo).padStart(2, '0');
+                const formattedLeadNo = await generateUniqueLeadNo(req.organizationId, moduleDef._id);
                 recordData.leadNo = formattedLeadNo;
                 recordData.leadNumber = formattedLeadNo;
             }
@@ -2768,6 +2789,76 @@ router.post('/:apiPath', async (req, res) => {
             }
         });
         const creatorId = String(req.user?.id);
+        // Multi-partner handling for Leads: If multiple business partners were selected, create separate lead records with unique lead numbers for each
+        const rawPartners = recordData.businessPartner || recordData.bankPartner || recordData.bank || recordData.bankNames || '';
+        const partnerList = (typeof rawPartners === 'string' && rawPartners.includes(','))
+            ? rawPartners.split(',').map((s) => s.trim()).filter(Boolean)
+            : (Array.isArray(rawPartners) ? rawPartners.map((s) => String(s).trim()).filter(Boolean) : []);
+        if (apiPath.toLowerCase() === 'leads' && partnerList.length > 1) {
+            const createdRecords = [];
+            for (let i = 0; i < partnerList.length; i++) {
+                const partner = partnerList[i];
+                const singleLeadData = { ...recordData };
+                singleLeadData.businessPartner = partner;
+                singleLeadData.bankPartner = partner;
+                singleLeadData.bank = partner;
+                singleLeadData.bankName = partner;
+                singleLeadData.bankNames = partner;
+                // Auto-generate strictly unique Lead Number for each partner lead
+                const formattedLeadNo = await generateUniqueLeadNo(req.organizationId, moduleDef._id);
+                singleLeadData.leadNo = formattedLeadNo;
+                singleLeadData.leadNumber = formattedLeadNo;
+                if (singleLeadData.campaignName || singleLeadData.campaign) {
+                    const camp = String(singleLeadData.campaignName || singleLeadData.campaign).trim().toUpperCase().replace(/[^A-Z0-9]/g, '-').replace(/-+/g, '-');
+                    singleLeadData.dataCode = `${camp}-DATA-${formattedLeadNo}`;
+                    singleLeadData.data_code = singleLeadData.dataCode;
+                }
+                const newRec = await CustomRecord_1.default.create({
+                    organizationId: req.organizationId,
+                    moduleId: moduleDef._id,
+                    data: singleLeadData,
+                    createdBy: creatorId,
+                    updatedBy: creatorId
+                });
+                createdRecords.push(newRec);
+                // Timeline Logging (Activity)
+                await Activity_1.default.create({
+                    organizationId: req.organizationId,
+                    recordId: newRec._id,
+                    userId: creatorId,
+                    type: 'create',
+                    details: { partner }
+                });
+                // System Auditing
+                await AuditLog_1.default.create({
+                    organizationId: req.organizationId,
+                    userId: creatorId,
+                    action: 'record.create',
+                    resource: moduleDef.name,
+                    resourceId: String(newRec._id),
+                    newValue: singleLeadData
+                });
+                // Generate Notification if assignedTo is set
+                if (singleLeadData.assignedTo) {
+                    const name = `${singleLeadData.firstName || ''} ${singleLeadData.lastName || ''}`.trim() || moduleDef.singularLabel || 'Record';
+                    await (0, notificationHelper_1.createNotification)({
+                        organizationId: req.organizationId,
+                        recipient: singleLeadData.assignedTo,
+                        title: `${moduleDef.singularLabel || 'Lead'} Assigned`,
+                        message: `${moduleDef.singularLabel || 'Lead'} '${name}' (${partner}) has been assigned to you.`,
+                        type: 'info',
+                        link: `/modules/${apiPath.toLowerCase()}/${newRec._id}`
+                    });
+                }
+                // Execute Workflows
+                workflowEngine_1.WorkflowEngine.trigger(req.organizationId, moduleDef._id, 'create', newRec);
+            }
+            cache_1.CacheInvalidators.invalidateDashboard(req.organizationId);
+            cache_1.CacheInvalidators.invalidateCampaigns(req.organizationId);
+            cache_1.CacheInvalidators.invalidateMaster(req.organizationId, apiPath.toLowerCase());
+            res.status(201).json(createdRecords[0] || { success: true, count: createdRecords.length });
+            return;
+        }
         const newRecord = await CustomRecord_1.default.create({
             organizationId: req.organizationId,
             moduleId: moduleDef._id,

@@ -757,9 +757,17 @@ export default function RecordForm() {
         await api.put(`/records/${apiPath}/${id}`, data);
       } else {
         const fromCampaignLeadId = location.state?.fromCampaignLeadId;
+
+        // Extract all selected business partners
+        const rawPartners = data.businessPartner || data.bankPartner || data.bank || '';
+        const partnerList = typeof rawPartners === 'string' && rawPartners.includes(',')
+          ? rawPartners.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : (rawPartners ? [String(rawPartners).trim()] : []);
+        const effectivePartners = partnerList.length > 0 ? partnerList : [''];
+
         if (fromCampaignLeadId) {
-          // If this lead was opened from a campaign, UPDATE the existing campaign lead!
-          // NEVER create new duplicate records!
+          // If this lead was opened from a campaign, UPDATE the existing campaign lead with the first partner!
+          const firstPartner = effectivePartners[0];
           const finalStatus = data.status || location.state?.status || 'HOT LEADS';
           const loggedInName = user
             ? ([user.firstName, user.lastName].filter(Boolean).join(' ') || (user as any).name || (user as any).fullName || user.email?.split('@')[0])
@@ -768,6 +776,11 @@ export default function RecordForm() {
 
           await api.put(`/records/leads/${fromCampaignLeadId}`, {
             ...data,
+            businessPartner: firstPartner,
+            bankPartner: firstPartner,
+            bank: firstPartner,
+            bankName: firstPartner,
+            bankNames: firstPartner,
             status: finalStatus,
             dialStatus: finalStatus,
             dialedAt: new Date(),
@@ -792,13 +805,44 @@ export default function RecordForm() {
             amount: data.budget || data.loanAmount || location.state?.amount || location.state?.budget || '',
             loanType: data.loanType || location.state?.loanType || location.state?.product || '',
             product: data.loanType || location.state?.loanType || location.state?.product || '',
-            businessPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
-            bankPartner: data.businessPartner || location.state?.businessPartner || location.state?.bankPartner || '',
             psm: data.psm || location.state?.psm || ''
           });
+
+          // If multiple business partners were selected, create separate lead records for each additional partner!
+          if (effectivePartners.length > 1) {
+            for (let i = 1; i < effectivePartners.length; i++) {
+              const partner = effectivePartners[i];
+              await api.post(`/records/leads`, {
+                ...data,
+                businessPartner: partner,
+                bankPartner: partner,
+                bank: partner,
+                bankName: partner,
+                bankNames: partner,
+                status: finalStatus,
+                dialStatus: finalStatus,
+                source: finalCaller,
+                creatorName: finalCaller,
+                createdByName: finalCaller
+              });
+            }
+          }
         } else {
-          // Fresh lead creation: creates EXACTLY ONE lead record (never duplicate across multiple business partners)
-          await api.post(`/records/${apiPath}`, data);
+          // Fresh lead creation: if multiple business partners are selected, create a separate lead for each partner!
+          if (effectivePartners.length > 1) {
+            for (const partner of effectivePartners) {
+              await api.post(`/records/${apiPath}`, {
+                ...data,
+                businessPartner: partner,
+                bankPartner: partner,
+                bank: partner,
+                bankName: partner,
+                bankNames: partner
+              });
+            }
+          } else {
+            await api.post(`/records/${apiPath}`, data);
+          }
         }
       }
       queryClient.invalidateQueries({ queryKey: ['records', apiPath] });
@@ -810,11 +854,24 @@ export default function RecordForm() {
       queryClient.invalidateQueries({ queryKey: ['campaign-status-config'] });
       queryClient.invalidateQueries({ queryKey: ['campaigns-stats'] });
       queryClient.invalidateQueries({ queryKey: ['my-campaigns-list'] });
+
+      const rawPartners = data.businessPartner || data.bankPartner || data.bank || '';
+      const partnerList = typeof rawPartners === 'string' && rawPartners.includes(',')
+        ? rawPartners.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : (rawPartners ? [String(rawPartners).trim()] : []);
+      const createdCount = partnerList.length;
+
       showAlertModal({
-        title: id ? 'Saved Successfully' : (location.state?.fromCampaignLeadId ? 'Lead Saved Successfully' : 'Created Successfully'),
+        title: id 
+          ? 'Saved Successfully' 
+          : (createdCount > 1 
+              ? `${createdCount} Leads Created Successfully` 
+              : (location.state?.fromCampaignLeadId ? 'Lead Saved Successfully' : 'Created Successfully')),
         message: id 
           ? 'The record has been updated successfully.' 
-          : 'The lead has been recorded successfully.',
+          : (createdCount > 1 
+              ? `${createdCount} separate leads have been generated successfully with unique lead numbers for each selected business partner.` 
+              : 'The lead has been recorded successfully.'),
         type: 'success',
         onClose: () => {
           const returnCampaign = location.state?.returnToCampaign || location.state?.campaignName || location.state?.campaign;
