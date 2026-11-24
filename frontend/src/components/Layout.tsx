@@ -664,13 +664,13 @@ export default function Layout({ children }: LayoutProps) {
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="w-full h-9 px-3.5 bg-white/10 hover:bg-white/15 border border-white/15 rounded-control text-xs text-white/70 flex items-center justify-between transition-all cursor-pointer shadow-xs group"
+            className="w-full h-9 px-3.5 bg-white/15 hover:bg-white/25 border border-white hover:border-white rounded-control text-xs text-white flex items-center justify-between transition-all duration-200 cursor-pointer shadow-sm hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] group"
           >
             <div className="flex items-center gap-2.5">
-              <Icons.Search className="w-4 h-4 text-white/50 group-hover:text-white/80 transition-colors stroke-[1.75]" />
-              <span className="font-normal text-white/70">Search leads, deals, contacts, campaigns...</span>
+              <Icons.Search className="w-4 h-4 text-white/90 group-hover:text-white transition-colors stroke-[2]" />
+              <span className="font-medium text-white/90 group-hover:text-white transition-colors">Search leads, deals, contacts, campaigns...</span>
             </div>
-            <kbd className="px-1.5 py-0.5 rounded bg-white/15 text-[10px] font-semibold text-white/70 border border-white/20">
+            <kbd className="px-1.5 py-0.5 rounded bg-white/20 group-hover:bg-white/30 text-[10px] font-bold text-white border border-white/40 shadow-xs transition-colors">
               ⌘K
             </kbd>
           </button>
@@ -683,10 +683,10 @@ export default function Layout({ children }: LayoutProps) {
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            className="md:hidden p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-control transition-colors"
+            className="md:hidden p-2 text-white bg-white/15 hover:bg-white/25 border border-white rounded-control transition-all shadow-xs"
             title="Search"
           >
-            <Icons.Search className="w-5 h-5 stroke-[1.75]" />
+            <Icons.Search className="w-5 h-5 stroke-[2]" />
           </button>
 
           {/* Notifications Popover Toggle */}
