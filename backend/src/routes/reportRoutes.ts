@@ -160,6 +160,10 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
            data->>'assignedTo' as "assignedTo",
            data->>'source' as source,
            data->>'creatorName' as "creatorName",
+           data->>'createdByName' as "createdByName",
+           data->>'telecaller' as telecaller,
+           data->>'isLeadCreated' as "isLeadCreated",
+           data->>'leadCreated' as "leadCreated",
            data->>'dialedBy' as "dialedBy",
            data->>'callerName' as "callerName",
            data->>'lastDialedBy' as "lastDialedBy",
@@ -190,6 +194,10 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           assignedTo: r.assignedTo,
           source: r.source,
           creatorName: r.creatorName,
+          createdByName: r.createdByName,
+          telecaller: r.telecaller,
+          isLeadCreated: r.isLeadCreated === true || r.isLeadCreated === 'true',
+          leadCreated: r.leadCreated === true || r.leadCreated === 'true',
           dialedBy: r.dialedBy,
           callerName: r.callerName,
           lastDialedBy: r.lastDialedBy,
@@ -261,28 +269,30 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       let candidateList: any[] = [];
 
       if (metricType === 'callsMade' || metricType === 'leadsCalled') {
-        // Person who actually initiated or logged the call
+        // Person who actually initiated, dialed, or created/updated the lead
         candidateList = [
           d.dialedBy,
           d.callerName,
           d.lastDialedBy,
+          d.source,
+          d.creatorName,
+          d.createdByName,
+          item.createdBy,
           item.updatedBy,
+          d.telecaller,
           d.assignedTo?.name,
           d.assignedTo?.email,
           d.assignedTo?._id,
           d.assignedTo,
-          d.telecaller,
           item.assignedTo?.name,
-          item.assignedTo,
-          item.createdBy,
-          d.source,
-          d.creatorName
+          item.assignedTo
         ];
       } else if (metricType === 'hotLeads' || metricType === 'warmLeads') {
         // Person who created or sourced the hot/warm lead
         candidateList = [
           d.source,
           d.creatorName,
+          d.createdByName,
           item.createdBy,
           d.dialedBy,
           d.callerName,
@@ -308,7 +318,8 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
           item.updatedBy,
           item.createdBy,
           d.source,
-          d.creatorName
+          d.creatorName,
+          d.createdByName
         ];
       }
 
@@ -326,6 +337,11 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
 
         for (const c of orderedCallersList) {
           if (c.toLowerCase() === lower) return c;
+        }
+
+        // If not found in users table, but is a valid readable human name (not a mongo/UUID hash)
+        if (!/^[0-9a-f]{24}$/i.test(str) && !/^[0-9a-f-]{36}$/i.test(str)) {
+          return str;
         }
       }
 
@@ -365,15 +381,37 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       callerNames = isFilteredByUserOrRole ? ['Selected User'] : ['Super Admin', 'Telecaller'];
     }
 
-    // Helper: Determine if a lead has ACTUALLY been dialed / called
-    // (A newly created lead in form without a call made is NOT dialed!)
+    // Uncalled status set
+    const UNCALLED_STATUSES = new Set([
+      '',
+      'new',
+      'yet to call',
+      'not called',
+      'unassigned',
+      'null',
+      'undefined'
+    ]);
+
+    // Helper: Determine if a lead has ACTUALLY been dialed / called,
+    // or has an active dashboard lead status (e.g. Hot Leads, Warm Leads, Cool Lead, Followup, Login, Document Pending, Status Pending, Approved, Disbursed, Rejected, etc.)
     const isLeadDialed = (lead: any): boolean => {
       const d = lead.data || {};
       if (d.dialedAt) return true;
       const callAttempts = Number(d.callAttempts || 0);
       if (callAttempts > 0) return true;
+      if (d.isLeadCreated || d.leadCreated) return true;
+
+      // Campaign dial status check
       const dialSt = (d.dialStatus || '').toString().toLowerCase().trim();
-      if (dialSt && !['new', 'yet to call', 'unassigned', ''].includes(dialSt)) return true;
+      if (dialSt && !UNCALLED_STATUSES.has(dialSt)) return true;
+
+      // Dashboard lead status check (Hot, Warm, Cool, Followup, Login, Document Pending, Status Pending, Approved, Disbursed, Rejected, etc.)
+      const st = (d.status || lead.status || '').toString().toLowerCase().trim();
+      if (st && !UNCALLED_STATUSES.has(st)) return true;
+
+      const cat = (d.leadCategory || '').toString().toLowerCase().trim();
+      if (cat && !UNCALLED_STATUSES.has(cat)) return true;
+
       return false;
     };
 
@@ -385,7 +423,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       let rawDate: any = null;
 
       if (metricType === 'callsMade' || metricType === 'leadsCalled') {
-        rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
+        rawDate = d.dialedAt || (isLeadDialed(lead) ? (d.hotDate || d.loginDate || d.approvalDate || d.disbursalDate || lead.updatedAt || lead.createdAt) : null);
       } else if (metricType === 'hotLeads') {
         rawDate = d.hotDate || lead.updatedAt || lead.createdAt;
       } else if (metricType === 'logins') {
@@ -395,7 +433,7 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
       } else if (metricType === 'disbursed') {
         rawDate = d.disbursalDate || lead.updatedAt || lead.createdAt;
       } else {
-        rawDate = d.dialedAt || (isLeadDialed(lead) ? (lead.updatedAt || lead.createdAt) : null);
+        rawDate = d.dialedAt || (isLeadDialed(lead) ? (d.hotDate || d.loginDate || d.approvalDate || d.disbursalDate || lead.updatedAt || lead.createdAt) : null);
       }
 
       if (!rawDate) return null;
@@ -685,7 +723,10 @@ router.get('/campaign-matrix', async (req: Request, res: Response): Promise<void
     const periodApproved = filteredLeads.filter(l => isLeadMetricMatch(l, 'approved') && isLeadInPeriod(l, 'approved')).length;
     const periodDisbursed = filteredLeads.filter(l => isLeadMetricMatch(l, 'disbursed') && isLeadInPeriod(l, 'disbursed')).length;
 
-    const totalLeadsAssignedCount = filteredAssignments.length > 0 ? filteredAssignments.length : filteredLeads.length;
+    const totalLeadsAssignedCount = Math.max(
+      filteredAssignments.length,
+      filteredLeads.length
+    );
     const campaignsAssignedCount = campaignName !== 'ALL'
       ? 1
       : (registeredCampaignNames.length > 0 ? registeredCampaignNames.length : 1);

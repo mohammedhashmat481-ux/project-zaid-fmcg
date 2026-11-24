@@ -117,12 +117,14 @@ exports.CacheInvalidators = {
             exports.serverCache.delete(`tenant:subdomain:${subdomain.toLowerCase().trim()}`);
     },
     invalidateDashboard: (orgId) => {
+        exports.serverCache.invalidatePattern(new RegExp(`^reports:matrix:${orgId}(:|$)`));
         return exports.serverCache.invalidatePattern(new RegExp(`^dash:metrics:${orgId}(:|$)`));
     },
     invalidateCampaigns: (orgId, campaignName) => {
         if (campaignName) {
             exports.serverCache.invalidatePattern(new RegExp(`^campaigns:details:${orgId}:${campaignName.toLowerCase().trim()}`));
         }
+        exports.serverCache.invalidatePattern(new RegExp(`^reports:matrix:${orgId}(:|$)`));
         return exports.serverCache.invalidatePattern(new RegExp(`^campaigns:.*:${orgId}(:|$)`));
     },
     invalidateReports: (orgId) => {
