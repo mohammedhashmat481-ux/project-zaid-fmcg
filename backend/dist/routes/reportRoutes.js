@@ -1194,6 +1194,241 @@ router.get('/funnel-analytics', async (req, res) => {
         res.status(500).json({ error: error.message || 'Failed to aggregate funnel analytics data' });
     }
 });
+// Live Telecaller Performance Report (Real Database Aggregation across Leads, Assignments & Dialing Statuses)
+router.get('/telecaller-performance', async (req, res) => {
+    try {
+        const orgId = req.organizationId;
+        const { month = 'ALL', year = '2026', campaign = 'ALL', role = 'ALL', agent = 'ALL' } = req.query;
+        // 1. Fetch Users, Roles, and Modules in Parallel
+        const [users, roles, leadModule, assignModule, campModule] = await Promise.all([
+            User_1.default.find({ organizationId: orgId }).select('_id id firstName lastName name email roleId').lean(),
+            Role_1.default.find({ organizationId: orgId }).select('_id id name').lean(),
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'leads' }).lean(),
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaignassignments' }).lean(),
+            ModuleDefinition_1.default.findOne({ organizationId: orgId, apiPath: 'campaigns' }).lean()
+        ]);
+        const roleMap = new Map();
+        roles.forEach((r) => {
+            roleMap.set(String(r._id || r.id), r.name);
+        });
+        // 2. Fetch distinct campaigns from campaigns module
+        let registeredCampaigns = [];
+        if (campModule) {
+            const campRows = await (0, postgres_1.queryPg)(`SELECT DISTINCT COALESCE(data->>'campaignName', data->>'name', '') as name 
+         FROM custom_records 
+         WHERE organization_id = $1 AND module_id = $2`, [orgId, campModule._id || campModule.id]);
+            registeredCampaigns = campRows.map((r) => (r.name || '').trim()).filter(Boolean);
+        }
+        if (!leadModule) {
+            res.status(200).json({
+                summary: { totalActiveTelecallers: 0, totalCallsConnected: 0, totalAssignedLeads: 0, totalFollowups: 0, connectionRate: 0 },
+                agents: [],
+                campaignsList: registeredCampaigns,
+                rolesList: roles.map((r) => r.name)
+            });
+            return;
+        }
+        const leadModId = leadModule._id || leadModule.id;
+        // 3. Build Leads SQL Query with Month, Year, and Campaign filters
+        let leadWhere = `WHERE organization_id = $1 AND module_id = $2`;
+        const leadParams = [orgId, leadModId];
+        let pIdx = 3;
+        if (campaign && campaign !== 'ALL') {
+            const camps = Array.isArray(campaign) ? campaign : [campaign];
+            const validCamps = camps.map(c => String(c).toLowerCase().trim()).filter(c => c && c !== 'all');
+            if (validCamps.length > 0) {
+                leadParams.push(validCamps);
+                leadWhere += ` AND lower(COALESCE(data->>'campaign', data->>'campaignName', '')) = ANY($${pIdx}::text[])`;
+                pIdx++;
+            }
+        }
+        if (year && year !== 'ALL') {
+            const targetYear = parseInt(String(year), 10);
+            if (!isNaN(targetYear)) {
+                leadParams.push(targetYear);
+                leadWhere += ` AND EXTRACT(YEAR FROM (created_at AT TIME ZONE 'Asia/Kolkata')) = $${pIdx}`;
+                pIdx++;
+            }
+        }
+        if (month && month !== 'ALL') {
+            const monthNames = [
+                'january', 'february', 'march', 'april', 'may', 'june',
+                'july', 'august', 'september', 'october', 'november', 'december'
+            ];
+            const monthsArr = Array.isArray(month) ? month : [month];
+            const monthIndices = [];
+            monthsArr.forEach(m => {
+                const str = String(m).toLowerCase().trim();
+                const num = parseInt(str, 10);
+                if (!isNaN(num) && num >= 1 && num <= 12) {
+                    monthIndices.push(num);
+                }
+                else {
+                    const idx = monthNames.indexOf(str);
+                    if (idx !== -1)
+                        monthIndices.push(idx + 1);
+                }
+            });
+            if (monthIndices.length > 0) {
+                leadParams.push(monthIndices);
+                leadWhere += ` AND EXTRACT(MONTH FROM (created_at AT TIME ZONE 'Asia/Kolkata')) = ANY($${pIdx}::int[])`;
+                pIdx++;
+            }
+        }
+        // Fast indexed query
+        const leadRows = await (0, postgres_1.queryPg)(`SELECT 
+         id,
+         created_by as "createdBy",
+         COALESCE(data->>'status', data->>'dialStatus', '') as status,
+         COALESCE(data->>'dialStatus', '') as "dialStatus",
+         COALESCE(data->>'assignedTo', '') as "assignedTo",
+         COALESCE(data->>'assignedToName', '') as "assignedToName",
+         COALESCE(data->>'telecaller', '') as telecaller,
+         COALESCE(data->>'source', '') as source,
+         COALESCE(data->>'creatorName', '') as "creatorName",
+         COALESCE(data->>'dialedBy', '') as "dialedBy",
+         COALESCE(data->>'callerName', '') as "callerName",
+         COALESCE(data->>'followupDate', data->>'followup_date', '') as "followupDate",
+         COALESCE(data->>'campaign', data->>'campaignName', '') as campaign
+       FROM custom_records 
+       ${leadWhere}`, leadParams);
+        // 4. Query Assignments
+        let assignRows = [];
+        if (assignModule) {
+            const assignModId = assignModule._id || assignModule.id;
+            let assignWhere = `WHERE organization_id = $1 AND module_id = $2`;
+            const assignParams = [orgId, assignModId];
+            if (campaign && campaign !== 'ALL') {
+                const camps = Array.isArray(campaign) ? campaign : [campaign];
+                const validCamps = camps.map(c => String(c).toLowerCase().trim()).filter(c => c && c !== 'all');
+                if (validCamps.length > 0) {
+                    assignParams.push(validCamps);
+                    assignWhere += ` AND lower(COALESCE(data->>'campaign', data->>'campaignName', '')) = ANY($3::text[])`;
+                }
+            }
+            assignRows = await (0, postgres_1.queryPg)(`SELECT 
+           id,
+           COALESCE(data->>'assignedTo', '') as "assignedTo",
+           COALESCE(data->>'telecaller', '') as telecaller,
+           COALESCE(data->>'campaign', data->>'campaignName', '') as campaign
+         FROM custom_records
+         ${assignWhere}`, assignParams);
+        }
+        // 5. Build Aggregation Map for each User
+        // Statuses that count as "Call Connected / Contacted / Dialed"
+        const connectedStatuses = new Set([
+            'HOT LEADS', 'WARM LEADS', 'APPROVED', 'DISBUSED', 'FOLLOWUP',
+            'DOCUMENT PENDING', 'STATUS PENDING', 'CALL BACK', 'GIVEN LOGIN',
+            'EXECUTIVE & BRANCH MEET', 'CONNECTED', 'CONTACTED', 'COOL LEAD'
+        ]);
+        const isConnectedLead = (status, dialStatus) => {
+            const s = (status || '').toUpperCase().trim();
+            const ds = (dialStatus || '').toUpperCase().trim();
+            if (connectedStatuses.has(s))
+                return true;
+            if (ds && ds !== 'YET TO CALL' && ds !== 'NEW' && ds !== 'NOT DIALED')
+                return true;
+            return false;
+        };
+        // Prepare User List
+        const agentStatsList = users.map((u) => {
+            const uId = String(u._id || u.id);
+            const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.name || u.email?.split('@')[0] || 'Agent';
+            const uEmail = (u.email || '').toLowerCase().trim();
+            const roleName = (u.roleId ? roleMap.get(String(u.roleId)) : '') || u.role?.name || u.role || 'Telecaller';
+            // Match lead to user
+            const userLeads = leadRows.filter((r) => {
+                const assId = String(r.assignedTo || '').trim();
+                const assName = String(r.assignedToName || '').toLowerCase().trim();
+                const telName = String(r.telecaller || '').toLowerCase().trim();
+                const srcName = String(r.source || '').toLowerCase().trim();
+                const crName = String(r.creatorName || '').toLowerCase().trim();
+                const dBy = String(r.dialedBy || '').toLowerCase().trim();
+                const cName = String(r.callerName || '').toLowerCase().trim();
+                const createdById = String(r.createdBy || '').trim();
+                const nameLower = fullName.toLowerCase();
+                return (assId === uId ||
+                    createdById === uId ||
+                    (uEmail && assId.toLowerCase() === uEmail) ||
+                    assName === nameLower ||
+                    telName === nameLower ||
+                    srcName === nameLower ||
+                    crName === nameLower ||
+                    dBy === nameLower ||
+                    cName === nameLower);
+            });
+            // Match assignments to user
+            const userAssignments = assignRows.filter((r) => {
+                const assId = String(r.assignedTo || '').trim();
+                const telName = String(r.telecaller || '').toLowerCase().trim();
+                const nameLower = fullName.toLowerCase();
+                return assId === uId || (uEmail && assId.toLowerCase() === uEmail) || telName === nameLower;
+            });
+            const assignedLeadsCount = Math.max(userLeads.length, userAssignments.length);
+            const callsConnectedCount = userLeads.filter((r) => isConnectedLead(r.status, r.dialStatus)).length;
+            const followupsScheduledCount = userLeads.filter((r) => {
+                const f = String(r.followupDate || '').trim();
+                return f && f !== 'null' && f !== 'undefined' && f !== '-' && f !== '—' && f !== 'N/A';
+            }).length;
+            const connectionRate = assignedLeadsCount > 0
+                ? Math.round((callsConnectedCount / assignedLeadsCount) * 100)
+                : (callsConnectedCount > 0 ? 100 : 0);
+            return {
+                id: uId,
+                _id: uId,
+                name: fullName,
+                email: u.email || `${fullName.toLowerCase().replace(/\s+/g, '')}@inkcrm.com`,
+                role: roleName,
+                assigned: assignedLeadsCount,
+                connected: callsConnectedCount,
+                followups: followupsScheduledCount,
+                connectionRate
+            };
+        });
+        // Filter by Role or Agent if requested
+        let filteredAgents = agentStatsList;
+        if (role && role !== 'ALL') {
+            const rolesArr = Array.isArray(role) ? role : [role];
+            const validRoles = rolesArr.map((r) => String(r).toLowerCase().trim()).filter((r) => r && r !== 'all');
+            if (validRoles.length > 0) {
+                filteredAgents = filteredAgents.filter((ag) => validRoles.includes(ag.role.toLowerCase()));
+            }
+        }
+        if (agent && agent !== 'ALL') {
+            const agentsArr = Array.isArray(agent) ? agent : [agent];
+            const validAgents = agentsArr.map((a) => String(a).toLowerCase().trim()).filter((a) => a && a !== 'all');
+            if (validAgents.length > 0) {
+                filteredAgents = filteredAgents.filter((ag) => validAgents.includes(ag.name.toLowerCase()));
+            }
+        }
+        // Sort by connected desc, then assigned desc
+        filteredAgents.sort((a, b) => b.connected - a.connected || b.assigned - a.assigned);
+        // Compute Summary KPIs
+        const totalActiveTelecallers = filteredAgents.length;
+        const totalAssignedLeads = filteredAgents.reduce((sum, a) => sum + a.assigned, 0);
+        const totalCallsConnected = filteredAgents.reduce((sum, a) => sum + a.connected, 0);
+        const totalFollowups = filteredAgents.reduce((sum, a) => sum + a.followups, 0);
+        const avgConnectionRate = totalAssignedLeads > 0
+            ? Math.round((totalCallsConnected / totalAssignedLeads) * 100)
+            : 0;
+        res.status(200).json({
+            summary: {
+                totalActiveTelecallers,
+                totalCallsConnected,
+                totalAssignedLeads,
+                totalFollowups,
+                connectionRate: avgConnectionRate
+            },
+            agents: filteredAgents,
+            campaignsList: registeredCampaigns,
+            rolesList: Array.from(new Set(roles.map((r) => r.name).filter(Boolean)))
+        });
+    }
+    catch (error) {
+        console.error('Telecaller performance aggregation error:', error);
+        res.status(500).json({ error: error.message || 'Failed to aggregate telecaller performance' });
+    }
+});
 // 1. Get all report definitions
 router.get('/', async (req, res) => {
     try {
