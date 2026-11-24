@@ -760,9 +760,14 @@ export default function RecordForm() {
 
         // Extract all selected business partners
         const rawPartners = data.businessPartner || data.bankPartner || data.bank || '';
-        const partnerList = typeof rawPartners === 'string' && rawPartners.includes(',')
-          ? rawPartners.split(',').map((s: string) => s.trim()).filter(Boolean)
-          : (rawPartners ? [String(rawPartners).trim()] : []);
+        let partnerList: string[] = [];
+        if (Array.isArray(rawPartners)) {
+          partnerList = rawPartners.map((s: any) => String(s).trim()).filter(Boolean);
+        } else if (typeof rawPartners === 'string') {
+          partnerList = rawPartners.split(/[,;\n]+/).map((s: string) => s.trim()).filter(Boolean);
+        } else if (rawPartners) {
+          partnerList = [String(rawPartners).trim()].filter(Boolean);
+        }
         const effectivePartners = partnerList.length > 0 ? partnerList : [''];
 
         if (fromCampaignLeadId) {
@@ -856,9 +861,14 @@ export default function RecordForm() {
       queryClient.invalidateQueries({ queryKey: ['my-campaigns-list'] });
 
       const rawPartners = data.businessPartner || data.bankPartner || data.bank || '';
-      const partnerList = typeof rawPartners === 'string' && rawPartners.includes(',')
-        ? rawPartners.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : (rawPartners ? [String(rawPartners).trim()] : []);
+      let partnerList: string[] = [];
+      if (Array.isArray(rawPartners)) {
+        partnerList = rawPartners.map((s: any) => String(s).trim()).filter(Boolean);
+      } else if (typeof rawPartners === 'string') {
+        partnerList = rawPartners.split(/[,;\n]+/).map((s: string) => s.trim()).filter(Boolean);
+      } else if (rawPartners) {
+        partnerList = [String(rawPartners).trim()].filter(Boolean);
+      }
       const createdCount = partnerList.length;
 
       showAlertModal({

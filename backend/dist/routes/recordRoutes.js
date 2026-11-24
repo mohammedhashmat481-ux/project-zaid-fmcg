@@ -2791,9 +2791,16 @@ router.post('/:apiPath', async (req, res) => {
         const creatorId = String(req.user?.id);
         // Multi-partner handling for Leads: If multiple business partners were selected, create separate lead records with unique lead numbers for each
         const rawPartners = recordData.businessPartner || recordData.bankPartner || recordData.bank || recordData.bankNames || '';
-        const partnerList = (typeof rawPartners === 'string' && rawPartners.includes(','))
-            ? rawPartners.split(',').map((s) => s.trim()).filter(Boolean)
-            : (Array.isArray(rawPartners) ? rawPartners.map((s) => String(s).trim()).filter(Boolean) : []);
+        let partnerList = [];
+        if (Array.isArray(rawPartners)) {
+            partnerList = rawPartners.map((s) => String(s).trim()).filter(Boolean);
+        }
+        else if (typeof rawPartners === 'string') {
+            partnerList = rawPartners.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+        }
+        else if (rawPartners) {
+            partnerList = [String(rawPartners).trim()].filter(Boolean);
+        }
         if (apiPath.toLowerCase() === 'leads' && partnerList.length > 1) {
             const createdRecords = [];
             for (let i = 0; i < partnerList.length; i++) {
